@@ -8,7 +8,7 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 以 **1.0.0 功能基线**为起点，并加入 V1.1a 可信长期记忆：自动结果先进入候选区，经过用户确认才参与未来对话。项目继续支持 Live2D 角色、文字对话、安全的模型提供商配置、完整对话、情绪动作、结构化角色卡、侧拉对话 HUD 与作品社区词库；当前不提供安装包、签名或可执行发布产物。
+当前 `main` 以 **1.0.0 功能基线**为起点，并加入 V1.1a～V1.1b 可信长期记忆：自动结果先进入候选区，用户可以编辑、合并证据并决定如何处理冲突，确认后才参与未来对话。项目继续支持 Live2D 角色、文字对话、安全的模型提供商配置、完整对话、情绪动作、结构化角色卡、侧拉对话 HUD 与作品社区词库；当前不提供安装包、签名或可执行发布产物。
 
 ## 1.0.0 已完成能力
 
@@ -23,6 +23,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - 系统托盘控制
 - 本地长期记忆、会话摘要、导出与彻底删除
 - 自动记忆候选、来源证据、冲突确认与旧数据安全迁移
+- 候选编辑、同键证据合并、有效期调整与冲突保留选择
 - 结构化角色卡与用户确认后的联网补全
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
@@ -39,17 +40,18 @@ A local-first Windows AI character companion for days when socializing feels lik
 
 ## 开发路线
 
-1. M0：Electron + TypeScript 工程骨架
-2. M1：桌宠窗口外壳
-3. M2：Live2D 角色
-4. M3：模型提供商与 Claude
-5. M4：完整文字对话
-6. M5：长期记忆
-7. M5.1：结构化角色卡与可选联网补全
-8. M5.2：对话 HUD、角色身份显示与新词理解修整
-9. 1.0.0：M0～M5.2 功能基线
-10. V1.1a：可信长期记忆最小闭环
-11. 后续：泛用角色模板、双角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+- M0：Electron + TypeScript 工程骨架
+- M1：桌宠窗口外壳
+- M2：Live2D 角色
+- M3：模型提供商与 Claude
+- M4：完整文字对话
+- M5：长期记忆
+- M5.1：结构化角色卡与可选联网补全
+- M5.2：对话 HUD、角色身份显示与新词理解修整
+- 1.0.0：M0～M5.2 功能基线
+- V1.1a：可信长期记忆最小闭环
+- V1.1b：候选整理、有效期编辑与冲突决策
+- 后续：泛用角色模板、双角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
@@ -59,7 +61,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a 已完成“可信长期记忆”的最小闭环：自动结果先排队，用户确认后才生效。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a 已完成“先候选、后生效”，V1.1b 继续补上候选编辑、证据合并、有效期和冲突决策。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
 
 ## 文档
 
@@ -77,6 +79,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a 已
 - [M5.1 角色扮演约束](docs/M5_1_ROLEPLAY_CONSTRAINTS.md)
 - [M5.2 对话体验修整设计](docs/M5_2_DESIGN.md)
 - [V1.1a 可信长期记忆实现](docs/V1_1A_IMPLEMENTATION.md)
+- [V1.1b 记忆整理实现](docs/V1_1B_IMPLEMENTATION.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 

@@ -8,6 +8,7 @@ import type {
 import type {
   MemoryCandidate,
   MemoryCandidateRecord,
+  MemoryConflictResolution,
   MemoryRecord,
 } from '../../core/memory/contracts';
 import {
@@ -132,8 +133,28 @@ export class MemoryService {
     return this.store.listCandidates(namespace);
   }
 
-  public confirmCandidate(namespace: string, id: string): MemoryRecord | undefined {
-    return this.store.confirmCandidate(namespace, id);
+  public updateCandidate(
+    namespace: string,
+    id: string,
+    candidate: MemoryCandidate,
+  ): MemoryCandidateRecord | undefined {
+    return this.store.updateCandidate(namespace, id, candidate);
+  }
+
+  public mergeCandidates(
+    namespace: string,
+    targetId: string,
+    sourceId: string,
+  ): MemoryCandidateRecord | undefined {
+    return this.store.mergeCandidates(namespace, targetId, sourceId);
+  }
+
+  public confirmCandidate(
+    namespace: string,
+    id: string,
+    conflictResolution: MemoryConflictResolution = 'replace',
+  ): MemoryRecord | undefined {
+    return this.store.confirmCandidate(namespace, id, conflictResolution);
   }
 
   public rejectCandidate(namespace: string, id: string): boolean {

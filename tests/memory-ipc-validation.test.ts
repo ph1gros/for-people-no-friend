@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  parseConfirmMemoryCandidateInput,
+  parseMergeMemoryCandidatesInput,
   parseMemoryIdInput,
   parseSetMemorySettingsInput,
+  parseUpdateMemoryCandidateInput,
   parseUpdateMemoryInput,
 } from '../src/shared/memory-ipc';
 
@@ -28,6 +31,29 @@ describe('M5 memory IPC validation', () => {
         confidence: 0.9,
       }),
     });
+    expect(parseConfirmMemoryCandidateInput({ id: 'candidate-id' })).toEqual({
+      id: 'candidate-id',
+      conflictResolution: 'replace',
+    });
+    expect(
+      parseConfirmMemoryCandidateInput({
+        id: 'candidate-id',
+        conflictResolution: 'keep-both',
+      }),
+    ).toEqual({ id: 'candidate-id', conflictResolution: 'keep-both' });
+    expect(
+      parseMergeMemoryCandidatesInput({ targetId: 'candidate-a', sourceId: 'candidate-b' }),
+    ).toEqual({ targetId: 'candidate-a', sourceId: 'candidate-b' });
+    expect(
+      parseUpdateMemoryCandidateInput({
+        id: 'candidate-id',
+        type: 'plan',
+        content: '用户计划周末散步',
+        importance: 0.7,
+        confidence: 0.8,
+        expiresAt: Date.now() + 60_000,
+      }),
+    ).toEqual(expect.objectContaining({ id: 'candidate-id' }));
   });
 
   it('rejects unsafe IDs, types, sizes and scores', () => {
@@ -49,6 +75,12 @@ describe('M5 memory IPC validation', () => {
         importance: 1.1,
         confidence: 1,
       }),
+    ).toThrow();
+    expect(() =>
+      parseConfirmMemoryCandidateInput({ id: 'candidate-id', conflictResolution: 'erase-old' }),
+    ).toThrow();
+    expect(() =>
+      parseMergeMemoryCandidatesInput({ targetId: 'same-id', sourceId: 'same-id' }),
     ).toThrow();
   });
 });

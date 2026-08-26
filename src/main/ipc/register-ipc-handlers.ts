@@ -18,8 +18,11 @@ import {
 } from '../../shared/conversation-ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import {
+  parseConfirmMemoryCandidateInput,
+  parseMergeMemoryCandidatesInput,
   parseMemoryIdInput,
   parseSetMemorySettingsInput,
+  parseUpdateMemoryCandidateInput,
   parseUpdateMemoryInput,
   type MemoryFileOperationResult,
   type MemoryOperationResult,
@@ -274,12 +277,32 @@ export const registerIpcHandlers = (
     const profile = await profiles.get();
     return memories.listCandidates(profile.memoryNamespace);
   });
-  ipcMain.handle(IPC_CHANNELS.confirmMemoryCandidate, async (event, input: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.updateMemoryCandidate, async (event, input: unknown) => {
     requireTrustedSender(event, windows);
-    const { id } = parseMemoryIdInput(input);
+    const parsed = parseUpdateMemoryCandidateInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
-      if (!memories.confirmCandidate(profile.memoryNamespace, id)) {
+      if (!memories.updateCandidate(profile.memoryNamespace, parsed.id, parsed.candidate)) {
+        throw new Error('Memory candidate not found.');
+      }
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.mergeMemoryCandidates, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const parsed = parseMergeMemoryCandidatesInput(input);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      if (!memories.mergeCandidates(profile.memoryNamespace, parsed.targetId, parsed.sourceId)) {
+        throw new Error('Memory candidates cannot be merged.');
+      }
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.confirmMemoryCandidate, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { id, conflictResolution } = parseConfirmMemoryCandidateInput(input);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      if (!memories.confirmCandidate(profile.memoryNamespace, id, conflictResolution)) {
         throw new Error('Memory candidate not found.');
       }
     });

@@ -5,6 +5,7 @@ import {
   type MemoryCandidate,
   type MemoryCandidateRecord,
   type MemoryCandidateStatus,
+  type MemoryConflictResolution,
   type MemoryEvidence,
   type MemoryRecord,
   type MemoryReviewReason,
@@ -269,7 +270,148 @@ export class MemoryStore {
     }
   }
 
-  public confirmCandidate(namespace: string, id: string): MemoryRecord | undefined {
+  public updateCandidate(
+    namespace: string,
+    id: string,
+    value: MemoryCandidate,
+  ): MemoryCandidateRecord | undefined {
+    const current = this.getCandidateRow(namespace, id);
+    const candidate = sanitizeMemoryCandidate(value, 'manual');
+    if (!current || !['pending', 'conflict'].includes(current.status) || !candidate) {
+      return undefined;
+    }
+    this.expire(namespace);
+    const existing = this.findActiveByKey(namespace, candidate.normalizedKey);
+    const conflictingMemoryId =
+      existing && existing.content !== candidate.content ? existing.id : undefined;
+    const reasons = memoryReviewReasons(candidate);
+    if (conflictingMemoryId) reasons.unshift('conflict');
+    const now = Date.now();
+    this.database.connection
+      .prepare(
+        `UPDATE memory_candidates SET
+          type = ?, normalized_key = ?, content = ?, importance = ?, confidence = ?,
+          status = ?, review_reasons_json = ?, conflicting_memory_id = ?,
+          updated_at = ?, expires_at = ?
+         WHERE id = ? AND namespace = ? AND status IN ('pending', 'conflict')`,
+      )
+      .run(
+        candidate.type,
+        candidate.normalizedKey,
+        candidate.content,
+        candidate.importance,
+        candidate.confidence,
+        conflictingMemoryId ? 'conflict' : 'pending',
+        JSON.stringify(reasons),
+        conflictingMemoryId ?? null,
+        now,
+        candidate.expiresAt ?? null,
+        id,
+        namespace,
+      );
+    return this.getCandidate(namespace, id);
+  }
+
+  public mergeCandidates(
+    namespace: string,
+    targetId: string,
+    sourceId: string,
+  ): MemoryCandidateRecord | undefined {
+    if (targetId === sourceId) return undefined;
+    const target = this.getCandidateRow(namespace, targetId);
+    const source = this.getCandidateRow(namespace, sourceId);
+    if (
+      !target ||
+      !source ||
+      !['pending', 'conflict'].includes(target.status) ||
+      !['pending', 'conflict'].includes(source.status) ||
+      target.type !== source.type ||
+      target.normalized_key !== source.normalized_key ||
+      (target.legacy_memory_id &&
+        source.legacy_memory_id &&
+        target.legacy_memory_id !== source.legacy_memory_id)
+    ) {
+      return undefined;
+    }
+    const existing = this.findActiveByKey(namespace, target.normalized_key);
+    const conflictingMemoryId =
+      existing && existing.content !== target.content ? existing.id : undefined;
+    const mergedValue: MemoryCandidate = {
+      type: target.type,
+      normalizedKey: target.normalized_key,
+      content: target.content,
+      importance: Math.max(target.importance, source.importance),
+      confidence: Math.max(target.confidence, source.confidence),
+      ...(target.expires_at || source.expires_at
+        ? { expiresAt: target.expires_at ?? source.expires_at ?? undefined }
+        : {}),
+    };
+    const reasons = memoryReviewReasons(mergedValue);
+    if (conflictingMemoryId) reasons.unshift('conflict');
+    const now = Date.now();
+    this.database.connection.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.connection
+        .prepare(
+          `INSERT OR IGNORE INTO memory_candidate_evidence (
+            candidate_id, source_message_id, observed_at
+          )
+          SELECT ?, source_message_id, observed_at
+            FROM memory_candidate_evidence WHERE candidate_id = ?`,
+        )
+        .run(targetId, sourceId);
+      this.database.connection
+        .prepare(
+          `UPDATE memory_candidates SET
+            importance = ?, confidence = ?, status = ?, review_reasons_json = ?,
+            conflicting_memory_id = ?, legacy_memory_id = COALESCE(legacy_memory_id, ?),
+            updated_at = ?, last_seen_at = MAX(last_seen_at, ?), expires_at = ?
+           WHERE id = ? AND namespace = ?`,
+        )
+        .run(
+          mergedValue.importance,
+          mergedValue.confidence,
+          conflictingMemoryId ? 'conflict' : 'pending',
+          JSON.stringify(reasons),
+          conflictingMemoryId ?? null,
+          source.legacy_memory_id,
+          now,
+          source.last_seen_at,
+          mergedValue.expiresAt ?? null,
+          targetId,
+          namespace,
+        );
+      this.database.connection
+        .prepare(
+          `UPDATE memory_candidates SET
+            normalized_key = ?, content = '', status = 'rejected',
+            review_reasons_json = '[]', conflicting_memory_id = NULL,
+            legacy_memory_id = NULL, updated_at = ?, decision_at = ?, expires_at = NULL
+           WHERE id = ? AND namespace = ? AND status IN ('pending', 'conflict')`,
+        )
+        .run(
+          `rejected:${candidateFingerprint(source.normalized_key, source.content)}`,
+          now,
+          now,
+          sourceId,
+          namespace,
+        );
+      this.database.connection
+        .prepare('DELETE FROM memory_candidate_evidence WHERE candidate_id = ?')
+        .run(sourceId);
+      this.database.connection.exec('COMMIT');
+      return this.getCandidate(namespace, targetId);
+    } catch (error) {
+      this.database.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public confirmCandidate(
+    namespace: string,
+    id: string,
+    conflictResolution: MemoryConflictResolution = 'replace',
+  ): MemoryRecord | undefined {
     const candidate = this.getCandidateRow(namespace, id);
     if (!candidate || !['pending', 'conflict'].includes(candidate.status)) {
       return undefined;
@@ -286,7 +428,7 @@ export class MemoryStore {
             `UPDATE memories SET
               importance = MAX(importance, ?), confidence = MAX(confidence, ?),
               updated_at = ?, last_confirmed_at = ?,
-              source_message_id = COALESCE(?, source_message_id)
+              source_message_id = COALESCE(?, source_message_id), expires_at = ?
              WHERE id = ? AND namespace = ? AND status = 'active'`,
           )
           .run(
@@ -295,11 +437,12 @@ export class MemoryStore {
             now,
             now,
             evidence?.source_message_id ?? null,
+            candidate.expires_at,
             existing.id,
             namespace,
           );
       } else {
-        if (existing) {
+        if (existing && conflictResolution === 'replace') {
           this.database.connection
             .prepare(`UPDATE memories SET status = 'superseded', updated_at = ? WHERE id = ?`)
             .run(now, existing.id);

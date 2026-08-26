@@ -419,6 +419,130 @@ describe('M5 SQLite storage and memory lifecycle', () => {
     ).toBeUndefined();
   });
 
+  it('edits candidate expiry and can keep both sides of an explicit conflict', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-candidate-edit-'));
+    database = new DeskpetDatabase(directory);
+    const store = new MemoryStore(database);
+    const namespace = 'default-character';
+    const expiresAt = Date.now() + 86_400_000;
+    const plan = store.saveAutomaticCandidate(
+      namespace,
+      {
+        type: 'plan',
+        normalizedKey: 'weekend-walk',
+        content: '用户计划周末散步',
+        importance: 0.6,
+        confidence: 0.8,
+      },
+      { id: 'plan-source', createdAt: 1 },
+    );
+    expect(
+      store.updateCandidate(namespace, plan?.id ?? '', {
+        type: 'plan',
+        normalizedKey: 'ignored-by-editor',
+        content: '用户计划周末散步',
+        importance: 0.75,
+        confidence: 0.9,
+        expiresAt,
+      }),
+    ).toEqual(expect.objectContaining({ expiresAt, importance: 0.75, confidence: 0.9 }));
+    const confirmedPlan = store.confirmCandidate(namespace, plan?.id ?? '');
+    expect(confirmedPlan).toEqual(
+      expect.objectContaining({ content: '用户计划周末散步', expiresAt }),
+    );
+    const planWithoutExpiry = store.update(namespace, confirmedPlan?.id ?? '', {
+      type: 'plan',
+      normalizedKey: 'weekend-walk',
+      content: '用户计划周末散步',
+      importance: 0.75,
+      confidence: 0.9,
+    });
+    expect(planWithoutExpiry?.expiresAt).toBeUndefined();
+
+    const oldPreference = store.save(
+      namespace,
+      {
+        type: 'preference',
+        normalizedKey: deriveMemoryKey('我喜欢咖啡', 'preference'),
+        content: '我喜欢咖啡',
+        importance: 0.9,
+        confidence: 1,
+      },
+      'manual',
+    );
+    const newPreference = store.saveAutomaticCandidate(
+      namespace,
+      {
+        type: 'preference',
+        normalizedKey: deriveMemoryKey('我不喜欢咖啡', 'preference'),
+        content: '我不喜欢咖啡',
+        importance: 0.8,
+        confidence: 0.9,
+      },
+      { id: 'preference-source', createdAt: 2 },
+    );
+    expect(newPreference?.status).toBe('conflict');
+    expect(store.confirmCandidate(namespace, newPreference?.id ?? '', 'keep-both')).toBeDefined();
+    expect(store.list(namespace)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: oldPreference?.id, content: '我喜欢咖啡' }),
+        expect.objectContaining({ content: '我不喜欢咖啡' }),
+      ]),
+    );
+  });
+
+  it('merges same-key candidates and moves their evidence without crossing namespaces', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-candidate-merge-'));
+    database = new DeskpetDatabase(directory);
+    const store = new MemoryStore(database);
+    const namespace = 'default-character';
+    const first = store.saveAutomaticCandidate(
+      namespace,
+      {
+        type: 'fact',
+        normalizedKey: 'pet-name',
+        content: '用户的猫叫团子',
+        importance: 0.7,
+        confidence: 0.8,
+      },
+      { id: 'merge-source-1', createdAt: 1 },
+    );
+    const second = store.saveAutomaticCandidate(
+      namespace,
+      {
+        type: 'fact',
+        normalizedKey: 'pet-name',
+        content: '用户称自己的猫为团子',
+        importance: 0.85,
+        confidence: 0.95,
+      },
+      { id: 'merge-source-2', createdAt: 86_400_001 },
+    );
+
+    expect(
+      store.mergeCandidates('other-character', first?.id ?? '', second?.id ?? ''),
+    ).toBeUndefined();
+    expect(store.mergeCandidates(namespace, first?.id ?? '', second?.id ?? '')).toEqual(
+      expect.objectContaining({
+        id: first?.id,
+        content: '用户的猫叫团子',
+        importance: 0.85,
+        confidence: 0.95,
+        evidenceDateCount: 2,
+        evidence: expect.arrayContaining([
+          expect.objectContaining({ sourceMessageId: 'merge-source-1' }),
+          expect.objectContaining({ sourceMessageId: 'merge-source-2' }),
+        ]),
+      }),
+    );
+    expect(store.listCandidates(namespace)).toHaveLength(1);
+    expect(
+      database.connection
+        .prepare('SELECT content, status FROM memory_candidates WHERE id = ?')
+        .get(second?.id ?? ''),
+    ).toEqual({ content: '', status: 'rejected' });
+  });
+
   it('scrubs candidate content and evidence when all memories are cleared', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-candidate-clear-'));
     database = new DeskpetDatabase(directory);

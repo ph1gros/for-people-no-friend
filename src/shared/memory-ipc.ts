@@ -1,10 +1,11 @@
 import type {
   MemoryCandidate,
   MemoryCandidateRecord,
+  MemoryConflictResolution,
   MemoryRecord,
   MemoryType,
 } from '../core/memory/contracts';
-import { MEMORY_TYPES } from '../core/memory/contracts';
+import { MEMORY_CONFLICT_RESOLUTIONS, MEMORY_TYPES } from '../core/memory/contracts';
 import { deriveMemoryKey } from '../core/memory/memory-policy';
 
 export interface MemorySettings {
@@ -24,6 +25,17 @@ export interface UpdateMemoryInput {
   expiresAt?: number;
 }
 
+export type UpdateMemoryCandidateInput = UpdateMemoryInput;
+
+export interface ConfirmMemoryCandidateInput extends MemoryIdInput {
+  conflictResolution?: MemoryConflictResolution;
+}
+
+export interface MergeMemoryCandidatesInput {
+  targetId: string;
+  sourceId: string;
+}
+
 export interface MemoryIdInput {
   id: string;
 }
@@ -38,6 +50,7 @@ export type MemoryCandidateListResult = MemoryCandidateRecord[];
 
 const MEMORY_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const memoryTypeSet = new Set<string>(MEMORY_TYPES);
+const conflictResolutionSet = new Set<string>(MEMORY_CONFLICT_RESOLUTIONS);
 
 export const parseSetMemorySettingsInput = (value: unknown): SetMemorySettingsInput => {
   if (
@@ -62,6 +75,39 @@ export const parseMemoryIdInput = (value: unknown): MemoryIdInput => {
     throw new Error('The memory ID is invalid.');
   }
   return { id: value.id };
+};
+
+export const parseConfirmMemoryCandidateInput = (value: unknown): ConfirmMemoryCandidateInput => {
+  const { id } = parseMemoryIdInput(value);
+  const conflictResolution =
+    typeof value === 'object' &&
+    value !== null &&
+    'conflictResolution' in value &&
+    value.conflictResolution !== undefined
+      ? value.conflictResolution
+      : 'replace';
+  if (typeof conflictResolution !== 'string' || !conflictResolutionSet.has(conflictResolution)) {
+    throw new Error('The memory conflict resolution is invalid.');
+  }
+  return { id, conflictResolution: conflictResolution as MemoryConflictResolution };
+};
+
+export const parseMergeMemoryCandidatesInput = (value: unknown): MergeMemoryCandidatesInput => {
+  if (typeof value !== 'object' || value === null) {
+    throw new Error('The memory candidate merge is invalid.');
+  }
+  const targetId = 'targetId' in value ? value.targetId : undefined;
+  const sourceId = 'sourceId' in value ? value.sourceId : undefined;
+  if (
+    typeof targetId !== 'string' ||
+    typeof sourceId !== 'string' ||
+    !MEMORY_ID_PATTERN.test(targetId) ||
+    !MEMORY_ID_PATTERN.test(sourceId) ||
+    targetId === sourceId
+  ) {
+    throw new Error('The memory candidate merge is invalid.');
+  }
+  return { targetId, sourceId };
 };
 
 export const parseUpdateMemoryInput = (
@@ -108,3 +154,5 @@ export const parseUpdateMemoryInput = (
     },
   };
 };
+
+export const parseUpdateMemoryCandidateInput = parseUpdateMemoryInput;

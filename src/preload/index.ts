@@ -14,8 +14,11 @@ import {
 } from '../shared/conversation-ipc';
 import { type DeskpetApi, IPC_CHANNELS } from '../shared/ipc';
 import type {
+  ConfirmMemoryCandidateInput,
+  MergeMemoryCandidatesInput,
   MemoryIdInput,
   SetMemorySettingsInput,
+  UpdateMemoryCandidateInput,
   UpdateMemoryInput,
 } from '../shared/memory-ipc';
 import type {
@@ -142,7 +145,15 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.listMemoryCandidates) as ReturnType<
       DeskpetApi['listMemoryCandidates']
     >,
-  confirmMemoryCandidate: (input: MemoryIdInput) =>
+  updateMemoryCandidate: (input: UpdateMemoryCandidateInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.updateMemoryCandidate, input) as ReturnType<
+      DeskpetApi['updateMemoryCandidate']
+    >,
+  mergeMemoryCandidates: (input: MergeMemoryCandidatesInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.mergeMemoryCandidates, input) as ReturnType<
+      DeskpetApi['mergeMemoryCandidates']
+    >,
+  confirmMemoryCandidate: (input: ConfirmMemoryCandidateInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.confirmMemoryCandidate, input) as ReturnType<
       DeskpetApi['confirmMemoryCandidate']
     >,

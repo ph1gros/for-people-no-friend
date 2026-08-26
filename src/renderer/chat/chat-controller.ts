@@ -58,6 +58,23 @@ const createField = (
   return label;
 };
 
+const formatLocalDateTime = (timestamp?: number): string => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+};
+
+const readFutureExpiration = (
+  input: HTMLInputElement,
+): { ok: true; expiresAt?: number } | { ok: false } => {
+  if (!input.value) return { ok: true };
+  const expiresAt = new Date(input.value).getTime();
+  return Number.isFinite(expiresAt) && expiresAt > Date.now()
+    ? { ok: true, expiresAt }
+    : { ok: false };
+};
+
 const createRequestId = (prefix: string): string =>
   `${prefix}_${crypto.randomUUID().replaceAll('-', '_')}`;
 
@@ -601,15 +618,62 @@ export const initializeChat = async ({
       state.className = 'memory-badge';
       state.textContent = candidate.status === 'conflict' ? '有冲突' : '待确认';
       heading.append(type, state);
-      const content = document.createElement('p');
+      const typeSelect = document.createElement('select');
+      typeSelect.setAttribute('aria-label', '候选记忆分类');
+      for (const memoryType of Object.keys(memoryTypeLabels) as MemoryType[]) {
+        const option = document.createElement('option');
+        option.value = memoryType;
+        option.textContent = memoryTypeLabels[memoryType];
+        typeSelect.append(option);
+      }
+      typeSelect.value = candidate.type;
+      const content = document.createElement('textarea');
       content.className = 'memory-candidate-content';
-      content.textContent = candidate.content;
+      content.value = candidate.content;
+      content.maxLength = 1_000;
+      content.rows = 2;
+      content.setAttribute('aria-label', '候选记忆内容');
+      const metrics = document.createElement('div');
+      metrics.className = 'memory-metrics';
+      const importance = document.createElement('input');
+      importance.type = 'range';
+      importance.min = '0';
+      importance.max = '1';
+      importance.step = '0.05';
+      importance.value = candidate.importance.toFixed(2);
+      importance.setAttribute('aria-label', '候选重要度');
+      const confidence = document.createElement('input');
+      confidence.type = 'range';
+      confidence.min = '0';
+      confidence.max = '1';
+      confidence.step = '0.05';
+      confidence.value = candidate.confidence.toFixed(2);
+      confidence.setAttribute('aria-label', '候选置信度');
+      metrics.append(
+        document.createTextNode('重要度 '),
+        importance,
+        document.createTextNode(' 置信度 '),
+        confidence,
+      );
+      const expirationField = document.createElement('label');
+      expirationField.className = 'memory-expiration';
+      const expirationLabel = document.createElement('span');
+      expirationLabel.textContent = '有效期（可不填）';
+      const expiration = document.createElement('input');
+      expiration.type = 'datetime-local';
+      expiration.value = formatLocalDateTime(candidate.expiresAt);
+      expirationField.append(expirationLabel, expiration);
+      const updateExpirationVisibility = (): void => {
+        expirationField.hidden = !['event', 'plan'].includes(typeSelect.value);
+        if (expirationField.hidden) expiration.value = '';
+      };
+      updateExpirationVisibility();
       const reasons = document.createElement('p');
       reasons.className = 'memory-source';
       reasons.textContent = candidate.reviewReasons.length
         ? candidate.reviewReasons.map((reason) => memoryReviewLabels[reason]).join('；')
         : '自动提取结果，需要你点头才会生效。';
-      card.append(heading, content, reasons);
+      card.append(heading, typeSelect, content, metrics, expirationField, reasons);
       if (candidate.conflictingMemory) {
         const conflict = document.createElement('p');
         conflict.className = 'memory-conflict';
@@ -631,13 +695,108 @@ export const initializeChat = async ({
       }
       const actions = document.createElement('div');
       actions.className = 'memory-card__actions';
+      const saveDraft = createButton('保存候选修改', 'text-button');
       const confirm = createButton('确认记住', 'text-button');
       const reject = createButton('拒绝', 'text-button danger-button');
-      actions.append(confirm, reject);
+      actions.append(saveDraft, confirm, reject);
+      let dirty = false;
+      const markDirty = (): void => {
+        dirty = true;
+        saveDraft.textContent = '保存候选修改 *';
+      };
+      for (const control of [typeSelect, content, importance, confidence, expiration]) {
+        control.addEventListener('input', markDirty);
+      }
+      typeSelect.addEventListener('change', () => {
+        updateExpirationVisibility();
+        markDirty();
+      });
+      saveDraft.addEventListener('click', () => {
+        void (async () => {
+          if (!api) return;
+          if (!content.value.trim()) {
+            memoryStatus.textContent = '候选内容不能为空。';
+            return;
+          }
+          const parsedExpiration = readFutureExpiration(expiration);
+          if (!parsedExpiration.ok) {
+            memoryStatus.textContent = '有效期必须是将来的时间，或者留空。';
+            return;
+          }
+          const result = await api.updateMemoryCandidate({
+            id: candidate.id,
+            type: typeSelect.value as MemoryType,
+            content: content.value.trim(),
+            importance: Number(importance.value),
+            confidence: Number(confidence.value),
+            ...('expiresAt' in parsedExpiration ? { expiresAt: parsedExpiration.expiresAt } : {}),
+          });
+          memoryStatus.textContent = result.ok ? '候选修改已保存。' : result.message;
+          if (result.ok) await loadMemories();
+        })();
+      });
+      let conflictResolution: HTMLSelectElement | undefined;
+      if (candidate.conflictingMemory) {
+        conflictResolution = document.createElement('select');
+        conflictResolution.setAttribute('aria-label', '冲突处理方式');
+        for (const [value, label] of [
+          ['replace', '用新记忆替换旧记忆'],
+          ['keep-both', '新旧两条都保留'],
+        ] as const) {
+          const option = document.createElement('option');
+          option.value = value;
+          option.textContent = label;
+          conflictResolution.append(option);
+        }
+        card.append(conflictResolution);
+      }
+      const mergeableCandidates = memoryCandidates.filter(
+        (other) =>
+          other.id !== candidate.id &&
+          other.type === candidate.type &&
+          other.normalizedKey === candidate.normalizedKey,
+      );
+      if (mergeableCandidates.length > 0) {
+        const mergeRow = document.createElement('div');
+        mergeRow.className = 'memory-merge-row';
+        const mergeSelect = document.createElement('select');
+        mergeSelect.setAttribute('aria-label', '要合并的候选');
+        for (const other of mergeableCandidates) {
+          const option = document.createElement('option');
+          option.value = other.id;
+          option.textContent = other.content.slice(0, 60);
+          mergeSelect.append(option);
+        }
+        const mergeButton = createButton('合并证据到本条', 'text-button');
+        mergeButton.addEventListener('click', () => {
+          void (async () => {
+            if (!api) return;
+            if (dirty) {
+              memoryStatus.textContent = '请先保存候选修改，再合并证据。';
+              return;
+            }
+            const result = await api.mergeMemoryCandidates({
+              targetId: candidate.id,
+              sourceId: mergeSelect.value,
+            });
+            memoryStatus.textContent = result.ok ? '候选及其来源证据已合并。' : result.message;
+            if (result.ok) await loadMemories();
+          })();
+        });
+        mergeRow.append(mergeSelect, mergeButton);
+        card.append(mergeRow);
+      }
       confirm.addEventListener('click', () => {
         void (async () => {
           if (!api) return;
-          const result = await api.confirmMemoryCandidate({ id: candidate.id });
+          if (dirty) {
+            memoryStatus.textContent = '请先保存候选修改，再确认记忆。';
+            return;
+          }
+          const result = await api.confirmMemoryCandidate({
+            id: candidate.id,
+            conflictResolution: conflictResolution?.value === 'keep-both' ? 'keep-both' : 'replace',
+          });
           memoryStatus.textContent = result.ok
             ? '候选已经确认，会在相关对话中生效。'
             : result.message;
@@ -720,6 +879,20 @@ export const initializeChat = async ({
         document.createTextNode(' 置信度 '),
         confidence,
       );
+      const expirationField = document.createElement('label');
+      expirationField.className = 'memory-expiration';
+      const expirationLabel = document.createElement('span');
+      expirationLabel.textContent = '有效期（可不填）';
+      const expiration = document.createElement('input');
+      expiration.type = 'datetime-local';
+      expiration.value = formatLocalDateTime(memory.expiresAt);
+      expirationField.append(expirationLabel, expiration);
+      const updateExpirationVisibility = (): void => {
+        expirationField.hidden = !['event', 'plan'].includes(typeSelect.value);
+        if (expirationField.hidden) expiration.value = '';
+      };
+      updateExpirationVisibility();
+      typeSelect.addEventListener('change', updateExpirationVisibility);
       const actions = document.createElement('div');
       actions.className = 'memory-card__actions';
       const save = createButton('保存修改', 'text-button');
@@ -728,13 +901,22 @@ export const initializeChat = async ({
       save.addEventListener('click', () => {
         void (async () => {
           if (!api) return;
+          if (!content.value.trim()) {
+            memoryStatus.textContent = '记忆内容不能为空。';
+            return;
+          }
+          const parsedExpiration = readFutureExpiration(expiration);
+          if (!parsedExpiration.ok) {
+            memoryStatus.textContent = '有效期必须是将来的时间，或者留空。';
+            return;
+          }
           const result = await api.updateMemory({
             id: memory.id,
             type: typeSelect.value as MemoryType,
             content: content.value.trim(),
             importance: Number(importance.value),
             confidence: Number(confidence.value),
-            ...(memory.expiresAt ? { expiresAt: memory.expiresAt } : {}),
+            ...('expiresAt' in parsedExpiration ? { expiresAt: parsedExpiration.expiresAt } : {}),
           });
           memoryStatus.textContent = result.ok ? '记忆已更新。' : result.message;
           if (result.ok) await loadMemories();
@@ -748,7 +930,7 @@ export const initializeChat = async ({
           if (result.ok) await loadMemories();
         })();
       });
-      card.append(typeSelect, content, metrics, source, actions);
+      card.append(typeSelect, content, metrics, expirationField, source, actions);
       memoryList.append(card);
     }
   };

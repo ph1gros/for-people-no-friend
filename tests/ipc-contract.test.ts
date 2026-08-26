@@ -9,7 +9,7 @@ describe('IPC whitelist', () => {
     }
   });
 
-  it('contains only the expected M1 to V1.1a surface', () => {
+  it('contains only the expected M1 to V1.1b surface', () => {
     expect(Object.values(IPC_CHANNELS)).toEqual([
       'app:getVersion',
       'tracking:getGlobalPoint',
@@ -39,6 +39,8 @@ describe('IPC whitelist', () => {
       'memory:setSettings',
       'memory:list',
       'memory:listCandidates',
+      'memory:updateCandidate',
+      'memory:mergeCandidates',
       'memory:confirmCandidate',
       'memory:rejectCandidate',
       'memory:update',

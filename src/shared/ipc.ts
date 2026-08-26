@@ -15,6 +15,8 @@ import type {
   StartConversationResult,
 } from './conversation-ipc';
 import type {
+  ConfirmMemoryCandidateInput,
+  MergeMemoryCandidatesInput,
   MemoryCandidateListResult,
   MemoryFileOperationResult,
   MemoryIdInput,
@@ -22,6 +24,7 @@ import type {
   MemoryOperationResult,
   MemorySettings,
   SetMemorySettingsInput,
+  UpdateMemoryCandidateInput,
   UpdateMemoryInput,
 } from './memory-ipc';
 import type {
@@ -71,6 +74,8 @@ export const IPC_CHANNELS = {
   setMemorySettings: 'memory:setSettings',
   listMemories: 'memory:list',
   listMemoryCandidates: 'memory:listCandidates',
+  updateMemoryCandidate: 'memory:updateCandidate',
+  mergeMemoryCandidates: 'memory:mergeCandidates',
   confirmMemoryCandidate: 'memory:confirmCandidate',
   rejectMemoryCandidate: 'memory:rejectCandidate',
   updateMemory: 'memory:update',
@@ -119,7 +124,9 @@ export interface DeskpetApi {
   setMemorySettings(input: SetMemorySettingsInput): Promise<MemoryOperationResult>;
   listMemories(): Promise<MemoryListResult>;
   listMemoryCandidates(): Promise<MemoryCandidateListResult>;
-  confirmMemoryCandidate(input: MemoryIdInput): Promise<MemoryOperationResult>;
+  updateMemoryCandidate(input: UpdateMemoryCandidateInput): Promise<MemoryOperationResult>;
+  mergeMemoryCandidates(input: MergeMemoryCandidatesInput): Promise<MemoryOperationResult>;
+  confirmMemoryCandidate(input: ConfirmMemoryCandidateInput): Promise<MemoryOperationResult>;
   rejectMemoryCandidate(input: MemoryIdInput): Promise<MemoryOperationResult>;
   updateMemory(input: UpdateMemoryInput): Promise<MemoryOperationResult>;
   deleteMemory(input: MemoryIdInput): Promise<MemoryOperationResult>;

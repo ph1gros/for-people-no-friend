@@ -8,6 +8,10 @@ export const MEMORY_CANDIDATE_STATUSES = ['pending', 'conflict', 'confirmed', 'r
 
 export type MemoryCandidateStatus = (typeof MEMORY_CANDIDATE_STATUSES)[number];
 
+export const MEMORY_CONFLICT_RESOLUTIONS = ['replace', 'keep-both'] as const;
+
+export type MemoryConflictResolution = (typeof MEMORY_CONFLICT_RESOLUTIONS)[number];
+
 export const MEMORY_REVIEW_REASONS = [
   'legacy_automatic',
   'conflict',
