@@ -97,6 +97,7 @@ describe('conversation runtime integration', () => {
     });
     await completed;
 
+    expect(events.find((event) => event.type === 'error')).toBeUndefined();
     expect(events.filter((event) => event.type === 'text-delta')).toEqual([
       { requestId: 'chat_1', type: 'text-delta', text: '流式' },
       { requestId: 'chat_1', type: 'text-delta', text: '回复' },
@@ -106,7 +107,7 @@ describe('conversation runtime integration', () => {
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');
     expect(capturedRequest?.systemPrompt).toContain('用户的猫叫团子');
     expect(capturedRequest?.systemPrompt).toContain('玩家社区语境，不是角色世界观事实');
-    expect(await history.list()).toEqual([
+    expect(await history.list(100, 'character-irena')).toEqual([
       expect.objectContaining({ role: 'user', content: '你好', status: 'complete' }),
       expect.objectContaining({
         role: 'assistant',

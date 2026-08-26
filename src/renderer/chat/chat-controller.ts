@@ -1354,6 +1354,7 @@ export const initializeChat = async ({
       option.selected = optionValue.active;
       characterProfileSelect.append(option);
     }
+    characterProfileField.hidden = profileOptions.length <= 1;
     providerSelect.value = conversationConfiguration.selection?.providerId ?? 'anthropic';
     updateProviderVisibility();
     modelInput.value = conversationConfiguration.selection?.modelId ?? '';

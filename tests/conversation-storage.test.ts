@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -21,13 +21,13 @@ describe('M4 local conversation storage', () => {
     }
   });
 
-  it('loads the default profile and persists validated edits', async () => {
+  it('loads only the GIF Version profile and persists validated edits', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-test-'));
     const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toEqual(DEFAULT_CHARACTER_PROFILE);
+    expect(await store.get()).toEqual(IRENA_CHARACTER_PROFILE);
 
     await store.set({
-      ...DEFAULT_CHARACTER_PROFILE,
+      ...IRENA_CHARACTER_PROFILE,
       name: '测试角色',
       personaPrompt: '保持冷静。',
       lore: {
@@ -49,127 +49,38 @@ describe('M4 local conversation storage', () => {
     });
   });
 
-  it('loads an M4/M5 profile without the optional M5.1 lore fields', async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-migration-'));
+  it('keeps the GIF Version profile separate from the Live2D profile file', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-separated-'));
     await writeFile(
-      path.join(directory, 'character-profile.v1.json'),
+      path.join(directory, 'character-profiles.v5.json'),
       JSON.stringify({
-        version: 1,
-        profile: {
-          id: 'default-character',
-          name: '旧角色',
-          userDisplayName: '你',
-          bio: '旧简介',
-          personaPrompt: '旧人格',
-          live2dModelId: 'local-model',
-          memoryNamespace: 'default-character',
-        },
+        version: 5,
+        activeProfileId: 'default-character',
+        profiles: [
+          DEFAULT_CHARACTER_PROFILE,
+          { ...IRENA_CHARACTER_PROFILE, userDisplayName: '旅行者' },
+        ],
       }),
       'utf8',
     );
     const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toMatchObject({ name: '旧角色' });
-    expect((await store.get()).lore).toBeUndefined();
+    expect(await store.get()).toMatchObject({ id: 'irena', userDisplayName: '旅行者' });
+
+    await store.set({ ...IRENA_CHARACTER_PROFILE, userDisplayName: '你' });
+    const shared = JSON.parse(
+      await readFile(path.join(directory, 'character-profiles.v5.json'), 'utf8'),
+    ) as { activeProfileId: string };
+    expect(shared.activeProfileId).toBe('default-character');
   });
 
-  it('keeps versioned character profiles separate when switching', async () => {
+  it('does not expose or activate the Live2D profile in GIF Version', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
     const store = new CharacterProfileStore(directory);
     expect(await store.list()).toEqual([
-      expect.objectContaining({ id: 'default-character', active: true }),
-      expect.objectContaining({ id: 'irena', appearanceId: 'irena-webp-v1', active: false }),
+      expect.objectContaining({ id: 'irena', appearanceId: 'irena-webp-v1', active: true }),
     ]);
 
-    await store.activate('irena');
-    expect(await store.get()).toEqual(IRENA_CHARACTER_PROFILE);
-    await store.set({ ...IRENA_CHARACTER_PROFILE, userDisplayName: '旅行者' });
-    expect(await store.get()).toMatchObject({ id: 'irena', userDisplayName: '旅行者' });
-
-    await store.activate('default-character');
-    expect(await store.get()).toEqual(DEFAULT_CHARACTER_PROFILE);
-  });
-
-  it('adds the built-in Irena lore once when upgrading a version 2 profile file', async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-v2-upgrade-'));
-    const oldIrena = { ...IRENA_CHARACTER_PROFILE, lore: undefined };
-    await writeFile(
-      path.join(directory, 'character-profiles.v2.json'),
-      JSON.stringify({
-        version: 2,
-        activeProfileId: 'irena',
-        profiles: [DEFAULT_CHARACTER_PROFILE, oldIrena],
-      }),
-      'utf8',
-    );
-
-    const store = new CharacterProfileStore(directory);
-    expect((await store.get()).lore).toMatchObject({
-      canonicalName: '伊雷娜',
-      sourceWork: '魔女之旅',
-    });
-
-    await store.set({ ...IRENA_CHARACTER_PROFILE, lore: undefined });
-    expect((await store.get()).lore).toBeUndefined();
-  });
-
-  it('adds short dialogue examples once when upgrading the built-in version 3 Irena profile', async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-v3-upgrade-'));
-    await writeFile(
-      path.join(directory, 'character-profiles.v3.json'),
-      JSON.stringify({
-        version: 3,
-        activeProfileId: 'irena',
-        profiles: [
-          DEFAULT_CHARACTER_PROFILE,
-          {
-            ...IRENA_CHARACTER_PROFILE,
-            lore: { ...IRENA_CHARACTER_PROFILE.lore, sampleLines: undefined },
-          },
-        ],
-      }),
-      'utf8',
-    );
-
-    const store = new CharacterProfileStore(directory);
-    expect((await store.get()).lore?.sampleLines).toEqual(
-      IRENA_CHARACTER_PROFILE.lore?.sampleLines,
-    );
-
-    await store.set({
-      ...IRENA_CHARACTER_PROFILE,
-      lore: { ...IRENA_CHARACTER_PROFILE.lore!, sampleLines: [] },
-    });
-    expect((await store.get()).lore?.sampleLines).toEqual([]);
-  });
-
-  it('adds structured roleplay examples once when upgrading the built-in version 4 Irena profile', async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-v4-upgrade-'));
-    await writeFile(
-      path.join(directory, 'character-profiles.v4.json'),
-      JSON.stringify({
-        version: 4,
-        activeProfileId: 'irena',
-        profiles: [
-          DEFAULT_CHARACTER_PROFILE,
-          {
-            ...IRENA_CHARACTER_PROFILE,
-            lore: { ...IRENA_CHARACTER_PROFILE.lore, roleplayExamples: undefined },
-          },
-        ],
-      }),
-      'utf8',
-    );
-
-    const store = new CharacterProfileStore(directory);
-    expect((await store.get()).lore?.roleplayExamples).toEqual(
-      IRENA_CHARACTER_PROFILE.lore?.roleplayExamples,
-    );
-
-    await store.set({
-      ...IRENA_CHARACTER_PROFILE,
-      lore: { ...IRENA_CHARACTER_PROFILE.lore!, roleplayExamples: [] },
-    });
-    expect((await store.get()).lore?.roleplayExamples).toEqual([]);
+    await expect(store.activate('default-character')).rejects.toThrow('not found');
   });
 
   it('serializes concurrent appends and can clear the session', async () => {

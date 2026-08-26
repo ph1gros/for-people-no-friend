@@ -8,7 +8,7 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 以 **1.0.0 功能基线**为起点，并加入 V1.1a～V1.1c：可信长期记忆已经补齐候选整理闭环，角色层开始支持版本化动态 WebP 表现包和独立角色切换。项目继续支持 Live2D、文字对话、安全的模型提供商配置、结构化角色卡、侧拉对话 HUD 与作品社区词库；当前不提供安装包、签名或可执行发布产物。
+当前分支是 **GIF Version**：它与 Live2D 主线共享可信长期记忆、角色资料学习、文字对话、安全模型配置和侧拉 HUD，但表现层只提供版本化动态 WebP 角色，不在界面中与 Live2D 角色互相切换。当前不提供安装包、签名或可执行发布产物。
 
 ## 1.0.0 已完成能力
 
@@ -25,7 +25,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - 自动记忆候选、来源证据、冲突确认与旧数据安全迁移
 - 候选编辑、同键证据合并、有效期调整与冲突保留选择
 - 版本化动态 WebP 角色包、动作多标签和统一显示画布
-- 角色切换，以及角色卡、历史、摘要、记忆和表现资源隔离
+- GIF Version 独立角色配置，以及角色卡、历史、摘要、记忆和表现资源隔离
 - 结构化角色卡与用户确认后的联网补全
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
@@ -53,7 +53,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - 1.0.0：M0～M5.2 功能基线
 - V1.1a：可信长期记忆最小闭环
 - V1.1b：候选整理、有效期编辑与冲突决策
-- V1.1c：版本化 WebP 角色模板、伊雷娜资源包与独立角色切换
+- V1.1c：GIF Version 分支、版本化 WebP 角色模板与伊雷娜资源包
 - 后续：M3 固定角色包、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
@@ -64,7 +64,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V1.1b 完成可信长期记忆闭环；V1.1c 加入可复用的动态 WebP 角色包、伊雷娜与独立角色切换。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V1.1b 完成可信长期记忆闭环；本 GIF Version 分支在同一套聊天能力上使用可复用动态 WebP 角色包和伊雷娜。Live2D 继续在 `main` 发展，两种表现层不在运行时互相切换。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
 
 ## 文档
 

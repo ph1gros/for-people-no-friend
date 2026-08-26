@@ -2,20 +2,14 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  DEFAULT_CHARACTER_PROFILE,
   IRENA_CHARACTER_PROFILE,
   type CharacterProfile,
   type CharacterProfileOption,
   validateCharacterProfile,
 } from '../../core/conversation/character-profile';
 
-interface LegacyCharacterProfileFile {
-  version: 1;
-  profile: CharacterProfile;
-}
-
 interface CharacterProfilesFile {
-  version: 5;
+  version: 1;
   activeProfileId: string;
   profiles: CharacterProfile[];
 }
@@ -24,18 +18,14 @@ const isMissingFile = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 
 export class CharacterProfileStore {
-  private readonly legacyFilePath: string;
-  private readonly version2FilePath: string;
-  private readonly version3FilePath: string;
-  private readonly version4FilePath: string;
+  private readonly sharedProfilePath: string;
   private readonly filePath: string;
+  private collection: CharacterProfilesFile | undefined;
+  private loading: Promise<CharacterProfilesFile> | undefined;
 
   public constructor(userDataPath: string) {
-    this.legacyFilePath = path.join(userDataPath, 'character-profile.v1.json');
-    this.version2FilePath = path.join(userDataPath, 'character-profiles.v2.json');
-    this.version3FilePath = path.join(userDataPath, 'character-profiles.v3.json');
-    this.version4FilePath = path.join(userDataPath, 'character-profiles.v4.json');
-    this.filePath = path.join(userDataPath, 'character-profiles.v5.json');
+    this.sharedProfilePath = path.join(userDataPath, 'character-profiles.v5.json');
+    this.filePath = path.join(userDataPath, 'character-profiles.webp.v1.json');
   }
 
   public async get(): Promise<CharacterProfile> {
@@ -78,43 +68,46 @@ export class CharacterProfileStore {
   }
 
   private async load(): Promise<CharacterProfilesFile> {
+    if (this.collection) return this.collection;
+    this.loading ??= this.loadUncached().finally(() => {
+      this.loading = undefined;
+    });
+    this.collection = await this.loading;
+    return this.collection;
+  }
+
+  private async loadUncached(): Promise<CharacterProfilesFile> {
     try {
       return this.validateCollection(JSON.parse(await readFile(this.filePath, 'utf8')) as unknown);
     } catch (error) {
       if (!isMissingFile(error)) throw error;
     }
 
-    for (const previousPath of [
-      this.version4FilePath,
-      this.version3FilePath,
-      this.version2FilePath,
-    ]) {
-      try {
-        const collection = this.validateCollection(
-          JSON.parse(await readFile(previousPath, 'utf8')) as unknown,
-        );
-        await this.saveCollection(collection);
-        return collection;
-      } catch (error) {
-        if (!isMissingFile(error)) throw error;
-      }
-    }
-
-    let existing = { ...DEFAULT_CHARACTER_PROFILE };
+    let profile = IRENA_CHARACTER_PROFILE;
     try {
-      const legacy = JSON.parse(
-        await readFile(this.legacyFilePath, 'utf8'),
-      ) as LegacyCharacterProfileFile;
-      if (legacy.version !== 1) throw new Error('The legacy character profile file is invalid.');
-      existing = validateCharacterProfile(legacy.profile);
+      const shared = JSON.parse(await readFile(this.sharedProfilePath, 'utf8')) as unknown;
+      if (typeof shared === 'object' && shared !== null && 'profiles' in shared) {
+        const candidate = Array.isArray(shared.profiles)
+          ? shared.profiles.find(
+              (value) =>
+                typeof value === 'object' &&
+                value !== null &&
+                'id' in value &&
+                value.id === IRENA_CHARACTER_PROFILE.id,
+            )
+          : undefined;
+        if (candidate) profile = validateCharacterProfile(candidate);
+      }
     } catch (error) {
       if (!isMissingFile(error)) throw error;
     }
-    const profiles = [existing];
-    if (existing.id !== IRENA_CHARACTER_PROFILE.id) {
-      profiles.push({ ...IRENA_CHARACTER_PROFILE });
-    }
-    return { version: 5, activeProfileId: existing.id, profiles };
+    const collection: CharacterProfilesFile = {
+      version: 1,
+      activeProfileId: IRENA_CHARACTER_PROFILE.id,
+      profiles: [profile],
+    };
+    await this.saveCollection(collection);
+    return collection;
   }
 
   private validateCollection(value: unknown): CharacterProfilesFile {
@@ -122,65 +115,24 @@ export class CharacterProfileStore {
       typeof value !== 'object' ||
       value === null ||
       !('version' in value) ||
-      (value.version !== 2 && value.version !== 3 && value.version !== 4 && value.version !== 5) ||
+      value.version !== 1 ||
       !('activeProfileId' in value) ||
       typeof value.activeProfileId !== 'string' ||
       !('profiles' in value) ||
       !Array.isArray(value.profiles) ||
-      value.profiles.length === 0 ||
-      value.profiles.length > 16
+      value.profiles.length !== 1
     ) {
       throw new Error('The character profiles file is invalid.');
     }
-    let profiles = value.profiles.map(validateCharacterProfile);
+    const profiles = value.profiles.map(validateCharacterProfile);
     if (
-      new Set(profiles.map(({ id }) => id)).size !== profiles.length ||
-      !profiles.some(({ id }) => id === value.activeProfileId)
+      profiles[0]?.id !== IRENA_CHARACTER_PROFILE.id ||
+      profiles[0].live2dModelId !== IRENA_CHARACTER_PROFILE.live2dModelId ||
+      value.activeProfileId !== IRENA_CHARACTER_PROFILE.id
     ) {
       throw new Error('The character profiles file is invalid.');
     }
-    if (value.version === 2) {
-      profiles = profiles.map((profile) =>
-        profile.id === IRENA_CHARACTER_PROFILE.id &&
-        profile.live2dModelId === IRENA_CHARACTER_PROFILE.live2dModelId &&
-        profile.memoryNamespace === IRENA_CHARACTER_PROFILE.memoryNamespace &&
-        !profile.lore
-          ? { ...profile, lore: IRENA_CHARACTER_PROFILE.lore }
-          : profile,
-      );
-    }
-    if (value.version <= 3) {
-      profiles = profiles.map((profile) =>
-        profile.id === IRENA_CHARACTER_PROFILE.id &&
-        profile.live2dModelId === IRENA_CHARACTER_PROFILE.live2dModelId &&
-        profile.memoryNamespace === IRENA_CHARACTER_PROFILE.memoryNamespace &&
-        profile.lore?.sources.some(({ id }) => id === 'majotabi-official-character') &&
-        profile.lore.sampleLines?.length === 0
-          ? {
-              ...profile,
-              lore: { ...profile.lore, sampleLines: IRENA_CHARACTER_PROFILE.lore?.sampleLines },
-            }
-          : profile,
-      );
-    }
-    if (value.version <= 4) {
-      profiles = profiles.map((profile) =>
-        profile.id === IRENA_CHARACTER_PROFILE.id &&
-        profile.live2dModelId === IRENA_CHARACTER_PROFILE.live2dModelId &&
-        profile.memoryNamespace === IRENA_CHARACTER_PROFILE.memoryNamespace &&
-        profile.lore?.sources.some(({ id }) => id === 'majotabi-official-character') &&
-        profile.lore.roleplayExamples?.length === 0
-          ? {
-              ...profile,
-              lore: {
-                ...profile.lore,
-                roleplayExamples: IRENA_CHARACTER_PROFILE.lore?.roleplayExamples,
-              },
-            }
-          : profile,
-      );
-    }
-    return { version: 5, activeProfileId: value.activeProfileId, profiles };
+    return { version: 1, activeProfileId: value.activeProfileId, profiles };
   }
 
   private async saveCollection(collection: CharacterProfilesFile): Promise<void> {
@@ -193,6 +145,7 @@ export class CharacterProfileStore {
     });
     try {
       await rename(temporaryPath, this.filePath);
+      this.collection = validated;
     } catch (error) {
       await rm(temporaryPath, { force: true });
       throw error;
