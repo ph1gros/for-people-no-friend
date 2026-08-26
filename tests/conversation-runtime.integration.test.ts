@@ -48,7 +48,7 @@ describe('conversation runtime integration', () => {
         memories: [
           {
             id: 'memory-cat',
-            namespace: 'default-character',
+            namespace: 'character-m3',
             type: 'fact',
             normalizedKey: 'pet-cat-name',
             content: '用户的猫叫团子',
@@ -106,7 +106,7 @@ describe('conversation runtime integration', () => {
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');
     expect(capturedRequest?.systemPrompt).toContain('用户的猫叫团子');
     expect(capturedRequest?.systemPrompt).toContain('玩家社区语境，不是角色世界观事实');
-    expect(await history.list()).toEqual([
+    expect(await history.list(100, 'character-m3')).toEqual([
       expect.objectContaining({ role: 'user', content: '你好', status: 'complete' }),
       expect.objectContaining({
         role: 'assistant',

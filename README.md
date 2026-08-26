@@ -8,7 +8,7 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 是 **Live2D Version**：可信长期记忆已经补齐候选整理闭环，角色资料整理会继续查找身份、背景、关系和台词，并生成带来源的情境示例。项目继续支持 Live2D、文字对话、安全的模型提供商配置、结构化角色卡、侧拉对话 HUD 与作品社区词库；动态 WebP 桌宠在独立的 `gif-version` 分支发展。
+当前 `main` 是 **Live2D Version**：M3（Mon3tr）作为公开示例角色，附带来源可查的角色资料、情境表达参考和《明日方舟》作品社区词库。项目继续支持 Live2D、文字对话、安全的模型提供商配置、可信长期记忆、侧拉对话 HUD 与作品社区词库；动态 WebP 伊雷娜则在独立的 `gif-version` 分支发展。
 
 ## 1.0.0 已完成能力
 
@@ -53,7 +53,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - V1.1a：可信长期记忆最小闭环
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：角色资料与情境对话增强；动态 WebP 伊雷娜进入 `gif-version` 支线
-- 后续：M3 固定 Live2D 角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+- 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
@@ -82,12 +82,13 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 - [M5.2 对话体验修整设计](docs/M5_2_DESIGN.md)
 - [V1.1a 可信长期记忆实现](docs/V1_1A_IMPLEMENTATION.md)
 - [V1.1b 记忆整理实现](docs/V1_1B_IMPLEMENTATION.md)
+- [公开示例角色包](docs/EXAMPLE_CHARACTER_PACK.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
 ## 角色与表现资源
 
-v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动起来”，不负责决定她是谁。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会被当成正式角色人格；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
+主线新安装默认使用 M3 的公开资料卡；Live2D 外观仍由用户在本机放置，角色资料和模型文件不是一回事。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会因为文件名被当成 M3；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
 
 主线与支线共享角色资料学习、长期记忆和安全边界，但不在运行时互相切换：`main` 专注 Live2D 的完整表现能力，`gif-version` 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
 
@@ -96,4 +97,5 @@ v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动�
 - 私钥、密码、API Key、访问令牌和 `.env` 不提交到 Git。
 - Live2D 第三方模型文件默认不提交。
 - 对话数据默认只保存在本机。
+- 示例角色包只包含公开资料、来源和公开作品词库，不包含用户对话、长期记忆、摘要或本机模型配置。
 - 第一版不请求截图、全局键盘监听、桌面控制或代码执行权限。

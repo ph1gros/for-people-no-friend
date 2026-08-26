@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_CHARACTER_PROFILE,
-  IRENA_CHARACTER_PROFILE,
+  M3_CHARACTER_PROFILE,
 } from '../src/core/conversation/character-profile';
 import { CharacterProfileStore } from '../src/main/storage/character-profile-store';
 import { ConversationStore } from '../src/main/storage/conversation-store';
@@ -24,10 +24,10 @@ describe('M4 local conversation storage', () => {
   it('loads the default profile and persists validated edits', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-test-'));
     const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toEqual(DEFAULT_CHARACTER_PROFILE);
+    expect(await store.get()).toEqual(M3_CHARACTER_PROFILE);
 
     await store.set({
-      ...DEFAULT_CHARACTER_PROFILE,
+      ...M3_CHARACTER_PROFILE,
       name: '测试角色',
       personaPrompt: '保持冷静。',
       lore: {
@@ -56,7 +56,10 @@ describe('M4 local conversation storage', () => {
       JSON.stringify({
         version: 5,
         activeProfileId: 'irena',
-        profiles: [{ ...DEFAULT_CHARACTER_PROFILE, name: 'Live2D 角色' }, IRENA_CHARACTER_PROFILE],
+        profiles: [
+          { ...DEFAULT_CHARACTER_PROFILE, name: 'Live2D 角色' },
+          { ...M3_CHARACTER_PROFILE, id: 'irena', live2dModelId: 'irena-webp-v1' },
+        ],
       }),
       'utf8',
     );
@@ -73,9 +76,7 @@ describe('M4 local conversation storage', () => {
   it('does not expose or activate the GIF Version profile on main', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
     const store = new CharacterProfileStore(directory);
-    expect(await store.list()).toEqual([
-      expect.objectContaining({ id: 'default-character', active: true }),
-    ]);
+    expect(await store.list()).toEqual([expect.objectContaining({ id: 'm3', active: true })]);
 
     await expect(store.activate('irena')).rejects.toThrow('not found');
   });

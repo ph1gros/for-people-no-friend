@@ -5,7 +5,7 @@ import {
   selectRecentMessages,
 } from '../src/core/conversation/context-assembler';
 import { DEFAULT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
-import { IRENA_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
+import { M3_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
 
 describe('conversation context assembly', () => {
   it('keeps only the newest bounded messages in chronological order', () => {
@@ -131,7 +131,7 @@ describe('conversation context assembly', () => {
 
   it('selects a few situation-matched roleplay examples instead of injecting the whole card', () => {
     const prompt = buildConversationSystemPrompt(
-      IRENA_CHARACTER_PROFILE,
+      M3_CHARACTER_PROFILE,
       [],
       '',
       '我今天失败了，有点难过，能陪我聊聊吗？',
@@ -139,8 +139,8 @@ describe('conversation context assembly', () => {
 
     expect(prompt).toContain('当前对话可参考的角色反应');
     expect(prompt).toContain('用户情绪低落');
-    expect(prompt).toContain('别担心，我会看着你的。');
-    expect(prompt).not.toContain('事情似乎更有趣了。');
-    expect(prompt.match(/^- 场景：/gmu)).toHaveLength(2);
+    expect(prompt).toContain('我不会催你振作');
+    expect(prompt).not.toContain('可以做，但风险不值得忽略');
+    expect(prompt.match(/^- 场景：/gmu)).toHaveLength(4);
   });
 });

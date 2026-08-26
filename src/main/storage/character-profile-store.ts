@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  DEFAULT_CHARACTER_PROFILE,
+  M3_CHARACTER_PROFILE,
   type CharacterProfile,
   type CharacterProfileOption,
   validateCharacterProfile,
@@ -78,7 +78,7 @@ export class CharacterProfileStore {
       if (!isMissingFile(error)) throw error;
     }
 
-    let profile = DEFAULT_CHARACTER_PROFILE;
+    let profile = M3_CHARACTER_PROFILE;
     try {
       const shared = JSON.parse(await readFile(this.sharedProfilePath, 'utf8')) as unknown;
       if (typeof shared === 'object' && shared !== null && 'profiles' in shared) {
