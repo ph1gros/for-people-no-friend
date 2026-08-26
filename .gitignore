@@ -1,0 +1,35 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+config.local.*
+*.key
+*.pem
+
+# Dependencies and builds
+node_modules/
+dist/
+dist-electron/
+out/
+release/
+coverage/
+.vite/
+
+# Logs and runtime data
+*.log
+logs/
+data/
+conversations/
+screenshots/
+
+# Third-party and local Live2D assets
+assets/models/local/
+*.moc3
+*.cmo3
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini

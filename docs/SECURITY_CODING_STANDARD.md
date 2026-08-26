@@ -1,0 +1,84 @@
+# 安全编码规范 / Security Coding Standard
+
+本文档是 For people no friend 的强制开发约束。它适用于人工开发、自动化编码代理、测试代码和未来角色模板。功能需求不能默认为扩大权限；任何例外都需要用户针对当前里程碑明确授权。
+
+## 1. Electron 信任边界
+
+- **Main Process** 独占文件系统、SQLite、`safeStorage`、系统对话框、外部网络和窗口权限。
+- **Preload** 只通过 `contextBridge` 暴露具体、可命名、可审计的方法，不暴露原始 `ipcRenderer`、Node.js 模块或通用 `invoke(channel, value)`。
+- **Renderer** 视为不可信界面层，不直接读取磁盘、密钥、数据库或任意 URL。
+- 每个 IPC handler 都要验证 sender 是当前窗口的 main frame，并在 Main 中重新校验类型、长度、枚举、数量、路径和数值范围。
+
+安全的 IPC 形状：
+
+```ts
+// Preload：固定方法和固定频道。
+confirmMemoryCandidate(input: { id: string }) {
+  return ipcRenderer.invoke(IPC_CHANNELS.confirmMemoryCandidate, input);
+}
+
+// Main：先验证来源，再解析不可信输入。
+ipcMain.handle(IPC_CHANNELS.confirmMemoryCandidate, (event, input: unknown) => {
+  assertTrustedMainFrame(event.senderFrame);
+  const { id } = parseMemoryIdInput(input);
+  return memories.confirm(activeNamespace, id);
+});
+```
+
+禁止的形状：
+
+```ts
+// 禁止把任意频道、路径或命令交给 Renderer。
+window.api.invoke(channelFromPage, arbitraryValue);
+window.api.readFile(pathFromPage);
+window.api.exec(commandFromPage);
+```
+
+## 2. 密钥与个人数据
+
+- 不索取、不读取、不输出真实 API Key、令牌、密码、私钥或账号切换配置。
+- Provider 密钥只在 Main 中经 `safeStorage` 加密保存；Renderer 最多看到“是否已配置”和脱敏状态。
+- 日志不得包含密钥、Authorization header、完整模型请求、私人对话、来源原文或本地绝对路径。
+- 自动测试只使用 mock/fake、临时目录、临时 SQLite 和 `127.0.0.1` 本地 HTTP。
+- 删除记忆时必须擦除正文、来源关联和检索索引；界面隐藏不等于删除。
+
+## 3. IPC、存储与输入校验
+
+- 所有跨边界数据先按 `unknown` 接收，再由共享解析器返回窄类型。
+- 字符串必须限制长度；数组限制数量；ID 使用允许字符白名单；数值必须检查有限性和范围。
+- SQLite 查询使用参数绑定；多表更新使用事务；文件配置使用临时文件加原子重命名。
+- 数据库迁移必须可重复启动、保留旧数据并包含从上一公开版本升级的测试。
+- 角色卡、用户记忆、作品词库和表现资源使用不同的数据结构与命名空间。
+
+## 4. 网络与外部内容
+
+- 外部请求由 Main 发起，并配置 HTTPS 限制、允许的来源、超时、取消、响应大小上限和重定向复核。
+- 网页、模型输出、角色资料和导入清单都属于不可信输入；不得把其 HTML 当作 Renderer DOM 注入。
+- 网络、记忆维护、角色资料或表现资源失败时，文字聊天应软降级，不得崩溃或静默切换服务商。
+- 不因添加一个连接器而自动获得文件写入、工具调用、屏幕观察或桌面控制权限。
+
+## 5. 角色模板与本地资源
+
+- 角色模板使用带版本的 schema；角色实例固定引用模板版本，升级不能静默改变旧角色。
+- 资源清单只允许受管理目录内的安全相对路径，拒绝绝对路径、`..`、协议 URL 和可执行文件。
+- 导入 GIF 或其他媒体时，由 Main 校验文件签名、扩展名、MIME、大小和数量，再复制到应用管理目录。
+- `idle` 是必需回退状态；未知标签、缺失文件或解码失败必须回退到 `neutral` 或 `idle`，并保持文字回复可用。
+- 不同角色的角色卡、历史、摘要、记忆水位、记忆命名空间和资源包必须隔离。
+
+## 6. 依赖、许可证与高风险能力
+
+- 优先使用现有依赖和平台能力；新增依赖前检查维护状态、许可证、安装脚本和权限范围。
+- 不复制 GPL 或来源不明代码到本仓库；参考项目只用于理解设计和测试方法。
+- Qdrant、Embedding、Neo4j、Python 记忆服务、语音、Agent、MCP、工具调用、屏幕观察、桌面控制和任意代码执行必须进入独立里程碑并获得明确授权。
+- 不在普通功能修改中顺带制作安装包、发布 Release、推送仓库或改变可见性。
+
+## 7. 完成定义
+
+提交前至少确认：
+
+- 没有真实凭据、私人账号资料、绝对用户路径或敏感日志进入 diff。
+- 新 IPC 已覆盖合法输入、越界输入和伪造 sender 测试。
+- 新网络行为使用 fake 或本地 HTTP 测试，失败路径不会阻断基础聊天。
+- 数据迁移、删除、回退和角色隔离有自动测试。
+- 小改动运行相关测试；跨边界或里程碑改动运行 `pnpm verify`。
+- 未获得用户授权时，没有打包、提交、推送、发布或扩大系统权限。

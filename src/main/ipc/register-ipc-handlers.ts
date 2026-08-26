@@ -1,0 +1,351 @@
+import { writeFile } from 'node:fs/promises';
+import path from 'node:path';
+
+import { app, dialog, ipcMain, screen, type BrowserWindow } from 'electron';
+
+import {
+  parseBuildCharacterDraftInput,
+  parseCancelCharacterResearchInput,
+  parseSearchCharactersInput,
+  type CharacterDraftResult,
+  type CharacterSearchResult,
+} from '../../shared/character-research-ipc';
+import {
+  parseCancelConversationInput,
+  parseCharacterProfileInput,
+  parseConversationConfiguration,
+  parseStartConversationInput,
+} from '../../shared/conversation-ipc';
+import { IPC_CHANNELS } from '../../shared/ipc';
+import {
+  parseMemoryIdInput,
+  parseSetMemorySettingsInput,
+  parseUpdateMemoryInput,
+  type MemoryFileOperationResult,
+  type MemoryOperationResult,
+} from '../../shared/memory-ipc';
+import type { ModelOperationResult } from '../../shared/model-ipc';
+import {
+  parseCancelProviderRequestInput,
+  parseDeleteProviderSecretInput,
+  parseProviderConfiguration,
+  parseSetProviderSecretInput,
+  parseTestProviderConnectionInput,
+} from '../../shared/model-ipc';
+import { parseSetChatPanelExpandedInput, parseSetWindowScaleInput } from '../../shared/window-ipc';
+import { parseWorkGlossaryInput } from '../../shared/work-glossary-ipc';
+import type { CharacterResearchService } from '../character/character-research-service';
+import type { WorkGlossaryService } from '../glossary/work-glossary-service';
+import type { ConversationRuntime } from '../conversation/conversation-runtime';
+import type { ModelRuntime } from '../llm/model-runtime';
+import type { MemoryService } from '../memory/memory-service';
+import type { CharacterProfileStore } from '../storage/character-profile-store';
+import { normalizeCursorToWorkArea } from './global-tracking';
+import { isTrustedIpcSender } from './sender-validation';
+
+export interface IpcWindowController {
+  getWindow(): BrowserWindow | undefined;
+  getScale(): number;
+  setScale(scale: number): number;
+  setChatPanelExpanded(expanded: boolean): void;
+}
+
+const requireTrustedSender = (
+  event: Parameters<typeof isTrustedIpcSender>[0],
+  windows: IpcWindowController,
+): void => {
+  if (!isTrustedIpcSender(event, windows.getWindow())) {
+    throw new Error('Unauthorized IPC sender.');
+  }
+};
+
+const runModelOperation = async (operation: () => Promise<void>): Promise<ModelOperationResult> => {
+  try {
+    await operation();
+    return { ok: true };
+  } catch {
+    return {
+      ok: false,
+      error: {
+        code: 'configuration',
+        message: 'The model provider settings could not be saved.',
+        retryable: false,
+      },
+    };
+  }
+};
+
+const runMemoryOperation = async (
+  operation: () => void | Promise<void>,
+): Promise<MemoryOperationResult> => {
+  try {
+    await operation();
+    return { ok: true };
+  } catch {
+    return { ok: false, message: '记忆操作失败，本轮对话仍可继续。' };
+  }
+};
+
+const showSaveDialog = (
+  windows: IpcWindowController,
+  options: Electron.SaveDialogOptions,
+): Promise<Electron.SaveDialogReturnValue> => {
+  const window = windows.getWindow();
+  return window ? dialog.showSaveDialog(window, options) : dialog.showSaveDialog(options);
+};
+
+export const registerIpcHandlers = (
+  windows: IpcWindowController,
+  models: ModelRuntime,
+  conversations: ConversationRuntime,
+  profiles: CharacterProfileStore,
+  memories: MemoryService,
+  characterResearch: CharacterResearchService,
+  workGlossary: WorkGlossaryService,
+): void => {
+  ipcMain.handle(IPC_CHANNELS.getAppVersion, (event) => {
+    requireTrustedSender(event, windows);
+    return app.getVersion();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getGlobalTrackingPoint, (event) => {
+    if (!isTrustedIpcSender(event, windows.getWindow())) {
+      return undefined;
+    }
+    const window = windows.getWindow();
+    if (!window) {
+      return undefined;
+    }
+    const bounds = window.getBounds();
+    const workArea = screen.getDisplayMatching(bounds).workArea;
+    return normalizeCursorToWorkArea(screen.getCursorScreenPoint(), workArea);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.listModelProviders, (event) => {
+    requireTrustedSender(event, windows);
+    return models.listProviders();
+  });
+  ipcMain.handle(IPC_CHANNELS.getProviderConfiguration, async (event) => {
+    requireTrustedSender(event, windows);
+    return models.getConfiguration();
+  });
+  ipcMain.handle(IPC_CHANNELS.setProviderConfiguration, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(() => models.setConfiguration(parseProviderConfiguration(input)));
+  });
+  ipcMain.handle(IPC_CHANNELS.getProviderSecretStatus, async (event) => {
+    requireTrustedSender(event, windows);
+    return models.getSecretStatus();
+  });
+  ipcMain.handle(IPC_CHANNELS.setProviderSecret, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(() => {
+      const parsed = parseSetProviderSecretInput(input);
+      return models.setSecret(parsed.providerId, parsed.apiKey);
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.deleteProviderSecret, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(() => {
+      const parsed = parseDeleteProviderSecretInput(input);
+      return models.deleteSecret(parsed.providerId);
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.testProviderConnection, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return models.testConnection(parseTestProviderConnectionInput(input));
+  });
+  ipcMain.handle(IPC_CHANNELS.cancelProviderRequest, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return models.cancel(parseCancelProviderRequestInput(input).requestId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getConversationConfiguration, async (event) => {
+    requireTrustedSender(event, windows);
+    return models.getConversationConfiguration();
+  });
+  ipcMain.handle(IPC_CHANNELS.setConversationConfiguration, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(() =>
+      models.setConversationConfiguration(parseConversationConfiguration(input)),
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.getCharacterProfile, async (event) => {
+    requireTrustedSender(event, windows);
+    return profiles.get();
+  });
+  ipcMain.handle(IPC_CHANNELS.setCharacterProfile, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(() => profiles.set(parseCharacterProfileInput(input)));
+  });
+  ipcMain.handle(IPC_CHANNELS.getConversationHistory, async (event) => {
+    requireTrustedSender(event, windows);
+    return conversations.listHistory();
+  });
+  ipcMain.handle(IPC_CHANNELS.clearConversationHistory, (event) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(() => conversations.clearHistory());
+  });
+  ipcMain.handle(IPC_CHANNELS.startConversation, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const sender = event.sender;
+    return conversations.start(parseStartConversationInput(input), (conversationEvent) => {
+      const window = windows.getWindow();
+      if (
+        window &&
+        !window.isDestroyed() &&
+        window.webContents === sender &&
+        !sender.isDestroyed()
+      ) {
+        sender.send(IPC_CHANNELS.conversationEvent, conversationEvent);
+      }
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.cancelConversation, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return conversations.cancel(parseCancelConversationInput(input).requestId);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.searchCharacters,
+    async (event, input: unknown): Promise<CharacterSearchResult> => {
+      requireTrustedSender(event, windows);
+      try {
+        const parsed = parseSearchCharactersInput(input);
+        return {
+          ok: true,
+          candidates: await characterResearch.search(
+            parsed.requestId,
+            parsed.name,
+            parsed.sourceWork,
+          ),
+        };
+      } catch {
+        return { ok: false, message: '暂时无法查询角色资料，请稍后重试。' };
+      }
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.buildCharacterDraft,
+    async (event, input: unknown): Promise<CharacterDraftResult> => {
+      requireTrustedSender(event, windows);
+      try {
+        const parsed = parseBuildCharacterDraftInput(input);
+        return {
+          ok: true,
+          draft: await characterResearch.buildDraft(parsed.requestId, parsed.candidateId),
+        };
+      } catch {
+        return { ok: false, message: '没有取得可用的角色资料，请选择其他候选。' };
+      }
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.cancelCharacterResearch, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return characterResearch.cancel(parseCancelCharacterResearchInput(input).requestId);
+  });
+  ipcMain.handle(IPC_CHANNELS.getWorkGlossaryStatus, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return workGlossary.getStatus(parseWorkGlossaryInput(input).sourceWork);
+  });
+  ipcMain.handle(IPC_CHANNELS.syncWorkGlossary, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return workGlossary.sync(parseWorkGlossaryInput(input).sourceWork);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getMemorySettings, (event) => {
+    requireTrustedSender(event, windows);
+    return { automaticMemoryEnabled: memories.isAutomaticMemoryEnabled() };
+  });
+  ipcMain.handle(IPC_CHANNELS.setMemorySettings, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runMemoryOperation(() => {
+      const parsed = parseSetMemorySettingsInput(input);
+      memories.setAutomaticMemoryEnabled(parsed.automaticMemoryEnabled);
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.listMemories, async (event) => {
+    requireTrustedSender(event, windows);
+    const profile = await profiles.get();
+    return memories.list(profile.memoryNamespace);
+  });
+  ipcMain.handle(IPC_CHANNELS.updateMemory, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const parsed = parseUpdateMemoryInput(input);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      if (!memories.update(profile.memoryNamespace, parsed.id, parsed.candidate)) {
+        throw new Error('Memory not found.');
+      }
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.deleteMemory, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { id } = parseMemoryIdInput(input);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      if (!memories.delete(profile.memoryNamespace, id)) {
+        throw new Error('Memory not found.');
+      }
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.clearMemories, async (event) => {
+    requireTrustedSender(event, windows);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      memories.clear(profile.memoryNamespace);
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.exportMemories, async (event): Promise<MemoryFileOperationResult> => {
+    requireTrustedSender(event, windows);
+    const result = await showSaveDialog(windows, {
+      title: '导出 For people no friend 记忆',
+      defaultPath: path.join(app.getPath('documents'), 'for-people-no-friend-memories.json'),
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { ok: true, canceled: true };
+    }
+    try {
+      const profile = await profiles.get();
+      await writeFile(
+        result.filePath,
+        JSON.stringify(memories.exportData(profile.memoryNamespace), null, 2),
+        { encoding: 'utf8', mode: 0o600 },
+      );
+      return { ok: true, canceled: false };
+    } catch {
+      return { ok: false, canceled: false, message: '记忆 JSON 导出失败。' };
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.backupMemory, async (event): Promise<MemoryFileOperationResult> => {
+    requireTrustedSender(event, windows);
+    const result = await showSaveDialog(windows, {
+      title: '备份 For people no friend 本地数据库',
+      defaultPath: path.join(app.getPath('documents'), 'for-people-no-friend-memory-backup.sqlite'),
+      filters: [{ name: 'SQLite', extensions: ['sqlite'] }],
+    });
+    if (result.canceled || !result.filePath) {
+      return { ok: true, canceled: true };
+    }
+    try {
+      await memories.backup(result.filePath);
+      return { ok: true, canceled: false };
+    } catch {
+      return { ok: false, canceled: false, message: 'SQLite 数据库备份失败。' };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.getWindowScale, (event) => {
+    requireTrustedSender(event, windows);
+    return windows.getScale();
+  });
+  ipcMain.handle(IPC_CHANNELS.setWindowScale, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return windows.setScale(parseSetWindowScaleInput(input).scale);
+  });
+  ipcMain.handle(IPC_CHANNELS.setChatPanelExpanded, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    windows.setChatPanelExpanded(parseSetChatPanelExpandedInput(input).expanded);
+  });
+};

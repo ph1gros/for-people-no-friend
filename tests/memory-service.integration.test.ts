@@ -1,0 +1,120 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
+import type { ChatEvent, ChatRequest, ModelSelection, ModelTask } from '../src/core/llm/contracts';
+import { MemoryService } from '../src/main/memory/memory-service';
+import { DeskpetDatabase } from '../src/main/storage/deskpet-database';
+import type { ConversationMessage } from '../src/shared/conversation-ipc';
+
+describe('M5 memory service integration', () => {
+  let directory: string | undefined;
+  let database: DeskpetDatabase | undefined;
+
+  afterEach(async () => {
+    database?.close();
+    database = undefined;
+    if (directory) {
+      await rm(directory, { recursive: true, force: true });
+      directory = undefined;
+    }
+  });
+
+  it('handles explicit remember and forget without a model call', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-service-'));
+    database = new DeskpetDatabase(directory);
+    let modelCalled = false;
+    const models = {
+      streamMemoryTask: async function* (): AsyncIterable<ChatEvent> {
+        modelCalled = true;
+        yield { type: 'finish', reason: 'unexpected' };
+      },
+    };
+    const service = new MemoryService(database, models);
+    expect(
+      service.handleExplicitIntent('default-character', {
+        id: 'user-1',
+        role: 'user',
+        content: '记住：我喜欢蓝色。',
+        createdAt: 1,
+        status: 'complete',
+      }),
+    ).toEqual({ remembered: true, forgotten: 0 });
+    expect(service.list('default-character')).toEqual([
+      expect.objectContaining({ content: '我喜欢蓝色', source: 'manual' }),
+    ]);
+    expect(
+      service.handleExplicitIntent('default-character', {
+        id: 'user-2',
+        role: 'user',
+        content: '忘掉：蓝色',
+        createdAt: 2,
+        status: 'complete',
+      }),
+    ).toEqual({ remembered: false, forgotten: 1 });
+    expect(service.list('default-character')).toEqual([]);
+    expect(modelCalled).toBe(false);
+  });
+
+  it('summarizes only old complete turns and extracts a bounded automatic batch', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-maintenance-'));
+    database = new DeskpetDatabase(directory);
+    const calls: { task: string; request: ChatRequest }[] = [];
+    const models = {
+      streamMemoryTask: async function* (
+        task: Extract<ModelTask, 'memoryExtraction' | 'summarization'>,
+        request: ChatRequest,
+      ): AsyncIterable<ChatEvent> {
+        calls.push({ task, request });
+        if (task === 'summarization') {
+          yield { type: 'text-delta', text: '{"summary":"用户早些时候讨论过学习计划。"}' };
+        } else {
+          yield {
+            type: 'text-delta',
+            text: JSON.stringify([
+              {
+                type: 'preference',
+                normalizedKey: 'color',
+                content: '用户喜欢蓝色',
+                importance: 0.8,
+                confidence: 0.9,
+              },
+            ]),
+          };
+        }
+        yield { type: 'finish', reason: 'stop' };
+      },
+    };
+    const service = new MemoryService(database, models);
+    service.setAutomaticMemoryEnabled(true);
+    const messages: ConversationMessage[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `message-${index}`,
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: index === 28 ? '我喜欢蓝色' : `第 ${index + 1} 条对话内容`,
+      createdAt: index,
+      status: 'complete',
+    }));
+    const selection: ModelSelection = { providerId: 'openai-compatible', modelId: 'fake' };
+    service.scheduleMaintenance('default-character', selection, messages);
+    await service.waitForMaintenance();
+
+    expect(calls.map((call) => call.task)).toEqual(['summarization', 'memoryExtraction']);
+    expect(calls[0]?.request.messages).toHaveLength(10);
+    expect(calls[0]?.request.messages.at(-1)?.content).toContain('10');
+    expect(database.getSummary()).toMatchObject({
+      summary: '用户早些时候讨论过学习计划。',
+      coveredUntilMessageId: 'message-9',
+    });
+    expect(service.list('default-character')).toEqual([
+      expect.objectContaining({ content: '用户喜欢蓝色', source: 'automatic' }),
+    ]);
+    expect(service.getConversationContext('default-character', '你记得我喜欢什么颜色吗')).toEqual(
+      expect.objectContaining({
+        summary: '用户早些时候讨论过学习计划。',
+        memories: [expect.objectContaining({ content: '用户喜欢蓝色' })],
+      }),
+    );
+  });
+});

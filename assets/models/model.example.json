@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "Hiyori",
+  "core": "live2dcubismcore.min.js",
+  "model": "Hiyori/Hiyori.model3.json",
+  "parameters": {},
+  "controls": {
+    "states": {
+      "idle": { "group": "Idle", "index": 0 },
+      "thinking": { "group": "Idle", "index": 0 },
+      "talking": { "group": "Idle", "index": 0 }
+    },
+    "actions": {
+      "tapBody": { "group": "TapBody", "index": 0 }
+    },
+    "emotions": {
+      "neutral": "neutral",
+      "happy": "smile"
+    }
+  }
+}
