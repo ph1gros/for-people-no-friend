@@ -5,6 +5,7 @@ import type {
   CharacterResearchCandidate,
   CharacterResearchDraft,
 } from '../../core/character/character-research';
+import { DEFAULT_CHARACTER_PROFILE } from '../../core/conversation/character-profile';
 
 export interface CharacterLoreGenerationInput {
   canonicalName: string;
@@ -207,6 +208,28 @@ const boundedChineseText = (value: unknown, maximum: number): string => {
   return text;
 };
 
+const inferUserDisplayName = (speechStyle: string): string => {
+  const match =
+    /(?:对用户(?:的)?称呼|称呼用户|称用户)(?:为|是|作)?[“”「」『』'"\s]*([^，。；、\n“”「」『』'"]{1,20})/u.exec(
+      speechStyle,
+    );
+  return match?.[1]?.trim() || DEFAULT_CHARACTER_PROFILE.userDisplayName;
+};
+
+const buildProfileFields = (
+  lore: Pick<CharacterLore, 'identity' | 'personality' | 'speechStyle'>,
+): CharacterResearchDraft['profileFields'] => ({
+  userDisplayName: inferUserDisplayName(lore.speechStyle),
+  bio: lore.identity || DEFAULT_CHARACTER_PROFILE.bio,
+  personaPrompt:
+    [
+      lore.personality ? `性格：${lore.personality}` : '',
+      lore.speechStyle ? `说话方式：${lore.speechStyle}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n') || DEFAULT_CHARACTER_PROFILE.personaPrompt,
+});
+
 const selectSourceText = (pages: Array<{ title: string; extract: string }>): string => {
   const hasDetailPages = pages.some((page) => /\/(file|dialogue|语音记录)$/iu.test(page.title));
   const hasChineseVoicePage = pages.some((page) => /\/语音记录$/u.test(page.title));
@@ -382,18 +405,20 @@ export class CharacterResearchService {
           '资料已找到，但模型没有生成可用的中文角色设定。详细字段保持为空，你可以重试或手动填写。',
         );
       }
+      const lore: CharacterLore = {
+        canonicalName: fallback.canonicalName,
+        aliases: boundedStrings(generated.aliases, 20, 120),
+        sourceWork: fallback.sourceWork,
+        identity,
+        personality,
+        background,
+        relationships,
+        speechStyle,
+        sources,
+      };
       return {
-        lore: {
-          canonicalName: fallback.canonicalName,
-          aliases: boundedStrings(generated.aliases, 20, 120),
-          sourceWork: fallback.sourceWork,
-          identity,
-          personality,
-          background,
-          relationships,
-          speechStyle,
-          sources,
-        },
+        lore,
+        profileFields: buildProfileFields(lore),
         warnings,
       };
     });

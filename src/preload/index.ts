@@ -138,6 +138,18 @@ const deskpetApi: DeskpetApi = Object.freeze({
     >,
   listMemories: () =>
     ipcRenderer.invoke(IPC_CHANNELS.listMemories) as ReturnType<DeskpetApi['listMemories']>,
+  listMemoryCandidates: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.listMemoryCandidates) as ReturnType<
+      DeskpetApi['listMemoryCandidates']
+    >,
+  confirmMemoryCandidate: (input: MemoryIdInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.confirmMemoryCandidate, input) as ReturnType<
+      DeskpetApi['confirmMemoryCandidate']
+    >,
+  rejectMemoryCandidate: (input: MemoryIdInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.rejectMemoryCandidate, input) as ReturnType<
+      DeskpetApi['rejectMemoryCandidate']
+    >,
   updateMemory: (input: UpdateMemoryInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.updateMemory, input) as ReturnType<DeskpetApi['updateMemory']>,
   deleteMemory: (input: MemoryIdInput) =>

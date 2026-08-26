@@ -5,8 +5,13 @@ import type {
   ModelSelection,
   ModelTask,
 } from '../../core/llm/contracts';
-import type { MemoryCandidate, MemoryRecord } from '../../core/memory/contracts';
+import type {
+  MemoryCandidate,
+  MemoryCandidateRecord,
+  MemoryRecord,
+} from '../../core/memory/contracts';
 import {
+  AUTOMATIC_MEMORY_BATCH_MESSAGES,
   deriveMemoryKey,
   inferMemoryType,
   parseAutomaticMemoryCandidates,
@@ -20,7 +25,6 @@ import { MemoryStore } from '../storage/memory-store';
 const RECENT_MESSAGES_OUTSIDE_SUMMARY = 20;
 const INITIAL_SUMMARY_MESSAGES = 10;
 const SUMMARY_BATCH_MESSAGES = 20;
-const EXTRACTION_BATCH_MESSAGES = 20;
 const MAX_AUXILIARY_OUTPUT = 12_000;
 const AUTOMATIC_MEMORY_SETTING = 'automatic_memory_enabled';
 const EXTRACTION_WATERMARK = 'automatic_memory_covered_until_message_id';
@@ -124,6 +128,18 @@ export class MemoryService {
     return this.store.list(namespace);
   }
 
+  public listCandidates(namespace: string): MemoryCandidateRecord[] {
+    return this.store.listCandidates(namespace);
+  }
+
+  public confirmCandidate(namespace: string, id: string): MemoryRecord | undefined {
+    return this.store.confirmCandidate(namespace, id);
+  }
+
+  public rejectCandidate(namespace: string, id: string): boolean {
+    return this.store.rejectCandidate(namespace, id);
+  }
+
   public update(
     namespace: string,
     id: string,
@@ -141,17 +157,19 @@ export class MemoryService {
   }
 
   public exportData(namespace: string): {
-    version: 1;
+    version: 2;
     exportedAt: number;
     summary?: string;
     memories: MemoryRecord[];
+    candidates: MemoryCandidateRecord[];
   } {
     const summary = this.database.getSummary()?.summary;
     return {
-      version: 1,
+      version: 2,
       exportedAt: Date.now(),
       ...(summary ? { summary } : {}),
       memories: this.store.list(namespace),
+      candidates: this.store.listCandidates(namespace),
     };
   }
 
@@ -293,7 +311,7 @@ export class MemoryService {
       ? messages.findIndex((message) => message.id === watermark)
       : -1;
     const uncovered = messages.slice(previousIndex + 1);
-    return uncovered.length >= EXTRACTION_BATCH_MESSAGES ? uncovered.slice(-24) : [];
+    return uncovered.length >= AUTOMATIC_MEMORY_BATCH_MESSAGES ? uncovered.slice(-24) : [];
   }
 
   private async updateSummary(
@@ -341,12 +359,17 @@ export class MemoryService {
         '从对话中保守提取最多 3 条值得跨会话保存的用户记忆。',
         '只保存稳定偏好、人物关系、重要事件、计划目标或明确事实。',
         '不要保存寒暄、玩笑、角色扮演、推测、密码、API Key、银行卡或用户要求不要保存的内容。',
+        '每条候选必须引用下方用户消息标记中的真实 sourceMessageId；不得引用助手消息或编造 ID。',
+        '无法确定未来具体时间时不要猜 expiresAt，保留候选供用户确认。',
         '只输出 JSON 数组；每项格式：',
-        '{"type":"preference|person|event|plan|fact","normalizedKey":"稳定去重键","content":"简洁事实","importance":0到1,"confidence":0到1,"expiresAt":可选毫秒时间戳}',
+        '{"type":"preference|person|event|plan|fact","normalizedKey":"稳定去重键","content":"简洁事实","importance":0到1,"confidence":0到1,"sourceMessageId":"真实用户消息ID","expiresAt":可选毫秒时间戳}',
       ].join('\n'),
       messages: messages.map((message): ChatMessage => ({
         role: message.role,
-        content: message.content,
+        content:
+          message.role === 'user'
+            ? `[sourceMessageId:${message.id}]\n${message.content}`
+            : message.content,
       })),
       temperature: 0,
       maxOutputTokens: 700,
@@ -355,9 +378,20 @@ export class MemoryService {
       this.models.streamMemoryTask('memoryExtraction', request, selection, signal),
       signal,
     );
-    const sourceMessageId = [...messages].reverse().find((message) => message.role === 'user')?.id;
+    const sourceMessages = new Map(
+      messages
+        .filter((message) => message.role === 'user' && message.status === 'complete')
+        .map((message) => [message.id, message] as const),
+    );
     for (const candidate of parseAutomaticMemoryCandidates(text)) {
-      this.store.save(namespace, candidate, 'automatic', sourceMessageId);
+      const source = sourceMessages.get(candidate.sourceMessageId);
+      if (!source) {
+        continue;
+      }
+      this.store.saveAutomaticCandidate(namespace, candidate, {
+        id: source.id,
+        createdAt: source.createdAt,
+      });
     }
     const coveredUntilMessageId = messages.at(-1)?.id;
     if (coveredUntilMessageId) {

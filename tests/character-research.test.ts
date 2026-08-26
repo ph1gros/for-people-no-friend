@@ -103,6 +103,11 @@ describe('M5.1 character research service', () => {
     expect(draft.lore.sources).toContainEqual(
       expect.objectContaining({ title: 'Mon3tr/语音记录', siteName: 'PRTS Wiki' }),
     );
+    expect(draft.profileFields).toEqual({
+      userDisplayName: '博士',
+      bio: '罗德岛干员与机械生命体',
+      personaPrompt: '性格：正在学习独立生活\n说话方式：称呼用户为博士',
+    });
     expect(generator.generateCharacterLore).toHaveBeenCalledOnce();
   });
 
@@ -138,6 +143,11 @@ describe('M5.1 character research service', () => {
     expect(draft.lore.background).toBe('');
     expect(draft.lore.background).not.toContain('[source_');
     expect(draft.lore.sources).toHaveLength(1);
+    expect(draft.profileFields).toEqual({
+      userDisplayName: '你',
+      bio: '陪伴在桌面上的 AI 角色。',
+      personaPrompt: '保持自然、真诚、简洁的交流风格。不要假装拥有未提供的记忆或能力。',
+    });
     expect(draft.warnings[0]).toContain('详细字段保持为空');
   });
 

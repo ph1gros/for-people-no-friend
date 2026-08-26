@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -47,6 +48,95 @@ describe('M5 SQLite storage and memory lifecycle', () => {
     database.close();
     database = new DeskpetDatabase(directory);
     expect(database.listMessages()).toHaveLength(1);
+  });
+
+  it('migrates active automatic memories to candidates without changing manual memories', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-trusted-memory-migration-'));
+    const legacy = new DatabaseSync(path.join(directory, 'deskpet.v1.sqlite'));
+    legacy.exec(`
+      CREATE TABLE app_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
+        content TEXT NOT NULL, provider_id TEXT, model_id TEXT, created_at INTEGER NOT NULL,
+        status TEXT NOT NULL, emotion TEXT, action TEXT, input_tokens INTEGER, output_tokens INTEGER
+      );
+      CREATE TABLE session_summaries (
+        conversation_id TEXT PRIMARY KEY, summary_json TEXT NOT NULL,
+        covered_until_message_id TEXT, updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE memories (
+        id TEXT PRIMARY KEY, namespace TEXT NOT NULL, type TEXT NOT NULL,
+        normalized_key TEXT NOT NULL, content TEXT NOT NULL, importance REAL NOT NULL,
+        confidence REAL NOT NULL, source_message_id TEXT, source TEXT NOT NULL,
+        created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+        last_confirmed_at INTEGER, last_used_at INTEGER, expires_at INTEGER, status TEXT NOT NULL
+      );
+      CREATE VIRTUAL TABLE memories_fts USING fts5(
+        id UNINDEXED, namespace UNINDEXED, normalized_key, content, tokenize = 'unicode61'
+      );
+      INSERT INTO messages (
+        id, conversation_id, role, content, created_at, status
+      ) VALUES ('source-auto', 'default', 'user', '我喜欢蓝色', 1234, 'complete');
+      INSERT INTO memories VALUES (
+        'manual-memory', 'default-character', 'fact', 'fact:cat', '用户的猫叫团子',
+        0.9, 1, NULL, 'manual', 1000, 1000, 1000, NULL, NULL, 'active'
+      );
+      INSERT INTO memories VALUES (
+        'automatic-memory', 'default-character', 'preference', 'preference:蓝色', '用户喜欢蓝色',
+        0.8, 0.9, 'source-auto', 'automatic', 1200, 1200, 1200, NULL, NULL, 'active'
+      );
+      INSERT INTO memories_fts VALUES (
+        'manual-memory', 'default-character', 'fact:cat', '用户的猫叫团子'
+      );
+      INSERT INTO memories_fts VALUES (
+        'automatic-memory', 'default-character', 'preference:蓝色', '用户喜欢蓝色'
+      );
+      PRAGMA user_version = 1;
+    `);
+    legacy.close();
+
+    database = new DeskpetDatabase(directory);
+    const store = new MemoryStore(database);
+    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
+    expect(store.list('default-character')).toEqual([
+      expect.objectContaining({ id: 'manual-memory', content: '用户的猫叫团子', source: 'manual' }),
+    ]);
+    expect(store.listCandidates('default-character')).toEqual([
+      expect.objectContaining({
+        content: '用户喜欢蓝色',
+        status: 'pending',
+        reviewReasons: ['legacy_automatic'],
+        evidence: [
+          expect.objectContaining({
+            sourceMessageId: 'source-auto',
+            observedAt: 1234,
+            sourceExcerpt: '我喜欢蓝色',
+          }),
+        ],
+      }),
+    ]);
+    expect(
+      database.connection
+        .prepare('SELECT status FROM memories WHERE id = ?')
+        .get('automatic-memory'),
+    ).toEqual({ status: 'superseded' });
+    expect(database.connection.prepare('SELECT id FROM memories_fts ORDER BY id').all()).toEqual([
+      { id: 'manual-memory' },
+    ]);
+
+    database.close();
+    database = new DeskpetDatabase(directory);
+    const reopenedStore = new MemoryStore(database);
+    const migratedCandidate = reopenedStore.listCandidates('default-character');
+    expect(migratedCandidate).toHaveLength(1);
+    expect(reopenedStore.rejectCandidate('default-character', migratedCandidate[0]?.id ?? '')).toBe(
+      true,
+    );
+    expect(
+      database.connection
+        .prepare('SELECT content, source_message_id, status FROM memories WHERE id = ?')
+        .get('automatic-memory'),
+    ).toEqual({ content: '', source_message_id: null, status: 'deleted' });
   });
 
   it('keeps manual memories authoritative and supersedes an old preference on manual update', async () => {
@@ -152,7 +242,7 @@ describe('M5 SQLite storage and memory lifecycle', () => {
         confidence: 0.8,
         expiresAt: Date.now() + 60_000,
       },
-      'automatic',
+      'manual',
     );
     database.connection
       .prepare('UPDATE memories SET expires_at = ? WHERE id = ?')
@@ -214,6 +304,147 @@ describe('M5 SQLite storage and memory lifecycle', () => {
       database.connection
         .prepare(`SELECT COUNT(*) AS count FROM memories WHERE content <> ''`)
         .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it('keeps automatic claims as evidenced candidates until the user confirms or rejects them', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-candidates-'));
+    database = new DeskpetDatabase(directory);
+    const store = new MemoryStore(database);
+    const namespace = 'default-character';
+    const key = deriveMemoryKey('我喜欢草莓蛋糕', 'preference');
+    const active = store.save(
+      namespace,
+      {
+        type: 'preference',
+        normalizedKey: key,
+        content: '我喜欢草莓蛋糕',
+        importance: 0.9,
+        confidence: 1,
+      },
+      'manual',
+    );
+    database.appendMessage({
+      id: 'source-1',
+      role: 'user',
+      content: '我现在不喜欢草莓蛋糕了',
+      createdAt: 1,
+      status: 'complete',
+    });
+    database.appendMessage({
+      id: 'source-2',
+      role: 'user',
+      content: '还是不喜欢草莓蛋糕',
+      createdAt: 86_400_001,
+      status: 'complete',
+    });
+    const candidateValue = {
+      type: 'preference' as const,
+      normalizedKey: key,
+      content: '我现在不喜欢草莓蛋糕',
+      importance: 0.8,
+      confidence: 0.9,
+    };
+    const candidate = store.saveAutomaticCandidate(namespace, candidateValue, {
+      id: 'source-1',
+      createdAt: 1,
+    });
+    store.saveAutomaticCandidate(namespace, candidateValue, {
+      id: 'source-2',
+      createdAt: 86_400_001,
+    });
+
+    expect(store.list(namespace)).toEqual([
+      expect.objectContaining({ id: active?.id, content: '我喜欢草莓蛋糕' }),
+    ]);
+    expect(store.listCandidates(namespace)).toEqual([
+      expect.objectContaining({
+        id: candidate?.id,
+        status: 'conflict',
+        reviewReasons: expect.arrayContaining(['conflict', 'profile_claim']),
+        evidenceDateCount: 2,
+        evidence: [
+          expect.objectContaining({
+            sourceMessageId: 'source-2',
+            sourceExcerpt: '还是不喜欢草莓蛋糕',
+          }),
+          expect.objectContaining({ sourceMessageId: 'source-1' }),
+        ],
+        conflictingMemory: expect.objectContaining({ id: active?.id }),
+      }),
+    ]);
+    expect(store.retrieve(namespace, '草莓蛋糕')).toEqual([
+      expect.objectContaining({ id: active?.id, content: '我喜欢草莓蛋糕' }),
+    ]);
+    expect(store.confirmCandidate('other-character', candidate?.id ?? '')).toBeUndefined();
+    expect(store.confirmCandidate(namespace, candidate?.id ?? '')).toEqual(
+      expect.objectContaining({ content: '我现在不喜欢草莓蛋糕', source: 'automatic' }),
+    );
+    expect(store.listCandidates(namespace)).toEqual([]);
+    expect(
+      database.connection.prepare('SELECT status FROM memories WHERE id = ?').get(active?.id ?? ''),
+    ).toEqual({ status: 'superseded' });
+
+    const uncertain = store.saveAutomaticCandidate(
+      namespace,
+      {
+        type: 'plan',
+        normalizedKey: 'plan:trip',
+        content: '用户下周可能去旅行',
+        importance: 0.7,
+        confidence: 0.8,
+      },
+      { id: 'source-2', createdAt: 86_400_001 },
+    );
+    expect(uncertain?.reviewReasons).toContain('time_uncertain');
+    expect(store.rejectCandidate(namespace, uncertain?.id ?? '')).toBe(true);
+    expect(store.listCandidates(namespace)).toEqual([]);
+    expect(
+      database.connection
+        .prepare('SELECT content FROM memory_candidates WHERE id = ?')
+        .get(uncertain?.id ?? ''),
+    ).toEqual({ content: '' });
+    expect(
+      store.saveAutomaticCandidate(
+        namespace,
+        {
+          type: 'plan',
+          normalizedKey: 'plan:trip',
+          content: '用户下周可能去旅行',
+          importance: 0.7,
+          confidence: 0.8,
+        },
+        { id: 'source-3', createdAt: 172_800_001 },
+      ),
+    ).toBeUndefined();
+  });
+
+  it('scrubs candidate content and evidence when all memories are cleared', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-candidate-clear-'));
+    database = new DeskpetDatabase(directory);
+    const store = new MemoryStore(database);
+    const candidate = store.saveAutomaticCandidate(
+      'default-character',
+      {
+        type: 'fact',
+        normalizedKey: 'pet-name',
+        content: '用户的猫叫团子',
+        importance: 0.8,
+        confidence: 0.9,
+      },
+      { id: 'source-message', createdAt: 1 },
+    );
+    expect(candidate).toBeDefined();
+    expect(store.clear('default-character')).toBe(1);
+    expect(
+      database.connection
+        .prepare('SELECT content, normalized_key FROM memory_candidates WHERE id = ?')
+        .get(candidate?.id ?? ''),
+    ).toEqual({ content: '', normalized_key: `deleted:${candidate?.id}` });
+    expect(
+      database.connection
+        .prepare('SELECT COUNT(*) AS count FROM memory_candidate_evidence WHERE candidate_id = ?')
+        .get(candidate?.id ?? ''),
     ).toEqual({ count: 0 });
   });
 

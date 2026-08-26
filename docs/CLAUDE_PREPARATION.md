@@ -16,7 +16,7 @@
 
 ## 3. 创建专用 API Key
 
-在 Console 的 API Keys 页面为 For people no friend 创建一枚独立 Key，名称明确标注用途。只复制一次到自己的安全存储；如果怀疑泄露，立即在 Console 撤销并轮换。不要复用其他生产项目的 Key。
+在 Console 的 API Keys 页面为 For People No Friend 创建一枚独立 Key，名称明确标注用途。只复制一次到自己的安全存储；如果怀疑泄露，立即在 Console 撤销并轮换。不要复用其他生产项目的 Key。
 
 官方入口：[Anthropic Console API Keys](https://console.anthropic.com/settings/keys)。
 

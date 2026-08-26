@@ -1,6 +1,17 @@
-import { MEMORY_TYPES, type MemoryCandidate, type MemoryType } from './contracts';
+import {
+  MEMORY_TYPES,
+  type AutomaticMemoryCandidate,
+  type MemoryCandidate,
+  type MemoryReviewReason,
+  type MemoryType,
+} from './contracts';
 
 const memoryTypeSet = new Set<string>(MEMORY_TYPES);
+const MESSAGE_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+export const AUTOMATIC_MEMORY_BATCH_MESSAGES = 20;
+export const AUTOMATIC_MEMORY_MAX_CANDIDATES = 3;
+export const AUTOMATIC_MEMORY_MIN_IMPORTANCE = 0.4;
+export const AUTOMATIC_MEMORY_MIN_CONFIDENCE = 0.65;
 const SECRET_PATTERNS = [
   /\b(?:sk|api|key)-[A-Za-z0-9_-]{12,}\b/i,
   /\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*\b/i,
@@ -132,7 +143,9 @@ export const sanitizeMemoryCandidate = (
     containsSensitiveInformation(content) ||
     !Number.isFinite(importance) ||
     !Number.isFinite(confidence) ||
-    (source === 'automatic' && (importance < 0.4 || confidence < 0.65))
+    (source === 'automatic' &&
+      (importance < AUTOMATIC_MEMORY_MIN_IMPORTANCE ||
+        confidence < AUTOMATIC_MEMORY_MIN_CONFIDENCE))
   ) {
     return undefined;
   }
@@ -150,7 +163,28 @@ export const sanitizeMemoryCandidate = (
   };
 };
 
-export const parseAutomaticMemoryCandidates = (text: string): MemoryCandidate[] => {
+export const memoryReviewReasons = (candidate: MemoryCandidate): MemoryReviewReason[] => {
+  const reasons: MemoryReviewReason[] = [];
+  if (
+    candidate.type === 'preference' ||
+    candidate.type === 'person' ||
+    /(?:习惯|通常|经常|每天|每周|habit|usually|often|daily|weekly)/i.test(candidate.content)
+  ) {
+    reasons.push('profile_claim');
+  }
+  if (
+    (candidate.type === 'event' || candidate.type === 'plan') &&
+    candidate.expiresAt === undefined &&
+    /(?:明天|后天|下周|下月|下个月|下季度|明年|过几天|以后|之后|未来|有空|改天|稍后|待会|tomorrow|next\s+(?:week|month|year|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|later|someday|in\s+the\s+future)/i.test(
+      candidate.content,
+    )
+  ) {
+    reasons.push('time_uncertain');
+  }
+  return reasons;
+};
+
+export const parseAutomaticMemoryCandidates = (text: string): AutomaticMemoryCandidate[] => {
   const trimmed = text.trim().replace(/^```(?:json)?\s*|\s*```$/gi, '');
   const start = trimmed.indexOf('[');
   const end = trimmed.lastIndexOf(']');
@@ -163,9 +197,20 @@ export const parseAutomaticMemoryCandidates = (text: string): MemoryCandidate[] 
       return [];
     }
     return parsed
-      .map((candidate) => sanitizeMemoryCandidate(candidate, 'automatic'))
-      .filter((candidate): candidate is MemoryCandidate => candidate !== undefined)
-      .slice(0, 3);
+      .map((value): AutomaticMemoryCandidate | undefined => {
+        const candidate = sanitizeMemoryCandidate(value, 'automatic');
+        const sourceMessageId =
+          typeof value === 'object' &&
+          value !== null &&
+          'sourceMessageId' in value &&
+          typeof value.sourceMessageId === 'string' &&
+          MESSAGE_ID_PATTERN.test(value.sourceMessageId)
+            ? value.sourceMessageId
+            : undefined;
+        return candidate && sourceMessageId ? { ...candidate, sourceMessageId } : undefined;
+      })
+      .filter((candidate): candidate is AutomaticMemoryCandidate => candidate !== undefined)
+      .slice(0, AUTOMATIC_MEMORY_MAX_CANDIDATES);
   } catch {
     return [];
   }

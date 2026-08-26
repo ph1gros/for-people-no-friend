@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync, backup } from 'node:sqlite';
@@ -220,17 +221,15 @@ export class DeskpetDatabase {
   }
 
   private migrate(): void {
-    const version = Number(
+    let version = Number(
       (this.connection.prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version,
     );
-    if (version > 1) {
+    if (version > 2) {
       throw new Error(`The memory database schema version ${version} is not supported.`);
     }
-    if (version === 1) {
-      return;
-    }
-    this.connection.exec(`
+    if (version === 0) {
+      this.connection.exec(`
       BEGIN IMMEDIATE;
       CREATE TABLE app_metadata (
         key TEXT PRIMARY KEY,
@@ -289,6 +288,118 @@ export class DeskpetDatabase {
       PRAGMA user_version = 1;
       COMMIT;
     `);
+      version = 1;
+    }
+    if (version === 1) {
+      this.migrateTrustedMemoryCandidates();
+    }
+  }
+
+  private migrateTrustedMemoryCandidates(): void {
+    this.connection.exec('BEGIN IMMEDIATE');
+    try {
+      this.connection.exec(`
+        CREATE TABLE memory_candidates (
+          id TEXT PRIMARY KEY,
+          namespace TEXT NOT NULL,
+          type TEXT NOT NULL CHECK (type IN ('preference', 'person', 'event', 'plan', 'fact')),
+          normalized_key TEXT NOT NULL,
+          content TEXT NOT NULL,
+          importance REAL NOT NULL CHECK (importance >= 0 AND importance <= 1),
+          confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
+          status TEXT NOT NULL CHECK (status IN ('pending', 'conflict', 'rejected', 'confirmed')),
+          review_reasons_json TEXT NOT NULL,
+          conflicting_memory_id TEXT,
+          legacy_memory_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          last_seen_at INTEGER NOT NULL,
+          expires_at INTEGER,
+          decision_at INTEGER,
+          FOREIGN KEY(conflicting_memory_id) REFERENCES memories(id) ON DELETE SET NULL,
+          FOREIGN KEY(legacy_memory_id) REFERENCES memories(id) ON DELETE SET NULL
+        );
+        CREATE INDEX memory_candidates_namespace_status
+          ON memory_candidates(namespace, status, updated_at DESC);
+        CREATE INDEX memory_candidates_namespace_key
+          ON memory_candidates(namespace, normalized_key, status);
+        CREATE TABLE memory_candidate_evidence (
+          candidate_id TEXT NOT NULL,
+          source_message_id TEXT NOT NULL,
+          observed_at INTEGER NOT NULL,
+          PRIMARY KEY(candidate_id, source_message_id),
+          FOREIGN KEY(candidate_id) REFERENCES memory_candidates(id) ON DELETE CASCADE
+        );
+        CREATE INDEX memory_candidate_evidence_candidate
+          ON memory_candidate_evidence(candidate_id, observed_at DESC);
+      `);
+      const legacyAutomatic = this.connection
+        .prepare(
+          `SELECT memories.*, messages.created_at AS source_created_at
+             FROM memories
+             LEFT JOIN messages ON messages.id = memories.source_message_id
+            WHERE memories.source = 'automatic' AND memories.status = 'active'`,
+        )
+        .all() as unknown as Array<{
+        id: string;
+        namespace: string;
+        type: string;
+        normalized_key: string;
+        content: string;
+        importance: number;
+        confidence: number;
+        source_message_id: string | null;
+        source_created_at: number | null;
+        created_at: number;
+        updated_at: number;
+        expires_at: number | null;
+      }>;
+      const insertCandidate = this.connection.prepare(
+        `INSERT INTO memory_candidates (
+          id, namespace, type, normalized_key, content, importance, confidence,
+          status, review_reasons_json, conflicting_memory_id, legacy_memory_id,
+          created_at, updated_at, last_seen_at, expires_at, decision_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, NULL, ?, ?, ?, ?, ?, NULL)`,
+      );
+      const insertEvidence = this.connection.prepare(
+        `INSERT INTO memory_candidate_evidence (candidate_id, source_message_id, observed_at)
+         VALUES (?, ?, ?)`,
+      );
+      const now = Date.now();
+      for (const memory of legacyAutomatic) {
+        const candidateId = randomUUID();
+        insertCandidate.run(
+          candidateId,
+          memory.namespace,
+          memory.type,
+          memory.normalized_key,
+          memory.content,
+          memory.importance,
+          memory.confidence,
+          JSON.stringify(['legacy_automatic']),
+          memory.id,
+          memory.created_at,
+          now,
+          memory.updated_at,
+          memory.expires_at,
+        );
+        if (memory.source_message_id) {
+          insertEvidence.run(
+            candidateId,
+            memory.source_message_id,
+            memory.source_created_at ?? memory.created_at,
+          );
+        }
+        this.connection
+          .prepare(`UPDATE memories SET status = 'superseded', updated_at = ? WHERE id = ?`)
+          .run(now, memory.id);
+        this.connection.prepare('DELETE FROM memories_fts WHERE id = ?').run(memory.id);
+      }
+      this.connection.exec('PRAGMA user_version = 2; COMMIT');
+    } catch (error) {
+      this.connection.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   private importLegacyConversation(userDataPath: string): void {

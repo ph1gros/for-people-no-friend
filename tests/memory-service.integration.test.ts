@@ -80,6 +80,23 @@ describe('M5 memory service integration', () => {
                 content: '用户喜欢蓝色',
                 importance: 0.8,
                 confidence: 0.9,
+                sourceMessageId: 'message-28',
+              },
+              {
+                type: 'fact',
+                normalizedKey: 'assistant-claim',
+                content: '助手声称用户喜欢红色',
+                importance: 0.8,
+                confidence: 0.9,
+                sourceMessageId: 'message-29',
+              },
+              {
+                type: 'fact',
+                normalizedKey: 'invented-source',
+                content: '没有真实来源的事实',
+                importance: 0.8,
+                confidence: 0.9,
+                sourceMessageId: 'invented-message',
               },
             ]),
           };
@@ -107,14 +124,27 @@ describe('M5 memory service integration', () => {
       summary: '用户早些时候讨论过学习计划。',
       coveredUntilMessageId: 'message-9',
     });
-    expect(service.list('default-character')).toEqual([
-      expect.objectContaining({ content: '用户喜欢蓝色', source: 'automatic' }),
+    expect(service.list('default-character')).toEqual([]);
+    expect(service.listCandidates('default-character')).toEqual([
+      expect.objectContaining({
+        content: '用户喜欢蓝色',
+        status: 'pending',
+        reviewReasons: expect.arrayContaining(['profile_claim']),
+        evidence: [expect.objectContaining({ sourceMessageId: 'message-28' })],
+      }),
     ]);
     expect(service.getConversationContext('default-character', '你记得我喜欢什么颜色吗')).toEqual(
       expect.objectContaining({
         summary: '用户早些时候讨论过学习计划。',
-        memories: [expect.objectContaining({ content: '用户喜欢蓝色' })],
+        memories: [],
       }),
     );
+    const candidate = service.listCandidates('default-character')[0];
+    expect(service.confirmCandidate('default-character', candidate?.id ?? '')).toEqual(
+      expect.objectContaining({ content: '用户喜欢蓝色', source: 'automatic' }),
+    );
+    expect(
+      service.getConversationContext('default-character', '你记得我喜欢什么颜色吗').memories,
+    ).toEqual([expect.objectContaining({ content: '用户喜欢蓝色' })]);
   });
 });

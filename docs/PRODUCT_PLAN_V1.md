@@ -1,8 +1,8 @@
-# For people no friend 产品与开发计划书
+# For People No Friend 产品与开发计划书
 
 ## 1. 项目决定
 
-- 项目名称：For people no friend
+- 项目名称：For People No Friend
 - GitHub 仓库：`ph1gros/for-people-no-friend`
 - 仓库可见性：Private
 - 首发平台：Windows

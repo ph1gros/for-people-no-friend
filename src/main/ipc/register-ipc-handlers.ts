@@ -269,6 +269,31 @@ export const registerIpcHandlers = (
     const profile = await profiles.get();
     return memories.list(profile.memoryNamespace);
   });
+  ipcMain.handle(IPC_CHANNELS.listMemoryCandidates, async (event) => {
+    requireTrustedSender(event, windows);
+    const profile = await profiles.get();
+    return memories.listCandidates(profile.memoryNamespace);
+  });
+  ipcMain.handle(IPC_CHANNELS.confirmMemoryCandidate, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { id } = parseMemoryIdInput(input);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      if (!memories.confirmCandidate(profile.memoryNamespace, id)) {
+        throw new Error('Memory candidate not found.');
+      }
+    });
+  });
+  ipcMain.handle(IPC_CHANNELS.rejectMemoryCandidate, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { id } = parseMemoryIdInput(input);
+    const profile = await profiles.get();
+    return runMemoryOperation(() => {
+      if (!memories.rejectCandidate(profile.memoryNamespace, id)) {
+        throw new Error('Memory candidate not found.');
+      }
+    });
+  });
   ipcMain.handle(IPC_CHANNELS.updateMemory, async (event, input: unknown) => {
     requireTrustedSender(event, windows);
     const parsed = parseUpdateMemoryInput(input);
@@ -299,7 +324,7 @@ export const registerIpcHandlers = (
   ipcMain.handle(IPC_CHANNELS.exportMemories, async (event): Promise<MemoryFileOperationResult> => {
     requireTrustedSender(event, windows);
     const result = await showSaveDialog(windows, {
-      title: '导出 For people no friend 记忆',
+      title: '导出 For People No Friend 记忆',
       defaultPath: path.join(app.getPath('documents'), 'for-people-no-friend-memories.json'),
       filters: [{ name: 'JSON', extensions: ['json'] }],
     });
@@ -321,7 +346,7 @@ export const registerIpcHandlers = (
   ipcMain.handle(IPC_CHANNELS.backupMemory, async (event): Promise<MemoryFileOperationResult> => {
     requireTrustedSender(event, windows);
     const result = await showSaveDialog(windows, {
-      title: '备份 For people no friend 本地数据库',
+      title: '备份 For People No Friend 本地数据库',
       defaultPath: path.join(app.getPath('documents'), 'for-people-no-friend-memory-backup.sqlite'),
       filters: [{ name: 'SQLite', extensions: ['sqlite'] }],
     });

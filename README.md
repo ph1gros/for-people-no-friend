@@ -1,4 +1,4 @@
-# For people no friend
+# For People No Friend
 
 > 没朋友也没关系，桌面上先放一个。
 >
@@ -8,7 +8,7 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 定义为 **1.0.0 功能基线**：使用 Live2D 角色和文字对话，支持安全的模型提供商配置、完整对话、情绪动作、本地长期记忆、结构化角色卡、侧拉对话 HUD 与作品社区词库。公开仓库从这份干净的 1.0.0 快照开始，当前不提供安装包、签名或可执行发布产物。
+当前 `main` 以 **1.0.0 功能基线**为起点，并加入 V1.1a 可信长期记忆：自动结果先进入候选区，经过用户确认才参与未来对话。项目继续支持 Live2D 角色、文字对话、安全的模型提供商配置、完整对话、情绪动作、结构化角色卡、侧拉对话 HUD 与作品社区词库；当前不提供安装包、签名或可执行发布产物。
 
 ## 1.0.0 已完成能力
 
@@ -22,6 +22,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - 结构化情绪到表情/动作的映射
 - 系统托盘控制
 - 本地长期记忆、会话摘要、导出与彻底删除
+- 自动记忆候选、来源证据、冲突确认与旧数据安全迁移
 - 结构化角色卡与用户确认后的联网补全
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
@@ -47,7 +48,8 @@ A local-first Windows AI character companion for days when socializing feels lik
 7. M5.1：结构化角色卡与可选联网补全
 8. M5.2：对话 HUD、角色身份显示与新词理解修整
 9. 1.0.0：M0～M5.2 功能基线
-10. 1.0 之后：记忆可信度、泛用角色模板、双角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+10. V1.1a：可信长期记忆最小闭环
+11. 后续：泛用角色模板、双角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
@@ -57,7 +59,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For people no friend 1.0.0 功能基线。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a 已完成“可信长期记忆”的最小闭环：自动结果先排队，用户确认后才生效。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
 
 ## 文档
 
@@ -74,6 +76,7 @@ M0～M5.2 已完成并组成 For people no friend 1.0.0 功能基线。当前仓
 - [M5.1 联网角色卡实现](docs/M5_1_IMPLEMENTATION.md)
 - [M5.1 角色扮演约束](docs/M5_1_ROLEPLAY_CONSTRAINTS.md)
 - [M5.2 对话体验修整设计](docs/M5_2_DESIGN.md)
+- [V1.1a 可信长期记忆实现](docs/V1_1A_IMPLEMENTATION.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
@@ -83,41 +86,7 @@ v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动�
 
 后续首批正式角色确定为 **伊雷娜** 与 **M3（Mon3tr）**。两位角色各自拥有独立的人格、对话历史、摘要、长期记忆和 GIF 表现包，不会出现伊雷娜突然继承 M3 记忆、然后双方都假装无事发生的情况。GIF 的作者、原始页面和授权条件会由项目维护者在角色资源中补充，来源不明的素材不进入仓库。
 
-新角色通过带版本的泛用 GIF 模板创建，不需要为每位角色重新写一套播放逻辑。下面是计划采用的填写方式：
-
-```json
-{
-  "id": "elaina",
-  "name": "伊雷娜",
-  "template": "generic-gif@1",
-  "memoryNamespace": "character-elaina",
-  "profile": {
-    "bio": "角色的身份和简短背景",
-    "personaPrompt": "称呼、语气、性格、知识边界和不该说的话"
-  },
-  "presentation": {
-    "idle": "idle.gif",
-    "thinking": "thinking.gif",
-    "talking": "talking.gif",
-    "emotions": {
-      "happy": "happy.gif",
-      "shy": "shy.gif"
-    },
-    "actions": {
-      "wave": { "file": "wave.gif", "durationMs": 2400 }
-    }
-  },
-  "assetSources": [
-    {
-      "title": "素材来源说明",
-      "url": "https://example.com/source",
-      "license": "授权或使用条件"
-    }
-  ]
-}
-```
-
-填写时不用把每个格子都塞满：`id`、名称、人格、独立记忆空间和 `idle` 待机图是必填项；`thinking`、`talking`、情绪和动作可以慢慢补。缺失标签会依次回退到 `neutral` 或 `idle`，表情没找到时文字仍然照常回复，不会因为少一张 GIF 就当场罢工。资源文件只填写角色目录内的安全相对路径；`assetSources.url` 只用于记录出处，不会被当作远程运行资源加载。
+项目计划使用带版本的泛用角色模板管理人格、独立记忆空间和 GIF 表现资源。表现资源按待机、思考、说话、情绪和动作标签映射；缺失或加载失败时会安全回退，不影响文字聊天。
 
 ## 安全约定
 

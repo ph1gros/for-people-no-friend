@@ -14,6 +14,8 @@ import { ProviderConfigStore } from './storage/provider-config-store';
 import { createDeskpetTray } from './tray/create-tray';
 import { WindowManager } from './windows/window-manager';
 
+app.setName('For People No Friend');
+
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {

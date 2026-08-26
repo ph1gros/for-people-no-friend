@@ -25,7 +25,7 @@ export const createDeskpetTray = (actions: TrayActions): Tray => {
     );
   };
 
-  tray.setToolTip('For people no friend');
+  tray.setToolTip('For People No Friend');
   tray.on('click', actions.toggleVisibility);
   actions.getWindow()?.on('show', updateMenu);
   actions.getWindow()?.on('hide', updateMenu);

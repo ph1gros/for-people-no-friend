@@ -1,7 +1,20 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
-import type { MemoryCandidate, MemoryRecord, MemoryType } from '../../core/memory/contracts';
-import { normalizeMemoryKey, sanitizeMemoryCandidate } from '../../core/memory/memory-policy';
+import {
+  MEMORY_REVIEW_REASONS,
+  type MemoryCandidate,
+  type MemoryCandidateRecord,
+  type MemoryCandidateStatus,
+  type MemoryEvidence,
+  type MemoryRecord,
+  type MemoryReviewReason,
+  type MemoryType,
+} from '../../core/memory/contracts';
+import {
+  memoryReviewReasons,
+  normalizeMemoryKey,
+  sanitizeMemoryCandidate,
+} from '../../core/memory/memory-policy';
 import { DeskpetDatabase } from './deskpet-database';
 
 interface MemoryRow {
@@ -23,6 +36,36 @@ interface MemoryRow {
   source_excerpt?: string | null;
 }
 
+interface MemoryCandidateRow {
+  id: string;
+  namespace: string;
+  type: MemoryType;
+  normalized_key: string;
+  content: string;
+  importance: number;
+  confidence: number;
+  status: MemoryCandidateStatus;
+  review_reasons_json: string;
+  conflicting_memory_id: string | null;
+  legacy_memory_id: string | null;
+  created_at: number;
+  updated_at: number;
+  last_seen_at: number;
+  expires_at: number | null;
+  decision_at: number | null;
+}
+
+interface MemoryEvidenceRow {
+  source_message_id: string;
+  observed_at: number;
+  source_excerpt: string | null;
+}
+
+interface MemoryEvidenceSource {
+  id: string;
+  createdAt: number;
+}
+
 const rowToMemory = (row: MemoryRow): MemoryRecord => ({
   id: row.id,
   namespace: row.namespace,
@@ -41,6 +84,31 @@ const rowToMemory = (row: MemoryRow): MemoryRecord => ({
   ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
   ...(row.source_excerpt ? { sourceExcerpt: row.source_excerpt.slice(0, 240) } : {}),
 });
+
+const reviewReasonSet = new Set<string>(MEMORY_REVIEW_REASONS);
+
+const parseReviewReasons = (value: string): MemoryReviewReason[] => {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (reason): reason is MemoryReviewReason =>
+            typeof reason === 'string' && reviewReasonSet.has(reason),
+        )
+      : [];
+  } catch {
+    return [];
+  }
+};
+
+const rowToEvidence = (row: MemoryEvidenceRow): MemoryEvidence => ({
+  sourceMessageId: row.source_message_id,
+  observedAt: row.observed_at,
+  ...(row.source_excerpt ? { sourceExcerpt: row.source_excerpt.slice(0, 240) } : {}),
+});
+
+const candidateFingerprint = (normalizedKey: string, content: string): string =>
+  createHash('sha256').update(`${normalizedKey}\0${content}`).digest('hex');
 
 const keywordParts = (query: string): string[] => {
   const normalized = query.normalize('NFKC').toLocaleLowerCase();
@@ -80,12 +148,265 @@ export class MemoryStore {
     return rows.map(rowToMemory);
   }
 
+  public listCandidates(namespace: string, limit = 200): MemoryCandidateRecord[] {
+    const rows = this.database.connection
+      .prepare(
+        `SELECT * FROM memory_candidates
+          WHERE namespace = ? AND status IN ('pending', 'conflict')
+          ORDER BY updated_at DESC
+          LIMIT ?`,
+      )
+      .all(namespace, Math.max(1, Math.min(limit, 200))) as unknown as MemoryCandidateRow[];
+    return rows.map((row) => this.rowToCandidate(row));
+  }
+
+  public saveAutomaticCandidate(
+    namespace: string,
+    candidateValue: MemoryCandidate,
+    evidence: MemoryEvidenceSource,
+  ): MemoryCandidateRecord | undefined {
+    const candidate = sanitizeMemoryCandidate(candidateValue, 'automatic');
+    if (!candidate || !evidence.id || !Number.isFinite(evidence.createdAt)) {
+      return undefined;
+    }
+    this.expire(namespace);
+    const existingMemory = this.findActiveByKey(namespace, candidate.normalizedKey);
+    if (existingMemory?.content === candidate.content && existingMemory.last_confirmed_at) {
+      return undefined;
+    }
+    const existingCandidate = this.database.connection
+      .prepare(
+        `SELECT * FROM memory_candidates
+          WHERE namespace = ? AND normalized_key = ? AND content = ?
+            AND status IN ('pending', 'conflict')
+          ORDER BY updated_at DESC LIMIT 1`,
+      )
+      .get(namespace, candidate.normalizedKey, candidate.content) as
+      (MemoryCandidateRow & Record<string, unknown>) | undefined;
+    const rejected = this.database.connection
+      .prepare(
+        `SELECT id FROM memory_candidates
+          WHERE namespace = ? AND normalized_key = ? AND status = 'rejected'
+          LIMIT 1`,
+      )
+      .get(
+        namespace,
+        `rejected:${candidateFingerprint(candidate.normalizedKey, candidate.content)}`,
+      );
+    if (rejected) {
+      return undefined;
+    }
+    const now = Date.now();
+    if (existingCandidate) {
+      this.database.connection.exec('BEGIN IMMEDIATE');
+      try {
+        this.database.connection
+          .prepare(
+            `UPDATE memory_candidates
+                SET importance = MAX(importance, ?), confidence = MAX(confidence, ?),
+                    updated_at = ?, last_seen_at = MAX(last_seen_at, ?)
+              WHERE id = ? AND namespace = ?`,
+          )
+          .run(
+            candidate.importance,
+            candidate.confidence,
+            now,
+            evidence.createdAt,
+            existingCandidate.id,
+            namespace,
+          );
+        this.insertEvidence(existingCandidate.id, evidence);
+        this.database.connection.exec('COMMIT');
+      } catch (error) {
+        this.database.connection.exec('ROLLBACK');
+        throw error;
+      }
+      return this.getCandidate(namespace, existingCandidate.id);
+    }
+
+    const id = randomUUID();
+    const conflictingMemoryId =
+      existingMemory && existingMemory.content !== candidate.content
+        ? existingMemory.id
+        : undefined;
+    const reasons = memoryReviewReasons(candidate);
+    if (conflictingMemoryId) {
+      reasons.unshift('conflict');
+    }
+    const status: MemoryCandidateStatus = conflictingMemoryId ? 'conflict' : 'pending';
+    this.database.connection.exec('BEGIN IMMEDIATE');
+    try {
+      this.database.connection
+        .prepare(
+          `INSERT INTO memory_candidates (
+            id, namespace, type, normalized_key, content, importance, confidence,
+            status, review_reasons_json, conflicting_memory_id, legacy_memory_id,
+            created_at, updated_at, last_seen_at, expires_at, decision_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, NULL)`,
+        )
+        .run(
+          id,
+          namespace,
+          candidate.type,
+          candidate.normalizedKey,
+          candidate.content,
+          candidate.importance,
+          candidate.confidence,
+          status,
+          JSON.stringify(reasons),
+          conflictingMemoryId ?? null,
+          now,
+          now,
+          evidence.createdAt,
+          candidate.expiresAt ?? null,
+        );
+      this.insertEvidence(id, evidence);
+      this.database.connection.exec('COMMIT');
+      return this.getCandidate(namespace, id);
+    } catch (error) {
+      this.database.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public confirmCandidate(namespace: string, id: string): MemoryRecord | undefined {
+    const candidate = this.getCandidateRow(namespace, id);
+    if (!candidate || !['pending', 'conflict'].includes(candidate.status)) {
+      return undefined;
+    }
+    const now = Date.now();
+    const existing = this.findActiveByKey(namespace, candidate.normalized_key);
+    const evidence = this.latestEvidence(id);
+    let memoryId = existing?.id;
+    this.database.connection.exec('BEGIN IMMEDIATE');
+    try {
+      if (existing?.content === candidate.content) {
+        this.database.connection
+          .prepare(
+            `UPDATE memories SET
+              importance = MAX(importance, ?), confidence = MAX(confidence, ?),
+              updated_at = ?, last_confirmed_at = ?,
+              source_message_id = COALESCE(?, source_message_id)
+             WHERE id = ? AND namespace = ? AND status = 'active'`,
+          )
+          .run(
+            candidate.importance,
+            candidate.confidence,
+            now,
+            now,
+            evidence?.source_message_id ?? null,
+            existing.id,
+            namespace,
+          );
+      } else {
+        if (existing) {
+          this.database.connection
+            .prepare(`UPDATE memories SET status = 'superseded', updated_at = ? WHERE id = ?`)
+            .run(now, existing.id);
+          this.database.connection
+            .prepare('DELETE FROM memories_fts WHERE id = ?')
+            .run(existing.id);
+        }
+        memoryId = randomUUID();
+        this.database.connection
+          .prepare(
+            `INSERT INTO memories (
+              id, namespace, type, normalized_key, content, importance, confidence,
+              source_message_id, source, created_at, updated_at, last_confirmed_at,
+              last_used_at, expires_at, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'automatic', ?, ?, ?, NULL, ?, 'active')`,
+          )
+          .run(
+            memoryId,
+            namespace,
+            candidate.type,
+            candidate.normalized_key,
+            candidate.content,
+            candidate.importance,
+            candidate.confidence,
+            evidence?.source_message_id ?? null,
+            now,
+            now,
+            now,
+            candidate.expires_at,
+          );
+        this.database.connection
+          .prepare(
+            'INSERT INTO memories_fts (id, namespace, normalized_key, content) VALUES (?, ?, ?, ?)',
+          )
+          .run(memoryId, namespace, candidate.normalized_key, candidate.content);
+      }
+      this.database.connection
+        .prepare(
+          `UPDATE memory_candidates SET status = 'confirmed', updated_at = ?, decision_at = ?
+            WHERE id = ? AND namespace = ?`,
+        )
+        .run(now, now, id, namespace);
+      this.database.connection.exec('COMMIT');
+      return memoryId ? this.get(namespace, memoryId) : undefined;
+    } catch (error) {
+      this.database.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  public rejectCandidate(namespace: string, id: string): boolean {
+    const candidate = this.getCandidateRow(namespace, id);
+    if (!candidate || !['pending', 'conflict'].includes(candidate.status)) {
+      return false;
+    }
+    const now = Date.now();
+    this.database.connection.exec('BEGIN IMMEDIATE');
+    try {
+      const result = this.database.connection
+        .prepare(
+          `UPDATE memory_candidates SET
+            normalized_key = ?, content = '', status = 'rejected',
+            review_reasons_json = '[]', conflicting_memory_id = NULL,
+            legacy_memory_id = NULL, updated_at = ?, decision_at = ?
+            WHERE id = ? AND namespace = ? AND status IN ('pending', 'conflict')`,
+        )
+        .run(
+          `rejected:${candidateFingerprint(candidate.normalized_key, candidate.content)}`,
+          now,
+          now,
+          id,
+          namespace,
+        );
+      if (candidate.legacy_memory_id) {
+        this.database.connection
+          .prepare(
+            `UPDATE memories SET
+              normalized_key = ?, content = '', source_message_id = NULL,
+              status = 'deleted', updated_at = ?, last_confirmed_at = NULL,
+              last_used_at = NULL, expires_at = NULL
+              WHERE id = ? AND namespace = ? AND source = 'automatic'`,
+          )
+          .run(`deleted:${candidate.legacy_memory_id}`, now, candidate.legacy_memory_id, namespace);
+        this.database.connection
+          .prepare('DELETE FROM memories_fts WHERE id = ?')
+          .run(candidate.legacy_memory_id);
+      }
+      this.database.connection
+        .prepare('DELETE FROM memory_candidate_evidence WHERE candidate_id = ?')
+        .run(id);
+      this.database.connection.exec('COMMIT');
+      return Number(result.changes) > 0;
+    } catch (error) {
+      this.database.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
   public save(
     namespace: string,
     candidateValue: MemoryCandidate,
     source: 'manual' | 'automatic',
     sourceMessageId?: string,
   ): MemoryRecord | undefined {
+    if (source === 'automatic') {
+      return undefined;
+    }
     const candidate = sanitizeMemoryCandidate(candidateValue, source);
     if (!candidate) {
       return undefined;
@@ -122,13 +443,6 @@ export class MemoryStore {
           existing.id,
         );
       return this.get(namespace, existing.id);
-    }
-    if (
-      existing &&
-      source === 'automatic' &&
-      (existing.source === 'manual' || candidate.confidence < existing.confidence)
-    ) {
-      return undefined;
     }
     const id = randomUUID();
     this.database.connection.exec('BEGIN IMMEDIATE');
@@ -229,7 +543,23 @@ export class MemoryStore {
   }
 
   public delete(namespace: string, id: string): boolean {
-    return this.scrub(namespace, [id]) > 0;
+    const memory = this.get(namespace, id);
+    if (!memory) {
+      return false;
+    }
+    const relatedIds = this.database.connection
+      .prepare(
+        `SELECT id FROM memories
+          WHERE namespace = ? AND normalized_key = ? AND status <> 'deleted'`,
+      )
+      .all(namespace, memory.normalizedKey) as unknown as { id: string }[];
+    return (
+      this.scrub(
+        namespace,
+        relatedIds.map((row) => row.id),
+        [memory.normalizedKey],
+      ) > 0
+    );
   }
 
   public forget(namespace: string, query: string): number {
@@ -249,9 +579,26 @@ export class MemoryStore {
         searchable.includes(normalized) || normalized.includes(normalizeMemoryKey(memory.content))
       );
     });
+    const candidateIds = this.database.connection
+      .prepare(
+        `SELECT id, normalized_key, content FROM memory_candidates
+          WHERE namespace = ? AND content <> ''`,
+      )
+      .all(namespace)
+      .filter((value) => {
+        const candidate = value as { normalized_key: string; content: string };
+        const searchable = normalizeMemoryKey(`${candidate.normalized_key} ${candidate.content}`);
+        return (
+          searchable.includes(normalized) ||
+          normalized.includes(normalizeMemoryKey(candidate.content))
+        );
+      })
+      .map((value) => (value as { id: string }).id);
     return this.scrub(
       namespace,
       matches.map((memory) => memory.id),
+      [],
+      candidateIds,
     );
   }
 
@@ -262,6 +609,9 @@ export class MemoryStore {
     return this.scrub(
       namespace,
       rows.map((row) => row.id),
+      [],
+      undefined,
+      true,
     );
   }
 
@@ -314,6 +664,90 @@ export class MemoryStore {
     return row ? rowToMemory(row) : undefined;
   }
 
+  private findActiveByKey(namespace: string, normalizedKey: string): MemoryRow | undefined {
+    return this.database.connection
+      .prepare(
+        `SELECT memories.*, messages.content AS source_excerpt
+           FROM memories
+           LEFT JOIN messages ON messages.id = memories.source_message_id
+          WHERE memories.namespace = ? AND memories.normalized_key = ?
+            AND memories.status = 'active'
+          ORDER BY memories.updated_at DESC LIMIT 1`,
+      )
+      .get(namespace, normalizedKey) as unknown as MemoryRow | undefined;
+  }
+
+  private getCandidateRow(namespace: string, id: string): MemoryCandidateRow | undefined {
+    return this.database.connection
+      .prepare('SELECT * FROM memory_candidates WHERE id = ? AND namespace = ?')
+      .get(id, namespace) as unknown as MemoryCandidateRow | undefined;
+  }
+
+  private getCandidate(namespace: string, id: string): MemoryCandidateRecord | undefined {
+    const row = this.getCandidateRow(namespace, id);
+    return row ? this.rowToCandidate(row) : undefined;
+  }
+
+  private rowToCandidate(row: MemoryCandidateRow): MemoryCandidateRecord {
+    const evidenceRows = this.database.connection
+      .prepare(
+        `SELECT memory_candidate_evidence.source_message_id,
+                memory_candidate_evidence.observed_at,
+                messages.content AS source_excerpt
+           FROM memory_candidate_evidence
+           LEFT JOIN messages ON messages.id = memory_candidate_evidence.source_message_id
+          WHERE memory_candidate_evidence.candidate_id = ?
+          ORDER BY memory_candidate_evidence.observed_at DESC`,
+      )
+      .all(row.id) as unknown as MemoryEvidenceRow[];
+    const evidence = evidenceRows.map(rowToEvidence);
+    const evidenceDateCount = new Set(
+      evidence.map((item) => Math.floor(item.observedAt / (24 * 60 * 60 * 1_000))),
+    ).size;
+    const conflictingMemory = row.conflicting_memory_id
+      ? this.get(row.namespace, row.conflicting_memory_id)
+      : undefined;
+    return {
+      id: row.id,
+      namespace: row.namespace,
+      type: row.type,
+      normalizedKey: row.normalized_key,
+      content: row.content,
+      importance: row.importance,
+      confidence: row.confidence,
+      status: row.status,
+      reviewReasons: parseReviewReasons(row.review_reasons_json),
+      evidence,
+      evidenceDateCount,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      lastSeenAt: row.last_seen_at,
+      ...(row.expires_at ? { expiresAt: row.expires_at } : {}),
+      ...(row.decision_at ? { decisionAt: row.decision_at } : {}),
+      ...(conflictingMemory ? { conflictingMemory } : {}),
+    };
+  }
+
+  private latestEvidence(candidateId: string): MemoryEvidenceRow | undefined {
+    return this.database.connection
+      .prepare(
+        `SELECT source_message_id, observed_at, NULL AS source_excerpt
+           FROM memory_candidate_evidence
+          WHERE candidate_id = ? ORDER BY observed_at DESC LIMIT 1`,
+      )
+      .get(candidateId) as unknown as MemoryEvidenceRow | undefined;
+  }
+
+  private insertEvidence(candidateId: string, evidence: MemoryEvidenceSource): void {
+    this.database.connection
+      .prepare(
+        `INSERT OR IGNORE INTO memory_candidate_evidence (
+          candidate_id, source_message_id, observed_at
+        ) VALUES (?, ?, ?)`,
+      )
+      .run(candidateId, evidence.id, Math.trunc(evidence.createdAt));
+  }
+
   private expire(namespace: string): void {
     const expired = this.database.connection
       .prepare(
@@ -335,8 +769,14 @@ export class MemoryStore {
     }
   }
 
-  private scrub(namespace: string, ids: string[]): number {
-    if (ids.length === 0) {
+  private scrub(
+    namespace: string,
+    ids: string[],
+    candidateKeys: string[] = [],
+    candidateIds?: string[],
+    allCandidates = false,
+  ): number {
+    if (ids.length === 0 && candidateKeys.length === 0 && !candidateIds?.length && !allCandidates) {
       return 0;
     }
     const now = Date.now();
@@ -355,6 +795,40 @@ export class MemoryStore {
           .run(`deleted:${id}`, now, id, namespace);
         changed += Number(result.changes);
         this.database.connection.prepare('DELETE FROM memories_fts WHERE id = ?').run(id);
+      }
+      const selectedCandidateIds = allCandidates
+        ? (
+            this.database.connection
+              .prepare(`SELECT id FROM memory_candidates WHERE namespace = ? AND content <> ''`)
+              .all(namespace) as unknown as { id: string }[]
+          ).map((row) => row.id)
+        : [
+            ...(candidateIds ?? []),
+            ...candidateKeys.flatMap((key) =>
+              (
+                this.database.connection
+                  .prepare(
+                    `SELECT id FROM memory_candidates
+                      WHERE namespace = ? AND normalized_key = ? AND content <> ''`,
+                  )
+                  .all(namespace, key) as unknown as { id: string }[]
+              ).map((row) => row.id),
+            ),
+          ];
+      for (const candidateId of new Set(selectedCandidateIds)) {
+        const result = this.database.connection
+          .prepare(
+            `UPDATE memory_candidates SET
+              normalized_key = ?, content = '', status = 'rejected',
+              review_reasons_json = '[]', conflicting_memory_id = NULL,
+              legacy_memory_id = NULL, updated_at = ?, decision_at = ?
+              WHERE id = ? AND namespace = ? AND content <> ''`,
+          )
+          .run(`deleted:${candidateId}`, now, now, candidateId, namespace);
+        changed += Number(result.changes);
+        this.database.connection
+          .prepare('DELETE FROM memory_candidate_evidence WHERE candidate_id = ?')
+          .run(candidateId);
       }
       this.database.connection.exec('COMMIT');
       return changed;

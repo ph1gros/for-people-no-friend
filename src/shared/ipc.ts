@@ -15,6 +15,7 @@ import type {
   StartConversationResult,
 } from './conversation-ipc';
 import type {
+  MemoryCandidateListResult,
   MemoryFileOperationResult,
   MemoryIdInput,
   MemoryListResult,
@@ -69,6 +70,9 @@ export const IPC_CHANNELS = {
   getMemorySettings: 'memory:getSettings',
   setMemorySettings: 'memory:setSettings',
   listMemories: 'memory:list',
+  listMemoryCandidates: 'memory:listCandidates',
+  confirmMemoryCandidate: 'memory:confirmCandidate',
+  rejectMemoryCandidate: 'memory:rejectCandidate',
   updateMemory: 'memory:update',
   deleteMemory: 'memory:delete',
   exportMemories: 'memory:export',
@@ -114,6 +118,9 @@ export interface DeskpetApi {
   getMemorySettings(): Promise<MemorySettings>;
   setMemorySettings(input: SetMemorySettingsInput): Promise<MemoryOperationResult>;
   listMemories(): Promise<MemoryListResult>;
+  listMemoryCandidates(): Promise<MemoryCandidateListResult>;
+  confirmMemoryCandidate(input: MemoryIdInput): Promise<MemoryOperationResult>;
+  rejectMemoryCandidate(input: MemoryIdInput): Promise<MemoryOperationResult>;
   updateMemory(input: UpdateMemoryInput): Promise<MemoryOperationResult>;
   deleteMemory(input: MemoryIdInput): Promise<MemoryOperationResult>;
   exportMemories(): Promise<MemoryFileOperationResult>;

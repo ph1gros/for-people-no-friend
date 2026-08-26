@@ -3,7 +3,7 @@ import {
   formatCharacterLore,
   shouldIncludeCharacterLoreDetails,
 } from '../character/character-lore';
-import type { CharacterProfile } from './character-profile';
+import { DEFAULT_CHARACTER_PROFILE, type CharacterProfile } from './character-profile';
 
 const MAX_CONTEXT_MESSAGES = 20;
 const MAX_CONTEXT_CHARACTERS = 24_000;
@@ -53,13 +53,19 @@ export const buildConversationSystemPrompt = (
   const actionInstruction = allowedActions.length
     ? `action 必须是 null 或以下动作之一：${allowedActions.join(', ')}。`
     : '当前模型没有可用动作，action 必须是 null。';
+  const hasStructuredLore = profile.lore !== undefined;
+  const includeBio =
+    !hasStructuredLore ||
+    (profile.bio !== DEFAULT_CHARACTER_PROFILE.bio && profile.bio !== profile.lore?.identity);
+  const includePersona =
+    !hasStructuredLore || profile.personaPrompt !== DEFAULT_CHARACTER_PROFILE.personaPrompt;
   return [
     `你是“${profile.name}”。`,
-    `角色简介：${profile.bio}`,
+    includeBio ? `角色简介：${profile.bio}` : undefined,
     characterLore || undefined,
     `用户称呼：${profile.userDisplayName}`,
-    '人格设定：',
-    profile.personaPrompt,
+    includePersona ? '人格规则：' : undefined,
+    includePersona ? profile.personaPrompt : undefined,
     memoryContext ? '' : undefined,
     memoryContext || undefined,
     workGlossaryContext ? '' : undefined,

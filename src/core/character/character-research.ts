@@ -12,5 +12,10 @@ export interface CharacterResearchCandidate {
 
 export interface CharacterResearchDraft {
   lore: CharacterLore;
+  profileFields: {
+    userDisplayName: string;
+    bio: string;
+    personaPrompt: string;
+  };
   warnings: string[];
 }

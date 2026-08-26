@@ -1,9 +1,23 @@
 import type { CharacterLore } from '../../core/character/character-lore';
 import type { CharacterResearchCandidate } from '../../core/character/character-research';
-import type { CharacterProfile } from '../../core/conversation/character-profile';
+import {
+  DEFAULT_CHARACTER_PROFILE,
+  type CharacterProfile,
+} from '../../core/conversation/character-profile';
 import { resolveCharacterDisplayName } from '../../core/conversation/character-identity';
 import type { PublicLlmError } from '../../core/llm/contracts';
-import type { MemoryRecord, MemoryType } from '../../core/memory/contracts';
+import type {
+  MemoryCandidateRecord,
+  MemoryRecord,
+  MemoryReviewReason,
+  MemoryType,
+} from '../../core/memory/contracts';
+import {
+  AUTOMATIC_MEMORY_BATCH_MESSAGES,
+  AUTOMATIC_MEMORY_MAX_CANDIDATES,
+  AUTOMATIC_MEMORY_MIN_CONFIDENCE,
+  AUTOMATIC_MEMORY_MIN_IMPORTANCE,
+} from '../../core/memory/memory-policy';
 import type { ConversationEvent, ConversationMessage } from '../../shared/conversation-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
@@ -95,7 +109,7 @@ export const initializeChat = async ({
   composer.className = 'chat-composer';
   const input = document.createElement('textarea');
   input.className = 'chat-composer__input';
-  input.placeholder = '和桌宠说点什么…';
+  input.placeholder = '说点什么吧......';
   input.maxLength = 8_000;
   input.rows = 1;
   input.setAttribute('aria-label', '对话内容');
@@ -157,9 +171,43 @@ export const initializeChat = async ({
   const memoryStatus = document.createElement('p');
   memoryStatus.className = 'settings-status';
   memoryStatus.setAttribute('role', 'status');
+  const automaticPolicy = document.createElement('details');
+  automaticPolicy.className = 'memory-policy';
+  const automaticPolicyTitle = document.createElement('summary');
+  automaticPolicyTitle.textContent = '自动提取按什么判断？';
+  const automaticPolicyIntro = document.createElement('p');
+  automaticPolicyIntro.textContent = `开启后，每累计约 ${AUTOMATIC_MEMORY_BATCH_MESSAGES / 2} 轮完整对话，模型会在后台提出最多 ${AUTOMATIC_MEMORY_MAX_CANDIDATES} 条候选。候选不会直接生效。`;
+  const automaticPolicyRules = document.createElement('ul');
+  for (const rule of [
+    '只考虑稳定偏好、人物关系、重要事件、计划目标和明确事实。',
+    `本地规则要求重要度至少 ${AUTOMATIC_MEMORY_MIN_IMPORTANCE}、置信度至少 ${AUTOMATIC_MEMORY_MIN_CONFIDENCE}，并且必须能对应到真实用户消息。`,
+    '寒暄、玩笑、推测、密码或 API Key 会被忽略；偏好、习惯、关系、冲突和时间不明确的未来事件必须由你确认。',
+  ]) {
+    const item = document.createElement('li');
+    item.textContent = rule;
+    automaticPolicyRules.append(item);
+  }
+  automaticPolicy.append(automaticPolicyTitle, automaticPolicyIntro, automaticPolicyRules);
+  const candidateTitle = document.createElement('strong');
+  candidateTitle.className = 'memory-section-title';
+  candidateTitle.textContent = '待你确认';
+  const candidateList = document.createElement('div');
+  candidateList.className = 'memory-list memory-candidate-list';
+  const confirmedMemoryTitle = document.createElement('strong');
+  confirmedMemoryTitle.className = 'memory-section-title';
+  confirmedMemoryTitle.textContent = '已确认记忆';
   const memoryList = document.createElement('div');
   memoryList.className = 'memory-list';
-  memoryPanel.append(memoryHeader, memoryControls, memoryStatus, memoryList);
+  memoryPanel.append(
+    memoryHeader,
+    memoryControls,
+    memoryStatus,
+    automaticPolicy,
+    candidateTitle,
+    candidateList,
+    confirmedMemoryTitle,
+    memoryList,
+  );
 
   const settingsPanel = document.createElement('form');
   settingsPanel.className = 'chat-drawer settings-panel';
@@ -206,6 +254,7 @@ export const initializeChat = async ({
   const baseUrlInput = document.createElement('input');
   baseUrlInput.type = 'url';
   baseUrlInput.maxLength = 2_048;
+  baseUrlInput.placeholder = '例如：http://127.0.0.1:11434/v1';
   const apiKeyInput = document.createElement('input');
   apiKeyInput.type = 'password';
   apiKeyInput.maxLength = 32_768;
@@ -238,8 +287,22 @@ export const initializeChat = async ({
   glossaryStatus.className = 'settings-status';
   glossaryStatus.setAttribute('role', 'status');
   glossaryStatus.textContent = '填写来源作品后，可查看是否有对应的社区词库。';
-  const glossarySources = document.createElement('small');
-  glossarySources.className = 'character-lore__sources';
+  const glossarySources = document.createElement('details');
+  glossarySources.className = 'glossary-sources';
+  glossarySources.hidden = true;
+  const glossarySourcesSummary = document.createElement('summary');
+  const glossarySourcesPreview = document.createElement('span');
+  glossarySourcesPreview.className = 'glossary-sources__preview';
+  const glossarySourcesToggle = document.createElement('span');
+  glossarySourcesToggle.className = 'glossary-sources__toggle';
+  glossarySourcesToggle.textContent = '.....点击展开';
+  glossarySourcesSummary.append(glossarySourcesPreview, glossarySourcesToggle);
+  const glossarySourcesFull = document.createElement('small');
+  glossarySourcesFull.className = 'glossary-sources__full';
+  glossarySources.append(glossarySourcesSummary, glossarySourcesFull);
+  glossarySources.addEventListener('toggle', () => {
+    glossarySourcesToggle.textContent = glossarySources.open ? '收起来源' : '.....点击展开';
+  });
   const syncGlossaryButton = createButton('同步作品词库', 'secondary-button');
   const glossaryActions = document.createElement('div');
   glossaryActions.className = 'settings-actions';
@@ -248,16 +311,22 @@ export const initializeChat = async ({
   const loreEditor = document.createElement('details');
   loreEditor.className = 'character-lore';
   const loreSummary = document.createElement('summary');
-  loreSummary.textContent = '角色扮演资料（可选，保存在本地）';
+  loreSummary.textContent = '角色设定';
   const loreHint = document.createElement('p');
   loreHint.className = 'settings-status';
-  loreHint.textContent = '可以修改联网草稿或完全自行填写；点击总设置的“保存”后才生效。';
+  loreHint.textContent =
+    '默认称呼是“你”，并使用通用简介和人格规则。联网整理角色后，这些内容会和原作资料一起更新；点击总设置的“保存”后才生效。';
+  const userNameInput = document.createElement('input');
+  userNameInput.maxLength = 80;
+  const bioInput = document.createElement('textarea');
+  bioInput.maxLength = 2_000;
+  bioInput.rows = 2;
+  const personaInput = document.createElement('textarea');
+  personaInput.maxLength = 16_000;
+  personaInput.rows = 5;
   const loreAliasesInput = document.createElement('input');
   loreAliasesInput.maxLength = 2_000;
   loreAliasesInput.placeholder = '用顿号分隔，例如：昵称、别称';
-  const loreIdentityInput = document.createElement('textarea');
-  loreIdentityInput.maxLength = 1_000;
-  loreIdentityInput.rows = 2;
   const lorePersonalityInput = document.createElement('textarea');
   lorePersonalityInput.maxLength = 2_000;
   lorePersonalityInput.rows = 3;
@@ -281,8 +350,10 @@ export const initializeChat = async ({
   loreEditor.append(
     loreSummary,
     loreHint,
+    createField('对用户的称呼', userNameInput),
+    createField('角色简介', bioInput),
+    createField('人格规则', personaInput),
     createField('别名', loreAliasesInput),
-    createField('身份', loreIdentityInput),
     createField('性格', lorePersonalityInput),
     createField('背景资料', loreBackgroundInput),
     createField('重要关系', loreRelationshipsInput),
@@ -290,14 +361,6 @@ export const initializeChat = async ({
     loreSourcesOutput,
     loreActions,
   );
-  const userNameInput = document.createElement('input');
-  userNameInput.maxLength = 80;
-  const bioInput = document.createElement('textarea');
-  bioInput.maxLength = 2_000;
-  bioInput.rows = 2;
-  const personaInput = document.createElement('textarea');
-  personaInput.maxLength = 16_000;
-  personaInput.rows = 5;
 
   const secretStatus = document.createElement('small');
   secretStatus.className = 'settings-status';
@@ -312,35 +375,74 @@ export const initializeChat = async ({
   const settingsActions = document.createElement('div');
   settingsActions.className = 'settings-actions';
   const testButton = createButton('测试连接', 'secondary-button');
+  const connectionActions = document.createElement('div');
+  connectionActions.className = 'settings-actions connection-actions';
+  connectionActions.append(testButton);
   const saveButton = createButton('保存', 'primary-button');
   saveButton.type = 'submit';
-  settingsActions.append(testButton, saveButton);
+  settingsActions.append(saveButton);
+  const baseUrlField = createField('兼容接口地址（仅 OpenAI / Ollama）', baseUrlInput);
+  const baseUrlHint = document.createElement('small');
+  baseUrlHint.className = 'settings-hint';
+  baseUrlHint.textContent = '用于连接本地 Ollama 或其他 OpenAI 兼容服务；Claude 不使用此地址。';
+  baseUrlField.append(baseUrlHint);
+  baseUrlField.hidden = true;
   settingsPanel.append(
     settingsHeader,
     scaleField,
     createField('提供商', providerSelect),
     createField('模型名称', modelInput),
-    createField('兼容接口地址', baseUrlInput),
+    baseUrlField,
     createField('API Key', apiKeyInput),
     secretRow,
+    connectionActions,
     createField('角色名称', characterNameInput),
     createField('来源作品或游戏', loreSourceWorkInput),
     characterSearch,
     glossaryPanel,
     loreEditor,
-    createField('对用户的称呼', userNameInput),
-    createField('角色简介', bioInput),
-    createField('人格提示词', personaInput),
     settingsStatus,
     settingsActions,
   );
 
+  const actionDialog = document.createElement('dialog');
+  actionDialog.className = 'app-dialog';
+  const actionDialogForm = document.createElement('form');
+  actionDialogForm.method = 'dialog';
+  const actionDialogTitle = document.createElement('strong');
+  actionDialogTitle.className = 'app-dialog__title';
+  const actionDialogMessage = document.createElement('p');
+  actionDialogMessage.className = 'app-dialog__message';
+  const actionDialogDetails = document.createElement('details');
+  actionDialogDetails.className = 'app-dialog__details';
+  const actionDialogDetailsSummary = document.createElement('summary');
+  actionDialogDetailsSummary.textContent = '.....点击展开';
+  const actionDialogDetailsText = document.createElement('p');
+  actionDialogDetails.append(actionDialogDetailsSummary, actionDialogDetailsText);
+  const actionDialogActions = document.createElement('div');
+  actionDialogActions.className = 'app-dialog__actions';
+  const actionDialogCancel = createButton('取消', 'secondary-button');
+  actionDialogCancel.type = 'submit';
+  actionDialogCancel.value = 'cancel';
+  const actionDialogConfirm = createButton('继续', 'primary-button');
+  actionDialogConfirm.type = 'submit';
+  actionDialogConfirm.value = 'confirm';
+  actionDialogActions.append(actionDialogCancel, actionDialogConfirm);
+  actionDialogForm.append(
+    actionDialogTitle,
+    actionDialogMessage,
+    actionDialogDetails,
+    actionDialogActions,
+  );
+  actionDialog.append(actionDialogForm);
+
   panel.append(panelHeader, subtitle, composer, toolbar, historyPanel, memoryPanel, settingsPanel);
   shell.append(launcherButton, panel);
-  root.append(shell);
+  root.append(shell, actionDialog);
 
   let messages: ConversationMessage[] = [];
   let memoryRecords: MemoryRecord[] = [];
+  let memoryCandidates: MemoryCandidateRecord[] = [];
   let profile: CharacterProfile | undefined;
   let loreSources: CharacterLore['sources'] = [];
   let activeCharacterResearchId: string | undefined;
@@ -348,6 +450,29 @@ export const initializeChat = async ({
   let activeReply = '';
   let panelExpanded = false;
   let replyStateLabel = '随时可以开始聊天';
+
+  const confirmAction = (options: {
+    title: string;
+    message: string;
+    details?: string;
+    confirmLabel?: string;
+  }): Promise<boolean> => {
+    actionDialogTitle.textContent = options.title;
+    actionDialogMessage.textContent = options.message;
+    actionDialogDetailsText.textContent = options.details ?? '';
+    actionDialogDetails.hidden = !options.details;
+    actionDialogDetails.open = false;
+    actionDialogConfirm.textContent = options.confirmLabel ?? '继续';
+    actionDialog.returnValue = 'cancel';
+    return new Promise((resolve) => {
+      actionDialog.addEventListener(
+        'close',
+        () => resolve(actionDialog.returnValue === 'confirm'),
+        { once: true },
+      );
+      actionDialog.showModal();
+    });
+  };
 
   const displayScale = (scale: number): void => {
     scaleInput.value = scale.toFixed(2);
@@ -369,7 +494,7 @@ export const initializeChat = async ({
   const updateIdentity = (): void => {
     const name = characterDisplayName();
     replyAuthor.textContent = name;
-    input.placeholder = `和${name}说点什么…`;
+    input.placeholder = '说点什么吧......';
     setReplyStatus(replyStateLabel);
     renderHistory();
   };
@@ -383,6 +508,10 @@ export const initializeChat = async ({
     void api?.setChatPanelExpanded({ expanded });
     if (expanded) requestAnimationFrame(() => input.focus());
     window.setTimeout(() => window.dispatchEvent(new Event('resize')), 240);
+  };
+
+  const updateProviderVisibility = (): void => {
+    baseUrlField.hidden = providerSelect.value !== 'openai-compatible';
   };
 
   const updateSecretStatus = async (): Promise<void> => {
@@ -441,7 +570,95 @@ export const initializeChat = async ({
     fact: '事实',
   };
 
+  const memoryReviewLabels: Record<MemoryReviewReason, string> = {
+    legacy_automatic: '旧版自动记忆，升级后等待确认',
+    conflict: '与现有记忆冲突',
+    time_uncertain: '未来时间还不明确',
+    profile_claim: '偏好、习惯或关系信息不会自动生效',
+  };
+
+  const renderMemoryCandidates = (): void => {
+    candidateList.replaceChildren();
+    const selectedType = memoryFilter.value;
+    const filtered = selectedType
+      ? memoryCandidates.filter((candidate) => candidate.type === selectedType)
+      : memoryCandidates;
+    if (filtered.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'history-empty';
+      empty.textContent = '没有待确认项。自动提取会先来这里排队，不会偷偷混进聊天。';
+      candidateList.append(empty);
+      return;
+    }
+    for (const candidate of filtered) {
+      const card = document.createElement('article');
+      card.className = 'memory-card memory-card--candidate';
+      const heading = document.createElement('div');
+      heading.className = 'memory-candidate-heading';
+      const type = document.createElement('strong');
+      type.textContent = memoryTypeLabels[candidate.type];
+      const state = document.createElement('span');
+      state.className = 'memory-badge';
+      state.textContent = candidate.status === 'conflict' ? '有冲突' : '待确认';
+      heading.append(type, state);
+      const content = document.createElement('p');
+      content.className = 'memory-candidate-content';
+      content.textContent = candidate.content;
+      const reasons = document.createElement('p');
+      reasons.className = 'memory-source';
+      reasons.textContent = candidate.reviewReasons.length
+        ? candidate.reviewReasons.map((reason) => memoryReviewLabels[reason]).join('；')
+        : '自动提取结果，需要你点头才会生效。';
+      card.append(heading, content, reasons);
+      if (candidate.conflictingMemory) {
+        const conflict = document.createElement('p');
+        conflict.className = 'memory-conflict';
+        conflict.textContent = `现有记忆：${candidate.conflictingMemory.content}`;
+        card.append(conflict);
+      }
+      const evidenceSummary = document.createElement('small');
+      evidenceSummary.className = 'memory-source';
+      evidenceSummary.textContent = `证据 ${candidate.evidence.length} 条，来自 ${candidate.evidenceDateCount} 个日期`;
+      const evidenceList = document.createElement('ul');
+      evidenceList.className = 'memory-evidence-list';
+      for (const evidence of candidate.evidence.slice(0, 3)) {
+        const item = document.createElement('li');
+        const date = new Date(evidence.observedAt).toLocaleDateString();
+        item.textContent = evidence.sourceExcerpt
+          ? `${date} · ${evidence.sourceExcerpt}`
+          : `${date} · 原消息已从对话历史清除`;
+        evidenceList.append(item);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'memory-card__actions';
+      const confirm = createButton('确认记住', 'text-button');
+      const reject = createButton('拒绝', 'text-button danger-button');
+      actions.append(confirm, reject);
+      confirm.addEventListener('click', () => {
+        void (async () => {
+          if (!api) return;
+          const result = await api.confirmMemoryCandidate({ id: candidate.id });
+          memoryStatus.textContent = result.ok
+            ? '候选已经确认，会在相关对话中生效。'
+            : result.message;
+          if (result.ok) await loadMemories();
+        })();
+      });
+      reject.addEventListener('click', () => {
+        void (async () => {
+          if (!api) return;
+          const result = await api.rejectMemoryCandidate({ id: candidate.id });
+          memoryStatus.textContent = result.ok ? '候选已拒绝，不会进入长期记忆。' : result.message;
+          if (result.ok) await loadMemories();
+        })();
+      });
+      card.append(evidenceSummary, evidenceList, actions);
+      candidateList.append(card);
+    }
+  };
+
   const renderMemories = (): void => {
+    renderMemoryCandidates();
     memoryList.replaceChildren();
     const selectedType = memoryFilter.value;
     const filtered = selectedType
@@ -488,12 +705,15 @@ export const initializeChat = async ({
       confidence.setAttribute('aria-label', '置信度');
       const source = document.createElement('small');
       source.className = 'memory-source';
+      const sourceLabel =
+        memory.source === 'manual'
+          ? '用户主动记住'
+          : memory.lastConfirmedAt
+            ? '自动提取，经用户确认'
+            : '自动提取';
       source.textContent = memory.sourceExcerpt
-        ? '来源：' +
-          (memory.source === 'manual' ? '用户主动记住' : '自动提取') +
-          ' · ' +
-          memory.sourceExcerpt
-        : '来源：' + (memory.source === 'manual' ? '用户主动记住' : '自动提取');
+        ? '来源：' + sourceLabel + ' · ' + memory.sourceExcerpt
+        : '来源：' + sourceLabel;
       metrics.append(
         document.createTextNode('重要度 '),
         importance,
@@ -535,9 +755,14 @@ export const initializeChat = async ({
 
   const loadMemories = async (): Promise<void> => {
     if (!api) return;
-    const [settings, records] = await Promise.all([api.getMemorySettings(), api.listMemories()]);
+    const [settings, records, candidates] = await Promise.all([
+      api.getMemorySettings(),
+      api.listMemories(),
+      api.listMemoryCandidates(),
+    ]);
     automaticMemoryInput.checked = settings.automaticMemoryEnabled;
     memoryRecords = records;
+    memoryCandidates = candidates;
     renderMemories();
   };
 
@@ -624,7 +849,6 @@ export const initializeChat = async ({
   const clearLoreEditor = (): void => {
     loreAliasesInput.value = '';
     loreSourceWorkInput.value = '';
-    loreIdentityInput.value = '';
     lorePersonalityInput.value = '';
     loreBackgroundInput.value = '';
     loreRelationshipsInput.value = '';
@@ -638,7 +862,6 @@ export const initializeChat = async ({
     if (!lore) return;
     loreAliasesInput.value = lore.aliases.join('、');
     loreSourceWorkInput.value = lore.sourceWork;
-    loreIdentityInput.value = lore.identity;
     lorePersonalityInput.value = lore.personality;
     loreBackgroundInput.value = lore.background;
     loreRelationshipsInput.value = lore.relationships.join('\n');
@@ -660,7 +883,6 @@ export const initializeChat = async ({
       .filter(Boolean);
     const fields = {
       sourceWork: loreSourceWorkInput.value.trim(),
-      identity: loreIdentityInput.value.trim(),
       personality: lorePersonalityInput.value.trim(),
       background: loreBackgroundInput.value.trim(),
       speechStyle: loreSpeechStyleInput.value.trim(),
@@ -668,11 +890,19 @@ export const initializeChat = async ({
     if (
       aliases.length === 0 &&
       relationships.length === 0 &&
+      loreSources.length === 0 &&
       Object.values(fields).every((v) => !v)
     ) {
       return undefined;
     }
-    return { canonicalName, aliases, relationships, ...fields, sources: loreSources };
+    return {
+      canonicalName,
+      aliases,
+      identity: bioInput.value.trim(),
+      relationships,
+      ...fields,
+      sources: loreSources,
+    };
   };
 
   const setCharacterResearchBusy = (busy: boolean): void => {
@@ -726,6 +956,9 @@ export const initializeChat = async ({
             }
             characterNameInput.value = result.draft.lore.canonicalName;
             fillLoreEditor(result.draft.lore);
+            userNameInput.value = result.draft.profileFields.userDisplayName;
+            bioInput.value = result.draft.profileFields.bio;
+            personaInput.value = result.draft.profileFields.personaPrompt;
             loreEditor.open = true;
             if (result.draft.warnings.length > 0) {
               action.textContent = '重新整理扮演设定 →';
@@ -757,7 +990,7 @@ export const initializeChat = async ({
   const loadGlossaryStatus = async (sourceWork: string): Promise<void> => {
     if (!api || !sourceWork.trim()) {
       glossaryStatus.textContent = '填写来源作品后，可查看是否有对应的社区词库。';
-      glossarySources.textContent = '';
+      glossarySources.hidden = true;
       syncGlossaryButton.disabled = true;
       return;
     }
@@ -765,14 +998,20 @@ export const initializeChat = async ({
     syncGlossaryButton.disabled = !status.supported;
     if (!status.supported) {
       glossaryStatus.textContent = '当前作品还没有内置社区词库；遇到未知词时会先澄清。';
-      glossarySources.textContent = '';
+      glossarySources.hidden = true;
       return;
     }
     glossaryStatus.textContent = status.lastSynced
       ? `${status.workName}社区词库已缓存，共 ${status.entryCount} 条；上次同步：${new Date(status.lastSynced).toLocaleString()}。`
       : `${status.workName}社区词库包含 ${status.entryCount} 条本地校对词条；可主动联网同步来源状态。`;
-    glossarySources.textContent = status.sources.length
-      ? `词库来源：${status.sources.map((source) => `${source.siteName} · ${source.title}`).join('；')}`
+    const sourceLabels = status.sources.map((source) => `${source.siteName} · ${source.title}`);
+    glossarySources.open = false;
+    glossarySources.hidden = sourceLabels.length === 0;
+    glossarySourcesPreview.textContent = sourceLabels.length
+      ? `词库来源：${sourceLabels.slice(0, 6).join('；')}${sourceLabels.length > 6 ? '……' : ''}`
+      : '';
+    glossarySourcesFull.textContent = sourceLabels.length
+      ? `全部来源：${sourceLabels.join('；')}`
       : '';
   };
 
@@ -783,10 +1022,15 @@ export const initializeChat = async ({
       characterSearchStatus.textContent = '请先填写角色名称。';
       return;
     }
+    const sourceWork = loreSourceWorkInput.value.trim();
     if (
-      !window.confirm(
-        `将把“${name}”和作品名发送给公开资料站点进行查询。结果不会自动保存，是否继续？`,
-      )
+      !(await confirmAction({
+        title: '联网查找角色',
+        message: sourceWork ? `查找“${name}”（${sourceWork}）？` : `查找“${name}”？`,
+        details:
+          '角色名和作品名会发送给公开资料站点。查找结果只会生成本地草稿，点击总设置的“保存”后才会生效。',
+        confirmLabel: '开始查找',
+      }))
     ) {
       return;
     }
@@ -799,7 +1043,7 @@ export const initializeChat = async ({
       const result = await api.searchCharacters({
         requestId,
         name,
-        sourceWork: loreSourceWorkInput.value.trim(),
+        sourceWork,
       });
       if (activeCharacterResearchId !== requestId) return;
       if (!result.ok) {
@@ -833,13 +1077,17 @@ export const initializeChat = async ({
       ]);
     profile = storedProfile;
     providerSelect.value = conversationConfiguration.selection?.providerId ?? 'anthropic';
+    updateProviderVisibility();
     modelInput.value = conversationConfiguration.selection?.modelId ?? '';
     baseUrlInput.value = providerConfiguration.openAICompatibleBaseUrl;
     characterNameInput.value = storedProfile.name;
     fillLoreEditor(storedProfile.lore);
     await loadGlossaryStatus(storedProfile.lore?.sourceWork ?? '');
     userNameInput.value = storedProfile.userDisplayName;
-    bioInput.value = storedProfile.bio;
+    bioInput.value =
+      storedProfile.bio !== DEFAULT_CHARACTER_PROFILE.bio
+        ? storedProfile.bio
+        : storedProfile.lore?.identity || storedProfile.bio;
     personaInput.value = storedProfile.personaPrompt;
     characterSearchCandidates.replaceChildren();
     characterSearchStatus.textContent = storedProfile.lore?.sources.length
@@ -871,7 +1119,9 @@ export const initializeChat = async ({
     };
     settingsStatus.textContent = '正在保存…';
     const operations = await Promise.all([
-      api.setProviderConfiguration({ openAICompatibleBaseUrl: baseUrlInput.value.trim() }),
+      providerId === 'openai-compatible'
+        ? api.setProviderConfiguration({ openAICompatibleBaseUrl: baseUrlInput.value.trim() })
+        : Promise.resolve({ ok: true } as const),
       api.setConversationConfiguration({ selection: { providerId, modelId } }),
       api.setCharacterProfile(updatedProfile),
       apiKeyInput.value.trim()
@@ -906,9 +1156,12 @@ export const initializeChat = async ({
         return;
       }
       if (
-        !window.confirm(
-          `将访问公开社区资料，交叉验证“${sourceWork}”词库并缓存到本地。普通聊天不会自动联网，是否继续？`,
-        )
+        !(await confirmAction({
+          title: '同步作品词库',
+          message: `将同步“${sourceWork}”的社区词库。`,
+          details: '只会核对公开来源并更新本地缓存；普通聊天不会因此自动联网。',
+          confirmLabel: '开始同步',
+        }))
       ) {
         return;
       }
@@ -946,7 +1199,8 @@ export const initializeChat = async ({
       memoryStatus.textContent = '正在读取本地记忆…';
       void loadMemories()
         .then(() => {
-          memoryStatus.textContent = '共 ' + memoryRecords.length + ' 条有效记忆。';
+          memoryStatus.textContent =
+            memoryRecords.length + ' 条已确认，' + memoryCandidates.length + ' 条待确认。';
         })
         .catch(() => {
           memoryStatus.textContent = '无法读取本地记忆。';
@@ -1020,7 +1274,10 @@ export const initializeChat = async ({
       if (result.ok) await loadMemories();
     })();
   });
-  providerSelect.addEventListener('change', () => void updateSecretStatus());
+  providerSelect.addEventListener('change', () => {
+    updateProviderVisibility();
+    void updateSecretStatus();
+  });
   scaleInput.addEventListener('input', () => displayScale(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {
     if (!api) return;

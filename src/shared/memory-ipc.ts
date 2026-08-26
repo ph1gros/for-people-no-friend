@@ -1,4 +1,9 @@
-import type { MemoryCandidate, MemoryRecord, MemoryType } from '../core/memory/contracts';
+import type {
+  MemoryCandidate,
+  MemoryCandidateRecord,
+  MemoryRecord,
+  MemoryType,
+} from '../core/memory/contracts';
 import { MEMORY_TYPES } from '../core/memory/contracts';
 import { deriveMemoryKey } from '../core/memory/memory-policy';
 
@@ -29,6 +34,7 @@ export type MemoryFileOperationResult =
   { ok: true; canceled: boolean } | { ok: false; canceled: false; message: string };
 
 export type MemoryListResult = MemoryRecord[];
+export type MemoryCandidateListResult = MemoryCandidateRecord[];
 
 const MEMORY_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const memoryTypeSet = new Set<string>(MEMORY_TYPES);
