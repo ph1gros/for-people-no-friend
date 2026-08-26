@@ -10,6 +10,9 @@
     "node": ">=24"
   },
   "scripts": {
+    "character:catalog": "node scripts/build-character-catalog.mjs",
+    "prebuild": "pnpm character:catalog",
+    "predev": "pnpm character:catalog",
     "build": "pnpm clean && pnpm build:electron && pnpm build:renderer",
     "build:electron": "tsc -p tsconfig.electron.json && pnpm build:preload",
     "build:preload": "vite build --config vite.preload.config.mts",

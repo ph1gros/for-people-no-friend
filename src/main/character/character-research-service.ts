@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { CharacterLore } from '../../core/character/character-lore';
+import type { CharacterLore, CharacterRoleplayExample } from '../../core/character/character-lore';
 import type {
   CharacterResearchCandidate,
   CharacterResearchDraft,
@@ -38,6 +38,20 @@ interface CandidateRecord {
   pageId: number;
   title: string;
   expiresAt: number;
+}
+
+interface ResearchPage {
+  title: string;
+  url: string;
+  extract: string;
+  siteName: string;
+}
+
+interface WebSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  kind: 'profile' | 'dialogue';
 }
 
 interface MediaWikiSearchResponse {
@@ -112,10 +126,32 @@ const SOURCES: readonly CharacterSourceDefinition[] = [
 
 const USER_AGENT = 'For-People-No-Friend/1.0 (https://github.com/ph1gros/for-people-no-friend)';
 const MAX_RESPONSE_CHARACTERS = 1_000_000;
-const MAX_SOURCE_TEXT_CHARACTERS = 4_200;
+const MAX_SOURCE_TEXT_CHARACTERS = 12_000;
 const CANDIDATE_TTL_MS = 10 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 5_000;
 const GENERATION_TIMEOUT_MS = 30_000;
+const WEB_SEARCH_ORIGIN = 'https://www.bing.com';
+const WEB_SEARCH_PATH = '/search';
+const SUPPLEMENTAL_HOSTS = [
+  'wikipedia.org',
+  'wiki.gg',
+  'fandom.com',
+  'prts.wiki',
+  'moegirl.org.cn',
+  'atwiki.jp',
+  'animemanga33.com',
+  'anibase.net',
+  'sbcr.jp',
+  'kadokawa.co.jp',
+  'kadokawa-animation.jp',
+  'square-enix.com',
+  'bilibili.com',
+  'youtube.com',
+  'youtu.be',
+  'nicovideo.jp',
+] as const;
+const DIALOGUE_MARKER =
+  /(台词|臺詞|语音|語音|对白|對白|名言|セリフ|ボイス|quotes?|voice\s*lines?)/iu;
 
 const normalize = (value: string): string => value.normalize('NFKC').trim().toLowerCase();
 
@@ -130,6 +166,43 @@ const decodeSnippet = (value: string): string =>
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 160);
+
+const readRssTag = (item: string, tag: string): string => {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'iu').exec(item);
+  return match?.[1]?.replace(/^<!\[CDATA\[|\]\]>$/g, '').trim() ?? '';
+};
+
+const isAllowedSupplementalUrl = (value: string): URL | undefined => {
+  try {
+    const url = new URL(value.replaceAll('&amp;', '&'));
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.port ||
+      !SUPPLEMENTAL_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`))
+    ) {
+      return undefined;
+    }
+    url.hash = '';
+    return url;
+  } catch {
+    return undefined;
+  }
+};
+
+const selectRelevantText = (text: string, characterName: string, kind: WebSearchResult['kind']) => {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const markers =
+    kind === 'dialogue'
+      ? [characterName, '台词', '语音', '对白', '名言', 'セリフ', 'ボイス']
+      : [characterName, '身份', '背景', '性格', '关系', '角色'];
+  const positions = markers
+    .map((marker) => normalized.toLowerCase().indexOf(marker.toLowerCase()))
+    .filter((position) => position >= 0);
+  const focus = positions.length > 0 ? Math.min(...positions) : 0;
+  return normalized.slice(Math.max(0, focus - 250), focus + 2_250);
+};
 
 const sourceMatchesWork = (source: CharacterSourceDefinition, sourceWork: string): boolean => {
   const normalizedWork = normalize(sourceWork);
@@ -181,6 +254,29 @@ const boundedStrings = (value: unknown, maximumItems: number, maximum: number): 
       ].slice(0, maximumItems)
     : [];
 
+const boundedRoleplayExamples = (
+  value: unknown,
+  validSourceIds: ReadonlySet<string>,
+): CharacterRoleplayExample[] => {
+  if (!Array.isArray(value)) return [];
+  const examples: CharacterRoleplayExample[] = [];
+  for (const item of value.slice(0, 20)) {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const scene = boundedChineseText(record.scene, 80);
+    const emotion = boundedChineseText(record.emotion, 40);
+    const trigger = boundedChineseText(record.trigger, 120);
+    const attitude = boundedChineseText(record.attitude, 120);
+    const line = boundedChineseText(record.line, 60);
+    const sourceId = boundedString(record.sourceId, 100);
+    if (!scene || !emotion || !trigger || !attitude || !line || !validSourceIds.has(sourceId)) {
+      continue;
+    }
+    examples.push({ scene, emotion, trigger, attitude, line, sourceId });
+  }
+  return examples;
+};
+
 const generationFailureWarning = (error: unknown): string => {
   const code =
     typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
@@ -231,7 +327,9 @@ const buildProfileFields = (
 });
 
 const selectSourceText = (pages: Array<{ title: string; extract: string }>): string => {
-  const hasDetailPages = pages.some((page) => /\/(file|dialogue|语音记录)$/iu.test(page.title));
+  const hasDetailPages = pages.some(
+    (page) => /\/(file|dialogue|语音记录)$/iu.test(page.title) || DIALOGUE_MARKER.test(page.title),
+  );
   const hasChineseVoicePage = pages.some((page) => /\/语音记录$/u.test(page.title));
   const prioritizedPages = pages
     .map((page, index) => ({ page, index }))
@@ -239,7 +337,7 @@ const selectSourceText = (pages: Array<{ title: string; extract: string }>): str
       const priority = (title: string): number =>
         /\/语音记录$/u.test(title)
           ? 4
-          : /\/dialogue$/iu.test(title)
+          : /\/dialogue$/iu.test(title) || DIALOGUE_MARKER.test(title)
             ? 3
             : /\/file$/iu.test(title)
               ? 2
@@ -251,7 +349,7 @@ const selectSourceText = (pages: Array<{ title: string; extract: string }>): str
       const pageBudget = hasDetailPages
         ? /\/语音记录$/u.test(page.title)
           ? 2_200
-          : /\/dialogue$/iu.test(page.title)
+          : /\/dialogue$/iu.test(page.title) || DIALOGUE_MARKER.test(page.title)
             ? hasChineseVoicePage
               ? 900
               : 2_000
@@ -336,19 +434,26 @@ export class CharacterResearchService {
       if (!record) {
         throw new Error('The selected character candidate has expired.');
       }
-      const pages = await this.fetchPages(record, signal);
-      if (pages.length === 0) {
+      const [pages, supplementalPages] = await Promise.all([
+        this.fetchPages(record, signal),
+        this.discoverSupplementalPages(record, signal).catch((error) => {
+          if (signal.aborted) throw error;
+          return [];
+        }),
+      ]);
+      const allPages = [...pages, ...supplementalPages];
+      if (allPages.length === 0) {
         throw new Error('The selected character page is unavailable.');
       }
       const retrievedAt = Date.now();
-      const sources = pages.slice(0, 8).map((page, index) => ({
+      const sources = allPages.slice(0, 8).map((page, index) => ({
         id: `source_${index + 1}`,
         title: page.title,
         url: page.url,
         siteName: page.siteName,
         retrievedAt,
       }));
-      const sourceText = selectSourceText(pages);
+      const sourceText = selectSourceText(allPages);
       const fallback: Omit<CharacterLore, 'sources'> = {
         canonicalName: record.candidate.name,
         aliases: [],
@@ -358,6 +463,8 @@ export class CharacterResearchService {
         background: '',
         relationships: [],
         speechStyle: '',
+        sampleLines: [],
+        roleplayExamples: [],
       };
       let generated: Partial<Omit<CharacterLore, 'sources'>> = {};
       const warnings: string[] = [];
@@ -392,6 +499,13 @@ export class CharacterResearchService {
         /[\u3400-\u9fff]/u.test(item),
       );
       const speechStyle = boundedChineseText(generated.speechStyle, 2_000);
+      const sampleLines = boundedStrings(generated.sampleLines, 20, 40).filter(
+        (item) => /[\u3400-\u9fff]/u.test(item) && !/\[source_\d+\]/iu.test(item),
+      );
+      const roleplayExamples = boundedRoleplayExamples(
+        generated.roleplayExamples,
+        new Set(sources.map(({ id }) => id)),
+      );
       if (
         this.generator &&
         warnings.length === 0 &&
@@ -399,7 +513,9 @@ export class CharacterResearchService {
         !personality &&
         !background &&
         relationships.length === 0 &&
-        !speechStyle
+        !speechStyle &&
+        sampleLines.length === 0 &&
+        roleplayExamples.length === 0
       ) {
         warnings.push(
           '资料已找到，但模型没有生成可用的中文角色设定。详细字段保持为空，你可以重试或手动填写。',
@@ -414,6 +530,8 @@ export class CharacterResearchService {
         background,
         relationships,
         speechStyle,
+        sampleLines,
+        roleplayExamples,
         sources,
       };
       return {
@@ -523,10 +641,147 @@ export class CharacterResearchService {
     });
   }
 
-  private async fetchPages(
+  private async discoverSupplementalPages(
     record: CandidateRecord,
     signal: AbortSignal,
-  ): Promise<Array<{ title: string; url: string; extract: string; siteName: string }>> {
+  ): Promise<ResearchPage[]> {
+    const name = record.candidate.name;
+    const work = record.candidate.sourceWork;
+    const searches = [
+      { kind: 'profile' as const, query: `${name} ${work} 角色 身份 背景 性格 关系` },
+      { kind: 'dialogue' as const, query: `${name} ${work} 台词 语音 对白 名言` },
+      { kind: 'dialogue' as const, query: `${name} ${work} セリフ ボイス` },
+    ];
+    const settled = await Promise.allSettled(
+      searches.map(({ query, kind }) => this.searchWeb(query, kind, signal)),
+    );
+    const normalizedName = normalize(name).replace(/\s*\([^)]*\)\s*$/u, '');
+    const workTerms = work
+      .split(/[/|·]/u)
+      .map(normalize)
+      .filter((term) => term.length >= 2);
+    const unique = new Map<string, WebSearchResult>();
+    for (const result of settled) {
+      if (result.status !== 'fulfilled') continue;
+      for (const item of result.value) {
+        const haystack = normalize(`${item.title} ${item.description}`);
+        if (!haystack.includes(normalizedName)) continue;
+        if (item.kind === 'dialogue' && !DIALOGUE_MARKER.test(haystack)) continue;
+        if (
+          item.kind === 'profile' &&
+          !workTerms.some((term) => haystack.includes(term)) &&
+          !/(角色|人物|身份|背景|性格|关系|character|profile)/iu.test(haystack)
+        ) {
+          continue;
+        }
+        unique.set(item.url, item);
+      }
+    }
+
+    const selected = [...unique.values()]
+      .sort((left, right) => Number(right.kind === 'dialogue') - Number(left.kind === 'dialogue'))
+      .slice(0, 8);
+    const fetched = await Promise.allSettled(
+      selected.map((result) => this.fetchSupplementalPage(result, name, signal)),
+    );
+    return fetched.flatMap((result, index) => {
+      if (result.status === 'fulfilled' && result.value) return [result.value];
+      const fallback = selected[index];
+      if (!fallback || fallback.description.length < 20) return [];
+      const parsed = isAllowedSupplementalUrl(fallback.url);
+      if (!parsed) return [];
+      return [
+        {
+          title: `${fallback.kind === 'dialogue' ? '台词资料' : '角色资料'}：${fallback.title}`,
+          url: parsed.toString(),
+          extract: fallback.description,
+          siteName: parsed.hostname,
+        },
+      ];
+    });
+  }
+
+  private async searchWeb(
+    query: string,
+    kind: WebSearchResult['kind'],
+    signal: AbortSignal,
+  ): Promise<WebSearchResult[]> {
+    const url = new URL(WEB_SEARCH_PATH, WEB_SEARCH_ORIGIN);
+    url.search = new URLSearchParams({ q: query, format: 'rss', count: '10' }).toString();
+    const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const response = await this.fetcher(url, {
+      headers: {
+        accept: 'application/rss+xml, application/xml, text/xml',
+        'user-agent': USER_AGENT,
+      },
+      redirect: 'error',
+      signal: AbortSignal.any([signal, timeoutSignal]),
+    });
+    if (!response.ok) throw new Error(`Character web search returned ${response.status}.`);
+    if (response.url && new URL(response.url).origin !== WEB_SEARCH_ORIGIN) {
+      throw new Error('The character web search origin is invalid.');
+    }
+    const contentLength = Number(response.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_RESPONSE_CHARACTERS) {
+      throw new Error('The character web search response is too large.');
+    }
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType && !contentType.includes('xml') && !contentType.includes('text/plain')) {
+      throw new Error('The character web search response type is invalid.');
+    }
+    const text = await response.text();
+    if (text.length > MAX_RESPONSE_CHARACTERS) {
+      throw new Error('The character web search response is too large.');
+    }
+    return [...text.matchAll(/<item>([\s\S]*?)<\/item>/giu)].flatMap((match) => {
+      const item = match[1] ?? '';
+      const title = decodeSnippet(readRssTag(item, 'title'));
+      const parsed = isAllowedSupplementalUrl(readRssTag(item, 'link'));
+      const description = htmlToPlainText(readRssTag(item, 'description')).slice(0, 500);
+      return title && parsed ? [{ title, url: parsed.toString(), description, kind }] : [];
+    });
+  }
+
+  private async fetchSupplementalPage(
+    result: WebSearchResult,
+    characterName: string,
+    signal: AbortSignal,
+  ): Promise<ResearchPage | undefined> {
+    const url = isAllowedSupplementalUrl(result.url);
+    if (!url) return undefined;
+    const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+    const response = await this.fetcher(url, {
+      headers: { accept: 'text/html, text/plain;q=0.9', 'user-agent': USER_AGENT },
+      redirect: 'error',
+      signal: AbortSignal.any([signal, timeoutSignal]),
+    });
+    if (!response.ok) return undefined;
+    if (response.url) {
+      const finalUrl = isAllowedSupplementalUrl(response.url);
+      if (!finalUrl || finalUrl.origin !== url.origin) return undefined;
+    }
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType && !contentType.includes('text/html') && !contentType.includes('text/plain')) {
+      return undefined;
+    }
+    const contentLength = Number(response.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_RESPONSE_CHARACTERS) return undefined;
+    const body = await response.text();
+    if (body.length > MAX_RESPONSE_CHARACTERS) return undefined;
+    const plainText = selectRelevantText(htmlToPlainText(body), characterName, result.kind);
+    const extract = [result.description, plainText].filter(Boolean).join('\n\n').slice(0, 2_500);
+    if (extract.length < 20 || !normalize(extract).includes(normalize(characterName))) {
+      return undefined;
+    }
+    return {
+      title: `${result.kind === 'dialogue' ? '台词资料' : '角色资料'}：${result.title}`,
+      url: url.toString(),
+      extract,
+      siteName: url.hostname,
+    };
+  }
+
+  private async fetchPages(record: CandidateRecord, signal: AbortSignal): Promise<ResearchPage[]> {
     const titles = [
       record.title,
       ...record.source.detailSuffixes.map((suffix) => `${record.title}${suffix}`),

@@ -12,6 +12,7 @@ import {
 } from '../../shared/character-research-ipc';
 import {
   parseCancelConversationInput,
+  parseCharacterProfileIdInput,
   parseCharacterProfileInput,
   parseConversationConfiguration,
   parseStartConversationInput,
@@ -62,7 +63,10 @@ const requireTrustedSender = (
   }
 };
 
-const runModelOperation = async (operation: () => Promise<void>): Promise<ModelOperationResult> => {
+const runModelOperation = async (
+  operation: () => Promise<void>,
+  failureMessage = 'The model provider settings could not be saved.',
+): Promise<ModelOperationResult> => {
   try {
     await operation();
     return { ok: true };
@@ -71,7 +75,7 @@ const runModelOperation = async (operation: () => Promise<void>): Promise<ModelO
       ok: false,
       error: {
         code: 'configuration',
-        message: 'The model provider settings could not be saved.',
+        message: failureMessage,
         retryable: false,
       },
     };
@@ -176,6 +180,18 @@ export const registerIpcHandlers = (
   ipcMain.handle(IPC_CHANNELS.getCharacterProfile, async (event) => {
     requireTrustedSender(event, windows);
     return profiles.get();
+  });
+  ipcMain.handle(IPC_CHANNELS.listCharacterProfiles, async (event) => {
+    requireTrustedSender(event, windows);
+    return profiles.list();
+  });
+  ipcMain.handle(IPC_CHANNELS.activateCharacterProfile, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { id } = parseCharacterProfileIdInput(input);
+    return runModelOperation(
+      () => conversations.activateCharacterProfile(id),
+      'The character could not be switched.',
+    );
   });
   ipcMain.handle(IPC_CHANNELS.setCharacterProfile, (event, input: unknown) => {
     requireTrustedSender(event, windows);

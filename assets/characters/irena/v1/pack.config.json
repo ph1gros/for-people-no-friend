@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "id": "irena",
+  "templateVersion": "1.0.0",
+  "name": "伊雷娜",
+  "canvas": {
+    "width": 500,
+    "height": 500
+  },
+  "presentation": {
+    "scale": 0.78
+  },
+  "attribution": {
+    "creator": "白之魔女-霜娜",
+    "creatorUrl": "https://space.bilibili.com/2125763952",
+    "sourceUrl": "https://www.bilibili.com/opus/1209543497317613574",
+    "permission": "经用户确认，作者已授权在本项目中使用与分发。"
+  },
+  "states": {
+    "idle": "敲键盘_慢的",
+    "thinking": "记笔记_快速",
+    "talking": "微微张嘴_害羞"
+  },
+  "emotions": {
+    "neutral": "敲键盘_慢的",
+    "happy": "打字_开心",
+    "sad": "头打转_流泪",
+    "angry": "愤怒",
+    "surprised": "捂嘴_惊讶",
+    "shy": "闭嘴_害羞",
+    "playful": "何意味"
+  },
+  "actions": {
+    "enter": "入场",
+    "type_fast": "敲键盘_快的",
+    "type_angry": "敲键盘_快且生气的",
+    "take_notes": "记笔记_微微明白",
+    "thumbs_up": "点赞",
+    "thumbs_down": "倒赞",
+    "perfect_score": "举牌_满分",
+    "zero_score": "举牌_0分",
+    "show_love": "喜欢_手里抱爱心_小爱心",
+    "show_rose": "掏玫瑰_开心",
+    "drink_tea": "喝奶茶",
+    "show_red_packet": "展示红包_开心",
+    "cast_magic": "晃动魔杖_开心",
+    "threaten": "晃动魔棒_威胁",
+    "sleep": "睡着了"
+  },
+  "matteBackgroundAssets": ["探头_慢_眨眼", "探头_快速_开心"]
+}

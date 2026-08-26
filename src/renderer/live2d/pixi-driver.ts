@@ -149,7 +149,7 @@ export class PixiLive2DDriver implements Live2DDriver {
 export interface CreatedLive2DRenderer {
   driver: PixiLive2DDriver;
   canvas: HTMLCanvasElement;
-  refreshVisibleFrame(): void;
+  refreshVisibleFrame(): boolean;
 }
 
 export const createLive2DRenderer = async (
@@ -207,8 +207,9 @@ export const createLive2DRenderer = async (
     model.anchor.set(0.5, 0.5);
     const intrinsicSize = { width: model.width, height: model.height };
     let frameRefreshTimer: number | undefined;
-    const refreshVisibleFrame = (): void => {
+    const refreshVisibleFrame = (): boolean => {
       const screen = application.screen;
+      application.renderer.render(application.stage);
       const resolution = Math.min(1, 1_024 / Math.max(1, screen.width, screen.height));
       const extracted = application.renderer.extract.pixels({
         target: application.stage,
@@ -219,7 +220,7 @@ export const createLive2DRenderer = async (
       const alphaBounds = findAlphaBounds(extracted);
       const frameRoot = host.parentElement;
       if (!alphaBounds || !frameRoot) {
-        return;
+        return false;
       }
       const pixelToScreenX = screen.width / extracted.width;
       const pixelToScreenY = screen.height / extracted.height;
@@ -238,12 +239,13 @@ export const createLive2DRenderer = async (
       frameRoot.style.setProperty('--visible-frame-top', `${top}px`);
       frameRoot.style.setProperty('--visible-frame-width', `${right - left}px`);
       frameRoot.style.setProperty('--visible-frame-height', `${bottom - top}px`);
+      return true;
     };
     const scheduleVisibleFrameRefresh = (): void => {
       if (frameRefreshTimer !== undefined) {
         window.clearTimeout(frameRefreshTimer);
       }
-      frameRefreshTimer = window.setTimeout(refreshVisibleFrame, 80);
+      frameRefreshTimer = window.setTimeout(() => refreshVisibleFrame(), 80);
     };
     const layoutModel = (): void => {
       const layout = fitModelToScreen(intrinsicSize, application.screen);

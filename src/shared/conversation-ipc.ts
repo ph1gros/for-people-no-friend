@@ -111,6 +111,19 @@ export const parseConversationConfiguration = (value: unknown): ConversationConf
 export const parseCharacterProfileInput = (value: unknown): CharacterProfile =>
   validateCharacterProfile(value);
 
+export const parseCharacterProfileIdInput = (value: unknown): { id: string } => {
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    !('id' in value) ||
+    typeof value.id !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,64}$/.test(value.id)
+  ) {
+    throw new Error('The character profile ID is invalid.');
+  }
+  return { id: value.id };
+};
+
 const isPublicError = (value: unknown): value is PublicLlmError =>
   typeof value === 'object' &&
   value !== null &&

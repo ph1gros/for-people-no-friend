@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "characters": [
+    {
+      "appearanceId": "irena-webp-v1",
+      "manifest": "irena/v1/character.json"
+    }
+  ]
+}

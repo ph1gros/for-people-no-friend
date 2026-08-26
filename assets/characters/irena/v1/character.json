@@ -1,0 +1,643 @@
+{
+  "schemaVersion": 1,
+  "id": "irena",
+  "templateVersion": "1.0.0",
+  "name": "伊雷娜",
+  "renderer": "animated-webp",
+  "canvas": { "width": 500, "height": 500 },
+  "presentation": { "scale": 0.78 },
+  "attribution": {
+    "creator": "白之魔女-霜娜",
+    "creatorUrl": "https://space.bilibili.com/2125763952",
+    "sourceUrl": "https://www.bilibili.com/opus/1209543497317613574",
+    "permission": "经用户确认，作者已授权在本项目中使用与分发。"
+  },
+  "assets": [
+    {
+      "id": "被锤_委屈",
+      "file": "media/被锤_委屈.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 19,
+      "durationMs": 570,
+      "sha256": "1216b6f37de1b73138c6b3ff2ba7e3ea5dedfab8f314431aa9458b1f33c7ba93",
+      "tags": ["emotion:sad", "format:animated-webp", "mood:wronged"]
+    },
+    {
+      "id": "闭嘴_害羞",
+      "file": "media/闭嘴_害羞.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "fc091a944c462dd228fa4ccc2c130a52c35c6521f116aa3fcf1f5dc5bb0eaa22",
+      "tags": ["emotion:shy", "expression:mouth-closed", "format:animated-webp"]
+    },
+    {
+      "id": "打字_开心",
+      "file": "media/打字_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 21,
+      "durationMs": 630,
+      "sha256": "362deb1cac5ac668e4c9a3c77e5f585d1bb5183335762531bbbe635d549d6eba",
+      "tags": ["action:typing", "emotion:happy", "format:animated-webp"]
+    },
+    {
+      "id": "打字_困倦",
+      "file": "media/打字_困倦.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 66,
+      "durationMs": 1980,
+      "sha256": "6a6e5b033bb1fe4d710ca280996f9dff62b41bcb78d40434938433d4e4017b61",
+      "tags": ["action:typing", "format:animated-webp", "mood:sleepy"]
+    },
+    {
+      "id": "倒赞",
+      "file": "media/倒赞.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "872b4770d0268ede324876ec1d8d36ad4fdc00f4b83cbd9e6aa9122782dc5b70",
+      "tags": ["action-id:thumbs_down", "action:disapproval", "format:animated-webp"]
+    },
+    {
+      "id": "点赞",
+      "file": "media/点赞.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "c3012464d40a88c8eeaa1e03a01452418e9ea7d3a6b243ef942b6a2102b73912",
+      "tags": ["action-id:thumbs_up", "action:approval", "format:animated-webp"]
+    },
+    {
+      "id": "愤怒",
+      "file": "media/愤怒.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 66,
+      "durationMs": 1980,
+      "sha256": "dbc21acb53ca1048e7dbda254c812b4d097c43f7a883043f8afbcdc07bb302e3",
+      "tags": ["emotion:angry", "format:animated-webp"]
+    },
+    {
+      "id": "喝奶茶",
+      "file": "media/喝奶茶.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 21,
+      "durationMs": 630,
+      "sha256": "560b7c836eddd007bc4ffda07157fd1f6be76945a8c9cab54245ef3317a1dbd8",
+      "tags": ["action-id:drink_tea", "action:drink", "format:animated-webp", "prop:milk-tea"]
+    },
+    {
+      "id": "何意味",
+      "file": "media/何意味.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 43,
+      "durationMs": 1290,
+      "sha256": "77f8b64aaedb73b4d79fffd843787221cc48e4db43d5710bf986b0ec1481462c",
+      "tags": ["emotion:playful", "format:animated-webp", "mood:confused"]
+    },
+    {
+      "id": "何意味入场",
+      "file": "media/何意味入场.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 48,
+      "durationMs": 1650,
+      "sha256": "7eedc8eb58c2e32b3adc767e53ae23f9d4b56c7e217b8ca25e5cddb335278bea",
+      "tags": ["action:entrance", "format:animated-webp", "mood:confused"]
+    },
+    {
+      "id": "晃动魔棒_威胁",
+      "file": "media/晃动魔棒_威胁.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 40,
+      "durationMs": 1290,
+      "sha256": "1cacb875bfd6ce52d67c49a943f72a88cd986e68cb7004d4827f4d7310de53a1",
+      "tags": [
+        "action-id:threaten",
+        "action:magic",
+        "format:animated-webp",
+        "mood:threatening",
+        "prop:wand"
+      ]
+    },
+    {
+      "id": "晃动魔杖_开心",
+      "file": "media/晃动魔杖_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 48,
+      "durationMs": 1470,
+      "sha256": "8c63e9bb840c284e8a028a05897163023299689386b13c6492152aa219a53938",
+      "tags": [
+        "action-id:cast_magic",
+        "action:magic",
+        "emotion:happy",
+        "format:animated-webp",
+        "prop:wand"
+      ]
+    },
+    {
+      "id": "记笔记_快速",
+      "file": "media/记笔记_快速.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "bc6e0d87ae6eb8e9e97d978457428e4501e973e15c8752a51144248198a5b26f",
+      "tags": ["action:notes", "format:animated-webp", "state:thinking", "tempo:fast"]
+    },
+    {
+      "id": "记笔记_微微明白",
+      "file": "media/记笔记_微微明白.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 88,
+      "durationMs": 2640,
+      "sha256": "e521fee77e98cf8caeb3c0b70c5af4d7ebb9980b55b05fdaa6f05bdeacb8cb48",
+      "tags": ["action-id:take_notes", "action:notes", "format:animated-webp"]
+    },
+    {
+      "id": "举牌_0分",
+      "file": "media/举牌_0分.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 56,
+      "durationMs": 1980,
+      "sha256": "b7820ae0fa0c146785779b4cccfa6f0d1bc8f17d00782e6c50d7afee99c51ca1",
+      "tags": ["action-id:zero_score", "action:score", "format:animated-webp", "prop:score-sign"]
+    },
+    {
+      "id": "举牌_满分",
+      "file": "media/举牌_满分.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 56,
+      "durationMs": 1980,
+      "sha256": "b7820ae0fa0c146785779b4cccfa6f0d1bc8f17d00782e6c50d7afee99c51ca1",
+      "tags": ["action-id:perfect_score", "action:score", "format:animated-webp", "prop:score-sign"]
+    },
+    {
+      "id": "开车_开心",
+      "file": "media/开车_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 17,
+      "durationMs": 510,
+      "sha256": "42234ae49e03ec995cfee390b14b2720ea5b6cdeb90ea8fffc6fb6ee53e497f5",
+      "tags": ["action:drive", "emotion:happy", "format:animated-webp", "prop:car"]
+    },
+    {
+      "id": "流口水_呆呆的",
+      "file": "media/流口水_呆呆的.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 57,
+      "durationMs": 1980,
+      "sha256": "93b842c3bebbabf7b4b5866cdddc5fb1d75e1e84140ace7f84f617ca5bbee91d",
+      "tags": ["expression:drooling", "format:animated-webp"]
+    },
+    {
+      "id": "流口水_期待_拿刀叉",
+      "file": "media/流口水_期待_拿刀叉.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 21,
+      "durationMs": 630,
+      "sha256": "b912a8233151d6da26eda50523b784c3933eabbfc5db5a364a71200008b8f9ce",
+      "tags": [
+        "emotion:playful",
+        "expression:drooling",
+        "format:animated-webp",
+        "mood:expectant",
+        "prop:cutlery"
+      ]
+    },
+    {
+      "id": "流口水_期待_拿筷子",
+      "file": "media/流口水_期待_拿筷子.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 21,
+      "durationMs": 630,
+      "sha256": "aa3af2036f065fd0e86d9ae4975177caccf1fa2755b3d9a8770bef7b6c67e24b",
+      "tags": [
+        "emotion:playful",
+        "expression:drooling",
+        "format:animated-webp",
+        "mood:expectant",
+        "prop:chopsticks"
+      ]
+    },
+    {
+      "id": "摸头_开心_爱心",
+      "file": "media/摸头_开心_爱心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 21,
+      "durationMs": 630,
+      "sha256": "e961c916ebb9dea341d581c41c23db1fb365073845d08246f63ed1b9b49b7f21",
+      "tags": [
+        "action:head-pat",
+        "action:love",
+        "emotion:happy",
+        "format:animated-webp",
+        "prop:heart"
+      ]
+    },
+    {
+      "id": "捧着红包_开心",
+      "file": "media/捧着红包_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "c1d96ab6b8e7e4fa37ad3ddda2600b49d774fd7bb4cf63bbf3dbb56b127cfc76",
+      "tags": ["action:red-packet", "emotion:happy", "format:animated-webp", "prop:red-packet"]
+    },
+    {
+      "id": "敲键盘_快的",
+      "file": "media/敲键盘_快的.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 10,
+      "durationMs": 300,
+      "sha256": "4ccb4e9247e652802322059d7fb29a2f33603a053359f5e513e1cc0174643f4a",
+      "tags": [
+        "action-id:type_fast",
+        "action:typing",
+        "format:animated-webp",
+        "prop:keyboard",
+        "tempo:fast"
+      ]
+    },
+    {
+      "id": "敲键盘_快且生气的",
+      "file": "media/敲键盘_快且生气的.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 10,
+      "durationMs": 300,
+      "sha256": "2694c3009698da194ec41b15b1f46d75ae3bbf459687a8fa0064be3a96445ded",
+      "tags": [
+        "action-id:type_angry",
+        "action:typing",
+        "emotion:angry",
+        "format:animated-webp",
+        "prop:keyboard"
+      ]
+    },
+    {
+      "id": "敲键盘_慢的",
+      "file": "media/敲键盘_慢的.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "49d64eaf3809fea5aca62fac331e9e8815739c5139a2cc7b1774c186ee3f82de",
+      "tags": [
+        "action:typing",
+        "emotion:neutral",
+        "format:animated-webp",
+        "prop:keyboard",
+        "state:idle",
+        "tempo:slow"
+      ]
+    },
+    {
+      "id": "入场",
+      "file": "media/入场.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 54,
+      "durationMs": 2070,
+      "sha256": "1c698954da15c956d6f0792c2aff08da29b79b0c9af6a1773b1f15c5374477fe",
+      "tags": ["action-id:enter", "action:entrance", "format:animated-webp"]
+    },
+    {
+      "id": "傻了吧唧_斗鸡眼",
+      "file": "media/傻了吧唧_斗鸡眼.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 42,
+      "durationMs": 1650,
+      "sha256": "aed821127d961d71ac970ffabb86a34f0bd36f7cf9008b5384eeaa20970ba7d3",
+      "tags": ["expression:cross-eyed", "format:animated-webp", "mood:silly"]
+    },
+    {
+      "id": "傻了吧唧_眼睛打转",
+      "file": "media/傻了吧唧_眼睛打转.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "931dc2094563f6b115453c7c5029d943c3b4a00dc1aa19bc947a0c9e4b141dee",
+      "tags": ["expression:dizzy-eyes", "format:animated-webp", "mood:silly", "motion:spin"]
+    },
+    {
+      "id": "手握钞票_搞钱",
+      "file": "media/手握钞票_搞钱.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "8d4f1791ee207a79271db75bee11d046983207e63753b71e0153f22a8704dc3d",
+      "tags": ["format:animated-webp", "mood:money-minded", "prop:money"]
+    },
+    {
+      "id": "睡着了",
+      "file": "media/睡着了.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 66,
+      "durationMs": 1980,
+      "sha256": "29c76a6e20c798084a9b81c17406b30123c8ff7007e5c92ab8288d8e493a44e3",
+      "tags": ["action-id:sleep", "action:sleep", "format:animated-webp"]
+    },
+    {
+      "id": "探头_快速_开心",
+      "file": "media/探头_快速_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 1290,
+      "sha256": "fd24bb0f43254e42b2f28f89096c37574f510f0532025425d3f3fe995b8e330f",
+      "tags": [
+        "emotion:happy",
+        "format:animated-webp",
+        "motion:peek",
+        "quality:matte-background",
+        "tempo:fast"
+      ]
+    },
+    {
+      "id": "探头_慢_眨眼",
+      "file": "media/探头_慢_眨眼.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 77,
+      "durationMs": 2310,
+      "sha256": "51c36b5b3336b8a942188f5d737d7d063f6f006c810088af42fac1659c292154",
+      "tags": [
+        "format:animated-webp",
+        "motion:blink",
+        "motion:peek",
+        "quality:matte-background",
+        "tempo:slow"
+      ]
+    },
+    {
+      "id": "掏出魔杖_开心",
+      "file": "media/掏出魔杖_开心.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 29,
+      "durationMs": 1140,
+      "sha256": "c2bf6a01516f2d68da76c4faa99f7bb4b1ef1b061daace986a9f48602f0359a6",
+      "tags": ["action:magic", "emotion:happy", "format:animated-webp", "prop:wand"]
+    },
+    {
+      "id": "掏出魔杖_阴郁的",
+      "file": "media/掏出魔杖_阴郁的.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 30,
+      "durationMs": 1140,
+      "sha256": "3bcae3cda64882a37a278fe3c59b173f9265a0d8c50adf41c2b440069d106040",
+      "tags": ["action:magic", "format:animated-webp", "mood:gloomy", "prop:wand"]
+    },
+    {
+      "id": "掏出木棍_阴暗",
+      "file": "media/掏出木棍_阴暗.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 36,
+      "durationMs": 1140,
+      "sha256": "7b39e3c56c383baeea0be96af0c689a366b206e753f4e8b014b8d23b23911057",
+      "tags": ["format:animated-webp", "mood:gloomy", "prop:stick"]
+    },
+    {
+      "id": "掏筷子入场",
+      "file": "media/掏筷子入场.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 71,
+      "durationMs": 2160,
+      "sha256": "154d375a6bdfacf41324431e7f08742b7c4611ceac258af1ad6edc0665e89b2f",
+      "tags": ["action:entrance", "format:animated-webp", "prop:chopsticks"]
+    },
+    {
+      "id": "掏玫瑰_开心",
+      "file": "media/掏玫瑰_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 38,
+      "durationMs": 1290,
+      "sha256": "e2a23533c5dac847c33e4d227fbe2207254f4d744bceea1f61990bd8accb767b",
+      "tags": ["action-id:show_rose", "emotion:happy", "format:animated-webp", "prop:rose"]
+    },
+    {
+      "id": "掏勺子入场",
+      "file": "media/掏勺子入场.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 69,
+      "durationMs": 2070,
+      "sha256": "c94797f4266c77ced9e30c3a7a74c235e0bdb4ce298a99d2bee7845dde3be280",
+      "tags": ["action:entrance", "format:animated-webp", "prop:spoon"]
+    },
+    {
+      "id": "头打转_流泪",
+      "file": "media/头打转_流泪.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 66,
+      "durationMs": 1980,
+      "sha256": "769895c366ae14610e4578f653a33671a728313314596e3ff601eb513a719639",
+      "tags": ["emotion:sad", "format:animated-webp", "motion:spin"]
+    },
+    {
+      "id": "头打转_嘴嘟囔_委屈",
+      "file": "media/头打转_嘴嘟囔_委屈.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 55,
+      "durationMs": 1650,
+      "sha256": "95ed35f6944f78ca37f86d9f4822d790dd8cbd46d554159877a4dcc6f350c000",
+      "tags": ["emotion:sad", "format:animated-webp", "mood:wronged", "motion:spin"]
+    },
+    {
+      "id": "头左右摇晃_委屈",
+      "file": "media/头左右摇晃_委屈.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 17,
+      "durationMs": 510,
+      "sha256": "94ea2974f12a63657d3a6bfcce4d4f7e951051e2b2d7d171ecdd0f15154bbdf7",
+      "tags": ["emotion:sad", "format:animated-webp", "mood:wronged", "motion:shake"]
+    },
+    {
+      "id": "微微张嘴_害羞",
+      "file": "media/微微张嘴_害羞.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 32,
+      "durationMs": 960,
+      "sha256": "bfe1d10dc0d52cd9396254f2fb0dc3be0cfa838af00c41eb505a7406412cc11a",
+      "tags": ["emotion:shy", "expression:mouth-open", "format:animated-webp", "state:talking"]
+    },
+    {
+      "id": "握拳_生气",
+      "file": "media/握拳_生气.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 66,
+      "durationMs": 1980,
+      "sha256": "1b5de420b509a12f429fe31a2504571f393522858f1c475e0b97d103ab3b9c5e",
+      "tags": ["emotion:angry", "format:animated-webp", "gesture:fist"]
+    },
+    {
+      "id": "握拳_眼里含泪_崇拜",
+      "file": "media/握拳_眼里含泪_崇拜.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 64,
+      "durationMs": 1920,
+      "sha256": "9561ed8689586c678c13c61afeb1e3ad9b798e6315d2ec20bb3cab7df9cc67fb",
+      "tags": ["emotion:happy", "format:animated-webp", "gesture:fist", "mood:admiring"]
+    },
+    {
+      "id": "捂嘴_惊讶",
+      "file": "media/捂嘴_惊讶.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 38,
+      "durationMs": 1140,
+      "sha256": "51f6e9a0ee5f82b2b22734e196ad137dc9d4e93fdfa0775383471656aed49213",
+      "tags": ["emotion:surprised", "format:animated-webp", "gesture:cover-mouth"]
+    },
+    {
+      "id": "喜欢_手里抱爱心_小爱心",
+      "file": "media/喜欢_手里抱爱心_小爱心.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 70,
+      "durationMs": 2100,
+      "sha256": "edca9af7f9becf39343929d0a09b712a43de59904e60d4e5797c5ca0008f74ea",
+      "tags": ["action-id:show_love", "action:love", "format:animated-webp", "prop:heart"]
+    },
+    {
+      "id": "喜欢_手里变出爱心_小爱心",
+      "file": "media/喜欢_手里变出爱心_小爱心.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 63,
+      "durationMs": 1890,
+      "sha256": "b76f87eda9f5dd7b023007ed612e577067209a385079d019217d5635508613a7",
+      "tags": ["action:love", "format:animated-webp", "prop:heart"]
+    },
+    {
+      "id": "喜欢_小爱心",
+      "file": "media/喜欢_小爱心.webp",
+      "width": 264,
+      "height": 264,
+      "frameCount": 71,
+      "durationMs": 2130,
+      "sha256": "8902d454571046a5427029d3e7ba11940a8ed62a551543d0418a44e8f91f4e11",
+      "tags": ["action:love", "format:animated-webp", "prop:heart"]
+    },
+    {
+      "id": "星星眼_崇拜",
+      "file": "media/星星眼_崇拜.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 88,
+      "durationMs": 2640,
+      "sha256": "ed702bd4bf2035b37b328c073257d55d9962b8ce763381a387e71bf4a09aa00c",
+      "tags": ["emotion:happy", "expression:star-eyes", "format:animated-webp", "mood:admiring"]
+    },
+    {
+      "id": "眼睛眯起来形成大于号和小于号并且嘴巴张开",
+      "file": "media/眼睛眯起来形成大于号和小于号并且嘴巴张开.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 27,
+      "durationMs": 960,
+      "sha256": "6ca845cb3b24958dcfc848fba0fa3055dfc048814c061e671d44220873871564",
+      "tags": ["expression:squint", "format:animated-webp"]
+    },
+    {
+      "id": "展示红包_开心",
+      "file": "media/展示红包_开心.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 37,
+      "durationMs": 1770,
+      "sha256": "14ca0c9d70a613ded3408d4d8e7a1e205db6475e797e781b9c59fef7183b68f6",
+      "tags": [
+        "action-id:show_red_packet",
+        "action:red-packet",
+        "emotion:happy",
+        "format:animated-webp",
+        "prop:red-packet"
+      ]
+    },
+    {
+      "id": "左右看_慌张",
+      "file": "media/左右看_慌张.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 39,
+      "durationMs": 1170,
+      "sha256": "5bcfb7786a74fb01c4255c53f645e07460e98f159d51f964a61fa7baef2155b6",
+      "tags": ["emotion:surprised", "format:animated-webp", "mood:nervous"]
+    },
+    {
+      "id": "左右微微摇头_慌张",
+      "file": "media/左右微微摇头_慌张.webp",
+      "width": 500,
+      "height": 500,
+      "frameCount": 39,
+      "durationMs": 1170,
+      "sha256": "ac16be4b9bff05d3e27cde4150bc8a17fb6fff784a0608f4f7aff103837ee5e0",
+      "tags": ["emotion:surprised", "format:animated-webp", "mood:nervous", "motion:shake"]
+    }
+  ],
+  "channels": {
+    "states": { "idle": "敲键盘_慢的", "thinking": "记笔记_快速", "talking": "微微张嘴_害羞" },
+    "emotions": {
+      "neutral": "敲键盘_慢的",
+      "happy": "打字_开心",
+      "sad": "头打转_流泪",
+      "angry": "愤怒",
+      "surprised": "捂嘴_惊讶",
+      "shy": "闭嘴_害羞",
+      "playful": "何意味"
+    },
+    "actions": {
+      "enter": "入场",
+      "type_fast": "敲键盘_快的",
+      "type_angry": "敲键盘_快且生气的",
+      "take_notes": "记笔记_微微明白",
+      "thumbs_up": "点赞",
+      "thumbs_down": "倒赞",
+      "perfect_score": "举牌_满分",
+      "zero_score": "举牌_0分",
+      "show_love": "喜欢_手里抱爱心_小爱心",
+      "show_rose": "掏玫瑰_开心",
+      "drink_tea": "喝奶茶",
+      "show_red_packet": "展示红包_开心",
+      "cast_magic": "晃动魔杖_开心",
+      "threaten": "晃动魔棒_威胁",
+      "sleep": "睡着了"
+    }
+  }
+}

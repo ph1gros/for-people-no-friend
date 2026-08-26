@@ -184,7 +184,7 @@ export class MemoryService {
     memories: MemoryRecord[];
     candidates: MemoryCandidateRecord[];
   } {
-    const summary = this.database.getSummary()?.summary;
+    const summary = this.database.getSummary(namespace)?.summary;
     return {
       version: 2,
       exportedAt: Date.now(),
@@ -229,7 +229,7 @@ export class MemoryService {
   }
 
   public getConversationContext(namespace: string, query: string): ConversationMemoryContext {
-    const summary = this.database.getSummary()?.summary;
+    const summary = this.database.getSummary(namespace)?.summary;
     return {
       ...(summary ? { summary } : {}),
       memories: this.store.retrieve(namespace, query, 5),
@@ -272,8 +272,8 @@ export class MemoryService {
     if (this.disposed) {
       return;
     }
-    const summaryPlan = this.createSummaryPlan(messages);
-    const extractionMessages = this.extractionMessages(messages);
+    const summaryPlan = this.createSummaryPlan(namespace, messages);
+    const extractionMessages = this.extractionMessages(namespace, messages);
     if (!summaryPlan && extractionMessages.length === 0) {
       return;
     }
@@ -281,7 +281,9 @@ export class MemoryService {
     this.controllers.add(controller);
     try {
       if (summaryPlan) {
-        await this.updateSummary(selection, summaryPlan, controller.signal).catch(() => undefined);
+        await this.updateSummary(namespace, selection, summaryPlan, controller.signal).catch(
+          () => undefined,
+        );
       }
       if (this.isAutomaticMemoryEnabled() && extractionMessages.length > 0) {
         await this.extractMemories(
@@ -296,8 +298,11 @@ export class MemoryService {
     }
   }
 
-  private createSummaryPlan(messages: readonly ConversationMessage[]): SummaryPlan | undefined {
-    const previous = this.database.getSummary();
+  private createSummaryPlan(
+    namespace: string,
+    messages: readonly ConversationMessage[],
+  ): SummaryPlan | undefined {
+    const previous = this.database.getSummary(namespace);
     const previousIndex = previous?.coveredUntilMessageId
       ? messages.findIndex((message) => message.id === previous.coveredUntilMessageId)
       : -1;
@@ -323,11 +328,14 @@ export class MemoryService {
     };
   }
 
-  private extractionMessages(messages: readonly ConversationMessage[]): ConversationMessage[] {
+  private extractionMessages(
+    namespace: string,
+    messages: readonly ConversationMessage[],
+  ): ConversationMessage[] {
     if (!this.isAutomaticMemoryEnabled()) {
       return [];
     }
-    const watermark = this.database.getMetadata(EXTRACTION_WATERMARK);
+    const watermark = this.database.getMetadata(`${EXTRACTION_WATERMARK}:${namespace}`);
     const previousIndex = watermark
       ? messages.findIndex((message) => message.id === watermark)
       : -1;
@@ -336,6 +344,7 @@ export class MemoryService {
   }
 
   private async updateSummary(
+    namespace: string,
     selection: ModelSelection,
     plan: SummaryPlan,
     signal: AbortSignal,
@@ -365,7 +374,7 @@ export class MemoryService {
       (plan.previousSummary?.length ?? 0) +
       plan.messages.reduce((total, message) => total + message.content.length, 0);
     if (summary && summary.length < sourceCharacters) {
-      this.database.setSummary(summary, plan.coveredUntilMessageId);
+      this.database.setSummary(summary, plan.coveredUntilMessageId, namespace);
     }
   }
 
@@ -416,7 +425,7 @@ export class MemoryService {
     }
     const coveredUntilMessageId = messages.at(-1)?.id;
     if (coveredUntilMessageId) {
-      this.database.setMetadata(EXTRACTION_WATERMARK, coveredUntilMessageId);
+      this.database.setMetadata(`${EXTRACTION_WATERMARK}:${namespace}`, coveredUntilMessageId);
     }
   }
 }

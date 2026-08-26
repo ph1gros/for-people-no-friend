@@ -1,5 +1,7 @@
 import { app, type BrowserWindow, screen } from 'electron';
 
+import { IPC_CHANNELS } from '../../shared/ipc';
+
 import { configureMainWindowLayout, createMainWindow } from './create-main-window';
 import {
   boundsToState,
@@ -38,7 +40,10 @@ export class WindowManager {
     this.window = window;
 
     window.on('move', () => this.scheduleSave());
-    window.on('resize', () => this.scheduleSave());
+    window.on('resize', () => {
+      this.scheduleSave();
+      this.notifyScaleChanged();
+    });
     window.on('close', (event) => {
       if (!this.isQuitting) {
         event.preventDefault();
@@ -158,6 +163,12 @@ export class WindowManager {
       clearTimeout(this.saveTimer);
     }
     this.saveTimer = setTimeout(() => this.flushSave(), SAVE_DELAY_MS);
+  }
+
+  private notifyScaleChanged(): void {
+    const window = this.getWindow();
+    if (!window || window.webContents.isDestroyed()) return;
+    window.webContents.send(IPC_CHANNELS.windowScaleChanged, this.getScale());
   }
 
   private flushSave(): void {

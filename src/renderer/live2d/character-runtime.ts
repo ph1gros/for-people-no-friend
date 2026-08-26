@@ -1,15 +1,48 @@
+import type { CharacterPerformanceController } from '../character/contracts';
+import { CharacterManifestError, loadAnimatedWebpCharacter } from '../character/character-manifest';
+import { createAnimatedWebpRenderer } from '../character/animated-webp-driver';
 import { Live2DPerformanceController } from './performance-controller';
 import { loadLocalModelManifest, ModelManifestError, resolveLocalModelUrl } from './model-manifest';
 import { createLive2DRenderer, loadCubismCore } from './pixi-driver';
 
 export interface LoadedCharacter {
   name: string;
+  renderer: 'live2d' | 'animated-webp';
   availableActions: string[];
-  controller: Live2DPerformanceController;
+  controller: CharacterPerformanceController;
   dispose(): void;
 }
 
+const nextAnimationFrame = (): Promise<void> =>
+  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+export const waitForVisibleCharacterFrame = async (
+  refresh: () => boolean,
+  maximumAttempts = 120,
+  waitForNextFrame: () => Promise<void> = nextAnimationFrame,
+): Promise<boolean> => {
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    await waitForNextFrame();
+    try {
+      if (refresh()) return true;
+    } catch {
+      // A texture can be unavailable for the first few renderer frames.
+    }
+  }
+  return false;
+};
+
 const describeLoadError = (error: unknown): { title: string; detail: string } => {
+  if (error instanceof CharacterManifestError) {
+    return {
+      title: error.message,
+      detail:
+        error.kind === 'missing'
+          ? '请运行 pnpm character:catalog，确认角色资源清单与媒体文件完整。'
+          : '请检查 assets/characters 下的版本化角色清单和本地 WebP 文件。',
+    };
+  }
+
   if (error instanceof ModelManifestError) {
     const detail =
       error.kind === 'missing'
@@ -37,7 +70,7 @@ export const renderCharacterError = (
 
   const badge = document.createElement('span');
   badge.className = 'model-error__badge';
-  badge.textContent = 'Live2D';
+  badge.textContent = '角色资源';
   const title = document.createElement('strong');
   title.textContent = description.title;
   const detail = document.createElement('p');
@@ -50,7 +83,7 @@ export const renderCharacterError = (
   host.replaceChildren(panel);
 };
 
-export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter> => {
+const loadLive2DCharacter = async (host: HTMLElement): Promise<LoadedCharacter> => {
   const manifest = await loadLocalModelManifest();
   await loadCubismCore(resolveLocalModelUrl(manifest.core));
   const renderer = await createLive2DRenderer(
@@ -61,9 +94,10 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
   const deskpet = window.deskpet;
   const controller = new Live2DPerformanceController(renderer.driver, manifest.controls);
   await controller.start();
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-  renderer.refreshVisibleFrame();
+  if (!(await waitForVisibleCharacterFrame(renderer.refreshVisibleFrame))) {
+    controller.destroy();
+    throw new Error('Live2D 模型已载入，但没有生成可见画面。');
+  }
 
   let isTrackingRequestPending = false;
   let isDisposed = false;
@@ -101,6 +135,7 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
 
   return {
     name: manifest.name,
+    renderer: 'live2d',
     availableActions: Object.keys(manifest.controls.actions),
     controller,
     dispose: () => {
@@ -110,6 +145,76 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
       }
       renderer.canvas.removeEventListener('pointermove', trackLocalPointer);
       renderer.canvas.removeEventListener('pointerleave', resetLocalPointer);
+      controller.destroy();
+    },
+  };
+};
+
+export const loadCharacter = async (
+  host: HTMLElement,
+  appearanceId = 'local-model',
+): Promise<LoadedCharacter> => {
+  const manifest = await loadAnimatedWebpCharacter(appearanceId);
+  if (!manifest) {
+    return loadLive2DCharacter(host);
+  }
+
+  const renderer = createAnimatedWebpRenderer(host, manifest);
+  const controls = {
+    states: Object.fromEntries(
+      Object.entries(manifest.channels.states).map(([state, asset]) => [state, { group: asset }]),
+    ),
+    actions: Object.fromEntries(
+      Object.entries(manifest.channels.actions).map(([action, asset]) => [
+        action,
+        { group: asset },
+      ]),
+    ),
+    emotions: manifest.channels.emotions,
+  };
+  const controller = new Live2DPerformanceController(renderer.driver, controls);
+  await controller.start();
+  if (!renderer.image.complete) {
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => reject(new CharacterManifestError('WebP 角色首帧加载超时。', 'unavailable')),
+        5_000,
+      );
+      renderer.image.addEventListener(
+        'load',
+        () => {
+          window.clearTimeout(timeout);
+          resolve();
+        },
+        { once: true },
+      );
+      renderer.image.addEventListener(
+        'error',
+        () => {
+          window.clearTimeout(timeout);
+          reject(new CharacterManifestError('WebP 角色资源无法解码。', 'invalid'));
+        },
+        { once: true },
+      );
+    });
+  }
+  if (renderer.image.naturalWidth === 0) {
+    controller.destroy();
+    throw new CharacterManifestError('WebP 角色资源无法解码。', 'invalid');
+  }
+  if (!(await waitForVisibleCharacterFrame(renderer.refreshVisibleFrame, 60))) {
+    renderer.dispose();
+    controller.destroy();
+    throw new CharacterManifestError('WebP 角色已载入，但没有生成可见画面。', 'unavailable');
+  }
+
+  return {
+    name: manifest.name,
+    renderer: 'animated-webp',
+    availableActions: Object.keys(manifest.channels.actions),
+    controller,
+    dispose: () => {
+      renderer.dispose();
       controller.destroy();
     },
   };

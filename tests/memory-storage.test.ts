@@ -50,6 +50,15 @@ describe('M5 SQLite storage and memory lifecycle', () => {
     expect(database.listMessages()).toHaveLength(1);
   });
 
+  it('isolates conversation summaries by character namespace', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-summary-namespace-'));
+    database = new DeskpetDatabase(directory);
+    database.setSummary('默认摘要', undefined, 'default-character');
+    database.setSummary('伊雷娜摘要', undefined, 'character-irena');
+    expect(database.getSummary('default-character')?.summary).toBe('默认摘要');
+    expect(database.getSummary('character-irena')?.summary).toBe('伊雷娜摘要');
+  });
+
   it('migrates active automatic memories to candidates without changing manual memories', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-trusted-memory-migration-'));
     const legacy = new DatabaseSync(path.join(directory, 'deskpet.v1.sqlite'));
@@ -97,7 +106,7 @@ describe('M5 SQLite storage and memory lifecycle', () => {
 
     database = new DeskpetDatabase(directory);
     const store = new MemoryStore(database);
-    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 2 });
+    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 });
     expect(store.list('default-character')).toEqual([
       expect.objectContaining({ id: 'manual-memory', content: '用户的猫叫团子', source: 'manual' }),
     ]);

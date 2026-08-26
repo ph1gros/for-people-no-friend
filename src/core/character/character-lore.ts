@@ -7,7 +7,18 @@ export interface CharacterLore {
   background: string;
   relationships: string[];
   speechStyle: string;
+  sampleLines?: string[];
+  roleplayExamples?: CharacterRoleplayExample[];
   sources: CharacterLoreSource[];
+}
+
+export interface CharacterRoleplayExample {
+  scene: string;
+  emotion: string;
+  trigger: string;
+  attitude: string;
+  line: string;
+  sourceId?: string;
 }
 
 export interface CharacterLoreSource {
@@ -33,10 +44,54 @@ export const shouldIncludeCharacterLoreDetails = (
   );
 };
 
-export const formatCharacterLore = (lore?: CharacterLore, includeDetails = false): string => {
+const EXAMPLE_INTENT_HINTS: ReadonlyArray<[RegExp, string[]]> = [
+  [/(难过|伤心|不开心|沮丧|安慰|陪陪|失败|累了)/u, ['难过', '安慰', '关心', '低落']],
+  [/(开心|高兴|太好了|成功|庆祝|夸夸|表扬)/u, ['开心', '称赞', '庆祝', '愉快']],
+  [/(生气|气死|愤怒|讨厌|过分|争吵)/u, ['生气', '不满', '斥责', '愤怒']],
+  [/(怀疑|真的|确定|靠谱吗|可疑|骗)/u, ['怀疑', '警惕', '质疑', '可疑']],
+  [/(帮忙|怎么办|建议|认真|决定|选择)/u, ['认真', '帮助', '建议', '判断']],
+  [/(你好|早上好|晚上好|在吗|聊聊|日常)/u, ['日常', '问候', '闲聊', '平静']],
+];
+
+export const selectRoleplayExamples = (
+  lore: CharacterLore,
+  query: string,
+  maximum = 4,
+): CharacterRoleplayExample[] => {
+  const examples = lore.roleplayExamples ?? [];
+  if (examples.length === 0 || maximum <= 0) return [];
+  const normalizedQuery = query.normalize('NFKC').toLowerCase();
+  const hintedWords = EXAMPLE_INTENT_HINTS.flatMap(([pattern, words]) =>
+    pattern.test(normalizedQuery) ? words : [],
+  );
+  return examples
+    .map((example, index) => {
+      const metadata = [example.scene, example.emotion, example.trigger, example.attitude]
+        .join(' ')
+        .normalize('NFKC')
+        .toLowerCase();
+      const terms = metadata.split(/[\s、，。；：:／/|｜]+/u).filter((term) => term.length >= 2);
+      const directMatches = terms.filter((term) => normalizedQuery.includes(term)).length;
+      const intentMatches = hintedWords.filter((word) => metadata.includes(word)).length;
+      const generalBonus = /(日常|平静|闲聊|通用)/u.test(metadata) ? 1 : 0;
+      return { example, index, score: directMatches * 4 + intentMatches * 3 + generalBonus };
+    })
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .filter(({ score }) => score > 0)
+    .slice(0, Math.min(4, maximum))
+    .map(({ example }) => example);
+};
+
+export const formatCharacterLore = (
+  lore?: CharacterLore,
+  includeDetails = false,
+  currentUserMessage = '',
+): string => {
   if (!lore) {
     return '';
   }
+  const selectedExamples = selectRoleplayExamples(lore, currentUserMessage);
+  const hasStructuredExamples = (lore.roleplayExamples?.length ?? 0) > 0;
   return [
     '用户已确认的角色资料（这是角色设定，不是用户长期记忆）：',
     `正式名称：${lore.canonicalName}`,
@@ -49,6 +104,17 @@ export const formatCharacterLore = (lore?: CharacterLore, includeDetails = false
       ? `重要关系：${lore.relationships.join('；')}`
       : '',
     lore.speechStyle ? `必须遵循的角色说话方式：${lore.speechStyle}` : '',
+    selectedExamples.length
+      ? [
+          '当前对话可参考的角色反应（学习行为与语气，不要逐字复读）：',
+          ...selectedExamples.map(
+            (example) =>
+              `- 场景：${example.scene}；情绪：${example.emotion}；触发：${example.trigger}；态度：${example.attitude}；示例：${example.line}`,
+          ),
+        ].join('\n')
+      : !hasStructuredExamples && lore.sampleLines?.length
+        ? `短台词示例（只模仿节奏和措辞，不要机械复读）：${lore.sampleLines.join('；')}`
+        : '',
     lore.speechStyle
       ? '扮演要求：回复时自然采用上述称呼、语气、句式和措辞；不要向用户复述角色卡，也不要机械照抄示例台词。'
       : '',

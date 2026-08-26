@@ -43,15 +43,24 @@ export class ConversationRuntime {
     private readonly glossary?: WorkGlossaryService,
   ) {}
 
-  public listHistory(): Promise<ConversationMessage[]> {
-    return this.history.list(100);
+  public async listHistory(): Promise<ConversationMessage[]> {
+    const profile = await this.profiles.get();
+    return this.history.list(100, profile.memoryNamespace);
   }
 
-  public clearHistory(): Promise<void> {
+  public async clearHistory(): Promise<void> {
     if (this.active.size > 0) {
-      return Promise.reject(new Error('Conversation history cannot be cleared during a reply.'));
+      throw new Error('Conversation history cannot be cleared during a reply.');
     }
-    return this.history.clear();
+    const profile = await this.profiles.get();
+    return this.history.clear(profile.memoryNamespace);
+  }
+
+  public async activateCharacterProfile(id: string): Promise<void> {
+    if (this.active.size > 0) {
+      throw new Error('Character cannot be switched during a reply.');
+    }
+    await this.profiles.activate(id);
   }
 
   public start(
@@ -95,7 +104,9 @@ export class ConversationRuntime {
     try {
       const [profile, existingHistory, configuration] = await Promise.all([
         this.profiles.get(),
-        this.history.list(100),
+        this.profiles
+          .get()
+          .then((activeProfile) => this.history.list(100, activeProfile.memoryNamespace)),
         this.models.getConversationConfiguration(),
       ]);
       const selection = configuration.selection;
@@ -111,7 +122,7 @@ export class ConversationRuntime {
         createdAt: Date.now(),
         status: 'complete',
       };
-      await this.history.append(userMessage);
+      await this.history.append(userMessage, profile.memoryNamespace);
       emit({ requestId: input.requestId, type: 'started', userMessage });
 
       let memoryContext = '';
@@ -182,7 +193,7 @@ export class ConversationRuntime {
         inputTokens,
         outputTokens,
       };
-      await this.history.append(assistantMessage);
+      await this.history.append(assistantMessage, profile.memoryNamespace);
       emit({ requestId: input.requestId, type: 'completed', assistantMessage });
       this.memories?.scheduleMaintenance(profile.memoryNamespace, selection, [
         ...existingHistory,
@@ -204,7 +215,10 @@ export class ConversationRuntime {
             emotion: 'neutral',
             providerId: selectionProviderId,
           };
-          await this.history.append(assistantMessage).catch(() => undefined);
+          const profile = await this.profiles.get();
+          await this.history
+            .append(assistantMessage, profile.memoryNamespace)
+            .catch(() => undefined);
         }
         emit({
           requestId: input.requestId,

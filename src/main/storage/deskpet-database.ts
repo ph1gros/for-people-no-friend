@@ -6,7 +6,7 @@ import { DatabaseSync, backup } from 'node:sqlite';
 import type { SessionSummary } from '../../core/memory/contracts';
 import type { ConversationMessage } from '../../shared/conversation-ipc';
 
-const DEFAULT_CONVERSATION_ID = 'default';
+const DEFAULT_CONVERSATION_ID = 'default-character';
 const DATABASE_FILE_NAME = 'deskpet.v1.sqlite';
 const LEGACY_CONVERSATION_FILE = 'conversation.v1.json';
 const MAX_STORED_MESSAGES = 2_000;
@@ -69,7 +69,7 @@ export class DeskpetDatabase {
     this.importLegacyConversation(userDataPath);
   }
 
-  public listMessages(limit = 100): ConversationMessage[] {
+  public listMessages(limit = 100, namespace = DEFAULT_CONVERSATION_ID): ConversationMessage[] {
     const boundedLimit = Math.max(0, Math.min(limit, MAX_STORED_MESSAGES));
     const rows = this.connection
       .prepare(
@@ -80,11 +80,11 @@ export class DeskpetDatabase {
           ORDER BY created_at DESC, rowid DESC
           LIMIT ?`,
       )
-      .all(DEFAULT_CONVERSATION_ID, boundedLimit) as unknown as MessageRow[];
+      .all(namespace, boundedLimit) as unknown as MessageRow[];
     return rows.reverse().map(rowToMessage);
   }
 
-  public appendMessage(message: ConversationMessage): void {
+  public appendMessage(message: ConversationMessage, namespace = DEFAULT_CONVERSATION_ID): void {
     this.connection
       .prepare(
         `INSERT INTO messages (
@@ -94,7 +94,7 @@ export class DeskpetDatabase {
       )
       .run(
         message.id,
-        DEFAULT_CONVERSATION_ID,
+        namespace,
         message.role,
         message.content,
         message.providerId ?? null,
@@ -117,18 +117,16 @@ export class DeskpetDatabase {
                LIMIT ?
             )`,
       )
-      .run(DEFAULT_CONVERSATION_ID, DEFAULT_CONVERSATION_ID, MAX_STORED_MESSAGES);
+      .run(namespace, namespace, MAX_STORED_MESSAGES);
   }
 
-  public clearMessages(): void {
+  public clearMessages(namespace = DEFAULT_CONVERSATION_ID): void {
     this.connection.exec('BEGIN IMMEDIATE');
     try {
-      this.connection
-        .prepare('DELETE FROM messages WHERE conversation_id = ?')
-        .run(DEFAULT_CONVERSATION_ID);
+      this.connection.prepare('DELETE FROM messages WHERE conversation_id = ?').run(namespace);
       this.connection
         .prepare('DELETE FROM session_summaries WHERE conversation_id = ?')
-        .run(DEFAULT_CONVERSATION_ID);
+        .run(namespace);
       this.connection.exec('COMMIT');
     } catch (error) {
       this.connection.exec('ROLLBACK');
@@ -136,13 +134,13 @@ export class DeskpetDatabase {
     }
   }
 
-  public getSummary(): SessionSummary | undefined {
+  public getSummary(namespace = DEFAULT_CONVERSATION_ID): SessionSummary | undefined {
     const row = this.connection
       .prepare(
         `SELECT conversation_id, summary_json, covered_until_message_id, updated_at
            FROM session_summaries WHERE conversation_id = ?`,
       )
-      .get(DEFAULT_CONVERSATION_ID) as
+      .get(namespace) as
       | {
           conversation_id: string;
           summary_json: string;
@@ -176,7 +174,11 @@ export class DeskpetDatabase {
     }
   }
 
-  public setSummary(summary: string, coveredUntilMessageId?: string): void {
+  public setSummary(
+    summary: string,
+    coveredUntilMessageId?: string,
+    namespace = DEFAULT_CONVERSATION_ID,
+  ): void {
     this.connection
       .prepare(
         `INSERT INTO session_summaries (
@@ -187,12 +189,7 @@ export class DeskpetDatabase {
           covered_until_message_id = excluded.covered_until_message_id,
           updated_at = excluded.updated_at`,
       )
-      .run(
-        DEFAULT_CONVERSATION_ID,
-        JSON.stringify({ summary }),
-        coveredUntilMessageId ?? null,
-        Date.now(),
-      );
+      .run(namespace, JSON.stringify({ summary }), coveredUntilMessageId ?? null, Date.now());
   }
 
   public getMetadata(key: string): string | undefined {
@@ -225,7 +222,7 @@ export class DeskpetDatabase {
       (this.connection.prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version,
     );
-    if (version > 2) {
+    if (version > 3) {
       throw new Error(`The memory database schema version ${version} is not supported.`);
     }
     if (version === 0) {
@@ -292,6 +289,10 @@ export class DeskpetDatabase {
     }
     if (version === 1) {
       this.migrateTrustedMemoryCandidates();
+      version = 2;
+    }
+    if (version === 2) {
+      this.migrateCharacterConversationNamespaces();
     }
   }
 
@@ -396,6 +397,31 @@ export class DeskpetDatabase {
         this.connection.prepare('DELETE FROM memories_fts WHERE id = ?').run(memory.id);
       }
       this.connection.exec('PRAGMA user_version = 2; COMMIT');
+    } catch (error) {
+      this.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private migrateCharacterConversationNamespaces(): void {
+    this.connection.exec('BEGIN IMMEDIATE');
+    try {
+      this.connection
+        .prepare('UPDATE messages SET conversation_id = ? WHERE conversation_id = ?')
+        .run(DEFAULT_CONVERSATION_ID, 'default');
+      this.connection
+        .prepare('UPDATE session_summaries SET conversation_id = ? WHERE conversation_id = ?')
+        .run(DEFAULT_CONVERSATION_ID, 'default');
+      this.connection
+        .prepare(
+          `INSERT OR IGNORE INTO app_metadata (key, value)
+           SELECT ?, value FROM app_metadata WHERE key = ?`,
+        )
+        .run(
+          'automatic_memory_covered_until_message_id:default-character',
+          'automatic_memory_covered_until_message_id',
+        );
+      this.connection.exec('PRAGMA user_version = 3; COMMIT');
     } catch (error) {
       this.connection.exec('ROLLBACK');
       throw error;

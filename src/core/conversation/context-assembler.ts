@@ -49,6 +49,7 @@ export const buildConversationSystemPrompt = (
           profile.lore.sourceWork,
         )
       : false,
+    currentUserMessage,
   );
   const actionInstruction = allowedActions.length
     ? `action 必须是 null 或以下动作之一：${allowedActions.join(', ')}。`
