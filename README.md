@@ -8,7 +8,7 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 定义为 **1.0.0 功能基线**：使用 Live2D 角色和文字对话，支持安全的模型提供商配置、完整对话、情绪动作、本地长期记忆、结构化角色卡、侧拉对话 HUD 与作品社区词库。公开仓库从这份干净的 1.0.0 快照开始，不包含安装包、签名或可执行发布产物；这些交付工作由后续 M6 完成。
+当前 `main` 定义为 **1.0.0 功能基线**：使用 Live2D 角色和文字对话，支持安全的模型提供商配置、完整对话、情绪动作、本地长期记忆、结构化角色卡、侧拉对话 HUD 与作品社区词库。公开仓库从这份干净的 1.0.0 快照开始，当前不提供安装包、签名或可执行发布产物。
 
 ## 1.0.0 已完成能力
 
@@ -47,18 +47,17 @@ A local-first Windows AI character companion for days when socializing feels lik
 7. M5.1：结构化角色卡与可选联网补全
 8. M5.2：对话 HUD、角色身份显示与新词理解修整
 9. 1.0.0：M0～M5.2 功能基线
-10. M6：1.0 安装包、干净系统验证与发布工程（暂缓）
-11. 1.0 之后：记忆可信度、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+10. 1.0 之后：记忆可信度、泛用角色模板、双角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
-每个里程碑开始实现前，优先检查用户指定的开源参考项目中与当前范围对应的最新实现，包括 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)、[bongocat-pet/BongoCat](https://github.com/bongocat-pet/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot)。
+吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[另一只 BongoCat](https://github.com/bongocat-pet/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
 
-参考顺序是：先理解其技术和踩坑，再核对官方文档、许可证、本项目安全边界及当前里程碑；有明确收益且不越界的技术应独立实现并测试。不得直接复制 GPL 或未授权代码，也不得为了追随参考项目提前引入 M4、记忆、语音、MCP、Agent 或桌面控制。
+能带走的是思路、经验和测试方法，不能顺手打包带走的是许可证不兼容的源码。看懂以后再核对官方文档和本项目的安全边界，用自己的代码重新实现并测试；也不因为别人家功能多，就把语音、Agent、MCP 和桌面控制一锅端进来。
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For people no friend 1.0.0 功能基线。当前没有制作 Windows 安装包、签名或发布产物；M6 发布工程继续暂缓。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
+M0～M5.2 已完成并组成 For people no friend 1.0.0 功能基线。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
 
 ## 文档
 
@@ -78,9 +77,47 @@ M0～M5.2 已完成并组成 For people no friend 1.0.0 功能基线。当前没
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
-## Live2D 测试模型
+## 角色与表现资源
 
-开发阶段优先使用 Live2D 官方 Simple model 或 Hiyori。Cubism Core、官方测试模型和第三方模型需从官方页面自行下载并遵守对应许可条款，只能放在已忽略的 `assets/models/local/`，不得提交到本仓库。放置方法见 [本地 Live2D 模型说明](assets/models/README.md)。发布前应替换为自有、委托制作或明确获得发布授权的模型。
+v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动起来”，不负责决定她是谁。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会被当成正式角色人格；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
+
+后续首批正式角色确定为 **伊雷娜** 与 **M3（Mon3tr）**。两位角色各自拥有独立的人格、对话历史、摘要、长期记忆和 GIF 表现包，不会出现伊雷娜突然继承 M3 记忆、然后双方都假装无事发生的情况。GIF 的作者、原始页面和授权条件会由项目维护者在角色资源中补充，来源不明的素材不进入仓库。
+
+新角色通过带版本的泛用 GIF 模板创建，不需要为每位角色重新写一套播放逻辑。下面是计划采用的填写方式：
+
+```json
+{
+  "id": "elaina",
+  "name": "伊雷娜",
+  "template": "generic-gif@1",
+  "memoryNamespace": "character-elaina",
+  "profile": {
+    "bio": "角色的身份和简短背景",
+    "personaPrompt": "称呼、语气、性格、知识边界和不该说的话"
+  },
+  "presentation": {
+    "idle": "idle.gif",
+    "thinking": "thinking.gif",
+    "talking": "talking.gif",
+    "emotions": {
+      "happy": "happy.gif",
+      "shy": "shy.gif"
+    },
+    "actions": {
+      "wave": { "file": "wave.gif", "durationMs": 2400 }
+    }
+  },
+  "assetSources": [
+    {
+      "title": "素材来源说明",
+      "url": "https://example.com/source",
+      "license": "授权或使用条件"
+    }
+  ]
+}
+```
+
+填写时不用把每个格子都塞满：`id`、名称、人格、独立记忆空间和 `idle` 待机图是必填项；`thinking`、`talking`、情绪和动作可以慢慢补。缺失标签会依次回退到 `neutral` 或 `idle`，表情没找到时文字仍然照常回复，不会因为少一张 GIF 就当场罢工。资源文件只填写角色目录内的安全相对路径；`assetSources.url` 只用于记录出处，不会被当作远程运行资源加载。
 
 ## 安全约定
 

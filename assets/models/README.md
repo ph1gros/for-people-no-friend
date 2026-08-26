@@ -1,12 +1,12 @@
-# 本地 Live2D 模型
+# 本地 Live2D 兼容模型
 
-M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。这里不保存 Live2D Cubism Core、官方测试模型或第三方模型本体。
+M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。这里的模型只用于验证 Live2D 渲染、动作、表情和跟踪链路，不代表伊雷娜、M3 或其他正式角色人格。这里也不保存 Live2D Cubism Core、官方示例或第三方模型本体。
 
 ## 放置步骤
 
 1. 阅读并接受 [Live2D Free Material License](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html)、[Sample Data Terms](https://www.live2d.com/eula/live2d-sample-model-terms_en.html) 和模型下载页的单独条件。
 2. 从 [Live2D Cubism SDK for Web](https://www.live2d.com/en/sdk/download/web/) 下载当前 Cubism 5 SDK，将 `Core/live2dcubismcore.min.js` 复制到 `assets/models/local/`。
-3. 从 [Live2D Sample Data Collection](https://www.live2d.com/en/learn/sample/) 下载 Simple model 或 Hiyori，将完整模型目录复制到 `assets/models/local/`。
+3. 如需验证兼容性，可从 [Live2D Sample Data Collection](https://www.live2d.com/en/learn/sample/) 下载 Simple model 或 Hiyori，将完整模型目录复制到 `assets/models/local/`。它们是借来检查机器是否转得动的，不会自动获得正式角色编制。
 4. 将本目录的 `model.example.json` 复制为 `assets/models/local/model.json`，按模型实际的文件名、Motion Group 和 Expression Id 修改映射。
 5. 运行 `pnpm dev`。如果模型或 Core 缺失，桌宠窗口会显示错误和“重新加载”按钮；补齐文件后无需重启即可重试。
 
