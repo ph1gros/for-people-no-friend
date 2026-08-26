@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { waitForVisibleCharacterFrame } from '../src/renderer/live2d/character-runtime';
+
 import {
   applyCubismCoreCompatibility,
   applyNormalizedTracking,
@@ -106,5 +108,26 @@ describe('Live2D runtime compatibility', () => {
     applyPersistentParameters(runtime, { ParamBodyVariant: 1 });
 
     expect(setParameterValueById).toHaveBeenCalledWith('core:ParamBodyVariant', 1);
+  });
+
+  it('waits for a visible Live2D frame instead of accepting an empty canvas', async () => {
+    const refresh = vi
+      .fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(false)
+      .mockReturnValue(true);
+
+    await expect(waitForVisibleCharacterFrame(refresh, 5, async () => undefined)).resolves.toBe(
+      true,
+    );
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it('reports a Live2D renderer that remains fully transparent', async () => {
+    const refresh = vi.fn(() => false);
+
+    await expect(waitForVisibleCharacterFrame(refresh, 3, async () => undefined)).resolves.toBe(
+      false,
+    );
   });
 });

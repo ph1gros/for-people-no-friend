@@ -9,6 +9,25 @@ export interface LoadedCharacter {
   dispose(): void;
 }
 
+const nextAnimationFrame = (): Promise<void> =>
+  new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+export const waitForVisibleCharacterFrame = async (
+  refresh: () => boolean,
+  maximumAttempts = 120,
+  waitForNextFrame: () => Promise<void> = nextAnimationFrame,
+): Promise<boolean> => {
+  for (let attempt = 0; attempt < maximumAttempts; attempt += 1) {
+    await waitForNextFrame();
+    try {
+      if (refresh()) return true;
+    } catch {
+      // A texture can be unavailable for the first few renderer frames.
+    }
+  }
+  return false;
+};
+
 const describeLoadError = (error: unknown): { title: string; detail: string } => {
   if (error instanceof ModelManifestError) {
     const detail =
@@ -61,9 +80,10 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
   const deskpet = window.deskpet;
   const controller = new Live2DPerformanceController(renderer.driver, manifest.controls);
   await controller.start();
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-  await new Promise<void>((resolve) => window.requestAnimationFrame(() => resolve()));
-  renderer.refreshVisibleFrame();
+  if (!(await waitForVisibleCharacterFrame(renderer.refreshVisibleFrame))) {
+    controller.destroy();
+    throw new Error('Live2D 模型已载入，但没有生成可见画面。');
+  }
 
   let isTrackingRequestPending = false;
   let isDisposed = false;

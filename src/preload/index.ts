@@ -28,7 +28,12 @@ import type {
   SetProviderSecretInput,
   TestProviderConnectionInput,
 } from '../shared/model-ipc';
-import type { SetChatPanelExpandedInput, SetWindowScaleInput } from '../shared/window-ipc';
+import {
+  MAX_WINDOW_SCALE,
+  MIN_WINDOW_SCALE,
+  type SetChatPanelExpandedInput,
+  type SetWindowScaleInput,
+} from '../shared/window-ipc';
 import type { WorkGlossaryInput } from '../shared/work-glossary-ipc';
 
 const deskpetApi: DeskpetApi = Object.freeze({
@@ -80,6 +85,14 @@ const deskpetApi: DeskpetApi = Object.freeze({
   getCharacterProfile: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getCharacterProfile) as ReturnType<
       DeskpetApi['getCharacterProfile']
+    >,
+  listCharacterProfiles: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.listCharacterProfiles) as ReturnType<
+      DeskpetApi['listCharacterProfiles']
+    >,
+  activateCharacterProfile: (input: { id: string }) =>
+    ipcRenderer.invoke(IPC_CHANNELS.activateCharacterProfile, input) as ReturnType<
+      DeskpetApi['activateCharacterProfile']
     >,
   setCharacterProfile: (profile: CharacterProfile) =>
     ipcRenderer.invoke(IPC_CHANNELS.setCharacterProfile, profile) as ReturnType<
@@ -177,6 +190,20 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.setWindowScale, input) as ReturnType<
       DeskpetApi['setWindowScale']
     >,
+  onWindowScaleChanged: (listener: Parameters<DeskpetApi['onWindowScaleChanged']>[0]) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      if (
+        typeof value === 'number' &&
+        Number.isFinite(value) &&
+        value >= MIN_WINDOW_SCALE &&
+        value <= MAX_WINDOW_SCALE
+      ) {
+        listener(value);
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.windowScaleChanged, wrapped);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.windowScaleChanged, wrapped);
+  },
   setChatPanelExpanded: (input: SetChatPanelExpandedInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.setChatPanelExpanded, input) as ReturnType<
       DeskpetApi['setChatPanelExpanded']

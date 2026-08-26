@@ -9,7 +9,7 @@ describe('IPC whitelist', () => {
     }
   });
 
-  it('contains only the expected M1 to V1.1b surface', () => {
+  it('contains only the expected M1 to V1.1c surface', () => {
     expect(Object.values(IPC_CHANNELS)).toEqual([
       'app:getVersion',
       'tracking:getGlobalPoint',
@@ -24,6 +24,8 @@ describe('IPC whitelist', () => {
       'conversation:getConfiguration',
       'conversation:setConfiguration',
       'conversation:getCharacterProfile',
+      'conversation:listCharacterProfiles',
+      'conversation:activateCharacterProfile',
       'conversation:setCharacterProfile',
       'conversation:getHistory',
       'conversation:clearHistory',
@@ -50,6 +52,7 @@ describe('IPC whitelist', () => {
       'memory:clear',
       'window:getScale',
       'window:setScale',
+      'window:scaleChanged',
       'window:setChatPanelExpanded',
     ]);
   });

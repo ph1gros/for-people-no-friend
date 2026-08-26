@@ -8,7 +8,7 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 以 **1.0.0 功能基线**为起点，并加入 V1.1a～V1.1b 可信长期记忆：自动结果先进入候选区，用户可以编辑、合并证据并决定如何处理冲突，确认后才参与未来对话。项目继续支持 Live2D 角色、文字对话、安全的模型提供商配置、完整对话、情绪动作、结构化角色卡、侧拉对话 HUD 与作品社区词库；当前不提供安装包、签名或可执行发布产物。
+当前 `main` 是 **Live2D Version**：可信长期记忆已经补齐候选整理闭环，角色资料整理会继续查找身份、背景、关系和台词，并生成带来源的情境示例。项目继续支持 Live2D、文字对话、安全的模型提供商配置、结构化角色卡、侧拉对话 HUD 与作品社区词库；动态 WebP 桌宠在独立的 `gif-version` 分支发展。
 
 ## 1.0.0 已完成能力
 
@@ -25,6 +25,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - 自动记忆候选、来源证据、冲突确认与旧数据安全迁移
 - 候选编辑、同键证据合并、有效期调整与冲突保留选择
 - 结构化角色卡与用户确认后的联网补全
+- 带场景、情绪、触发条件、角色态度和来源的情境对话示例
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
 
@@ -51,7 +52,8 @@ A local-first Windows AI character companion for days when socializing feels lik
 - 1.0.0：M0～M5.2 功能基线
 - V1.1a：可信长期记忆最小闭环
 - V1.1b：候选整理、有效期编辑与冲突决策
-- 后续：泛用角色模板、双角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+- V1.1c：角色资料与情境对话增强；动态 WebP 伊雷娜进入 `gif-version` 支线
+- 后续：M3 固定 Live2D 角色、真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
@@ -61,7 +63,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a 已完成“先候选、后生效”，V1.1b 继续补上候选编辑、证据合并、有效期和冲突决策。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V1.1b 完成可信长期记忆闭环；V1.1c 在主线增强联网角色资料和情境对话，Live2D 继续作为完整功能主线，动态 WebP 则在 `gif-version` 支线发展。当前仓库不提供 Windows 安装包、签名或可执行发布产物。
 
 ## 文档
 
@@ -87,9 +89,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a 已
 
 v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动起来”，不负责决定她是谁。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会被当成正式角色人格；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
 
-后续首批正式角色确定为 **伊雷娜** 与 **M3（Mon3tr）**。两位角色各自拥有独立的人格、对话历史、摘要、长期记忆和 GIF 表现包，不会出现伊雷娜突然继承 M3 记忆、然后双方都假装无事发生的情况。GIF 的作者、原始页面和授权条件会由项目维护者在角色资源中补充，来源不明的素材不进入仓库。
-
-项目计划使用带版本的泛用角色模板管理人格、独立记忆空间和 GIF 表现资源。表现资源按待机、思考、说话、情绪和动作标签映射；缺失或加载失败时会安全回退，不影响文字聊天。
+主线与支线共享角色资料学习、长期记忆和安全边界，但不在运行时互相切换：`main` 专注 Live2D 的完整表现能力，`gif-version` 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
 
 ## 安全约定
 

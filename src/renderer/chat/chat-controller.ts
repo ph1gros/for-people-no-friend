@@ -25,6 +25,7 @@ import type { LoadedCharacter } from '../live2d/character-runtime';
 interface ChatControllerOptions {
   root: HTMLElement;
   getCharacter(): LoadedCharacter | undefined;
+  reloadCharacter(): Promise<boolean>;
 }
 
 const errorMessages: Record<PublicLlmError['code'], string> = {
@@ -81,6 +82,7 @@ const createRequestId = (prefix: string): string =>
 export const initializeChat = async ({
   root,
   getCharacter,
+  reloadCharacter,
 }: ChatControllerOptions): Promise<() => void> => {
   const api = window.deskpet;
   const shell = document.createElement('section');
@@ -232,7 +234,7 @@ export const initializeChat = async ({
   const settingsHeader = document.createElement('header');
   settingsHeader.className = 'chat-drawer__header';
   const settingsTitle = document.createElement('strong');
-  settingsTitle.textContent = '模型与人格';
+  settingsTitle.textContent = '模型、角色与人格';
   const closeSettingsButton = createButton('关闭', 'text-button');
   settingsHeader.append(settingsTitle, closeSettingsButton);
 
@@ -254,6 +256,25 @@ export const initializeChat = async ({
   const scaleLabel = document.createElement('span');
   scaleLabel.textContent = '桌宠大小';
   scaleField.append(scaleLabel, scaleControl);
+
+  const characterProfileSelect = document.createElement('select');
+  characterProfileSelect.setAttribute('aria-label', '当前角色');
+  const switchCharacterButton = createButton('切换角色', 'secondary-button');
+  const characterProfileControl = document.createElement('div');
+  characterProfileControl.className = 'settings-inline-control';
+  characterProfileControl.append(characterProfileSelect, switchCharacterButton);
+  const characterProfileField = document.createElement('label');
+  characterProfileField.className = 'settings-field';
+  const characterProfileLabel = document.createElement('span');
+  characterProfileLabel.textContent = '当前角色';
+  const characterProfileHint = document.createElement('small');
+  characterProfileHint.className = 'settings-hint';
+  characterProfileHint.textContent = '角色卡、对话历史、摘要、长期记忆和表现资源彼此隔离。';
+  characterProfileField.append(
+    characterProfileLabel,
+    characterProfileControl,
+    characterProfileHint,
+  );
 
   const providerSelect = document.createElement('select');
   for (const [value, label] of [
@@ -303,7 +324,7 @@ export const initializeChat = async ({
   const glossaryStatus = document.createElement('p');
   glossaryStatus.className = 'settings-status';
   glossaryStatus.setAttribute('role', 'status');
-  glossaryStatus.textContent = '填写来源作品后，可查看是否有对应的社区词库。';
+  glossaryStatus.textContent = '作品词库只补充专有名词和社区用语，不负责角色说话风格。';
   const glossarySources = document.createElement('details');
   glossarySources.className = 'glossary-sources';
   glossarySources.hidden = true;
@@ -357,7 +378,12 @@ export const initializeChat = async ({
   const loreSpeechStyleInput = document.createElement('textarea');
   loreSpeechStyleInput.maxLength = 2_000;
   loreSpeechStyleInput.rows = 3;
-  loreSpeechStyleInput.placeholder = '对用户的称呼、语气、句式、惯用词、情绪表达和短台词示例';
+  loreSpeechStyleInput.placeholder = '对用户的称呼、语气、句式、惯用词和情绪表达';
+  const loreSampleLinesInput = document.createElement('textarea');
+  loreSampleLinesInput.maxLength = 6_000;
+  loreSampleLinesInput.rows = 6;
+  loreSampleLinesInput.placeholder =
+    '每行一条：场景｜情绪｜触发条件｜角色态度｜短回应\n也兼容直接填写普通短台词';
   const loreSourcesOutput = document.createElement('small');
   loreSourcesOutput.className = 'character-lore__sources';
   const clearLoreButton = createButton('清空详细资料', 'text-button danger-button');
@@ -375,6 +401,7 @@ export const initializeChat = async ({
     createField('背景资料', loreBackgroundInput),
     createField('重要关系', loreRelationshipsInput),
     createField('称呼与说话方式', loreSpeechStyleInput),
+    createField('情境对话示例', loreSampleLinesInput),
     loreSourcesOutput,
     loreActions,
   );
@@ -407,6 +434,7 @@ export const initializeChat = async ({
   settingsPanel.append(
     settingsHeader,
     scaleField,
+    characterProfileField,
     createField('提供商', providerSelect),
     createField('模型名称', modelInput),
     baseUrlField,
@@ -462,6 +490,7 @@ export const initializeChat = async ({
   let memoryCandidates: MemoryCandidateRecord[] = [];
   let profile: CharacterProfile | undefined;
   let loreSources: CharacterLore['sources'] = [];
+  let roleplayExampleSourceIds = new Map<string, string>();
   let activeCharacterResearchId: string | undefined;
   let activeRequestId: string | undefined;
   let activeReply = '';
@@ -499,6 +528,7 @@ export const initializeChat = async ({
   const loadWindowScale = async (): Promise<void> => {
     if (api) displayScale(await api.getWindowScale());
   };
+  const disposeWindowScaleListener = api?.onWindowScaleChanged(displayScale);
 
   const characterDisplayName = (): string =>
     resolveCharacterDisplayName(profile?.name, getCharacter()?.name);
@@ -1035,7 +1065,9 @@ export const initializeChat = async ({
     loreBackgroundInput.value = '';
     loreRelationshipsInput.value = '';
     loreSpeechStyleInput.value = '';
+    loreSampleLinesInput.value = '';
     loreSources = [];
+    roleplayExampleSourceIds = new Map();
     loreSourcesOutput.textContent = '';
   };
 
@@ -1048,6 +1080,27 @@ export const initializeChat = async ({
     loreBackgroundInput.value = lore.background;
     loreRelationshipsInput.value = lore.relationships.join('\n');
     loreSpeechStyleInput.value = lore.speechStyle;
+    loreSampleLinesInput.value = [
+      ...(lore.roleplayExamples ?? []).map((example) =>
+        [example.scene, example.emotion, example.trigger, example.attitude, example.line].join(
+          '｜',
+        ),
+      ),
+      ...(lore.sampleLines ?? []),
+    ].join('\n');
+    roleplayExampleSourceIds = new Map(
+      (lore.roleplayExamples ?? []).flatMap((example) => {
+        if (!example.sourceId) return [];
+        const key = [
+          example.scene,
+          example.emotion,
+          example.trigger,
+          example.attitude,
+          example.line,
+        ].join('｜');
+        return [[key, example.sourceId]];
+      }),
+    );
     loreSources = [...lore.sources];
     loreSourcesOutput.textContent = lore.sources.length
       ? `参考来源：${lore.sources.map((source) => `${source.siteName} · ${source.title}`).join('；')}`
@@ -1063,6 +1116,31 @@ export const initializeChat = async ({
       .split(/\r?\n/)
       .map((value) => value.trim())
       .filter(Boolean);
+    const exampleRows = loreSampleLinesInput.value
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean)
+      .slice(0, 20);
+    const roleplayExamples = exampleRows.flatMap((row) => {
+      const parts = row.split(/[|｜]/u).map((part) => part.trim());
+      if (parts.length !== 5 || parts.some((part) => !part)) return [];
+      const [scene, emotion, trigger, attitude, line] = parts;
+      return scene && emotion && trigger && attitude && line
+        ? [
+            {
+              scene,
+              emotion,
+              trigger,
+              attitude,
+              line,
+              ...(roleplayExampleSourceIds.get(parts.join('｜'))
+                ? { sourceId: roleplayExampleSourceIds.get(parts.join('｜')) }
+                : {}),
+            },
+          ]
+        : [];
+    });
+    const sampleLines = exampleRows.filter((row) => !/[|｜]/u.test(row));
     const fields = {
       sourceWork: loreSourceWorkInput.value.trim(),
       personality: lorePersonalityInput.value.trim(),
@@ -1072,6 +1150,8 @@ export const initializeChat = async ({
     if (
       aliases.length === 0 &&
       relationships.length === 0 &&
+      sampleLines.length === 0 &&
+      roleplayExamples.length === 0 &&
       loreSources.length === 0 &&
       Object.values(fields).every((v) => !v)
     ) {
@@ -1082,6 +1162,8 @@ export const initializeChat = async ({
       aliases,
       identity: bioInput.value.trim(),
       relationships,
+      sampleLines,
+      roleplayExamples,
       ...fields,
       sources: loreSources,
     };
@@ -1125,7 +1207,7 @@ export const initializeChat = async ({
           const requestId = createRequestId('character_draft');
           activeCharacterResearchId = requestId;
           setCharacterResearchBusy(true);
-          characterSearchStatus.textContent = `正在读取“${candidate.name}”的原作台词并生成扮演设定，可能需要十几秒…`;
+          characterSearchStatus.textContent = `正在围绕“${candidate.name}”发散查找身份、背景、关系和台词资料，再生成扮演设定…`;
           try {
             const result = await api.buildCharacterDraft({
               requestId,
@@ -1148,7 +1230,7 @@ export const initializeChat = async ({
             } else {
               characterSearchCandidates.replaceChildren();
               characterSearchStatus.textContent =
-                '已从原作资料和台词生成扮演设定，请检查后点击“保存”。';
+                '已综合角色资料和台词来源生成完整扮演设定，请检查后点击“保存”。';
             }
             requestAnimationFrame(() =>
               loreEditor.scrollIntoView({ behavior: 'smooth', block: 'start' }),
@@ -1171,7 +1253,7 @@ export const initializeChat = async ({
 
   const loadGlossaryStatus = async (sourceWork: string): Promise<void> => {
     if (!api || !sourceWork.trim()) {
-      glossaryStatus.textContent = '填写来源作品后，可查看是否有对应的社区词库。';
+      glossaryStatus.textContent = '作品词库只补充专有名词和社区用语，不负责角色说话风格。';
       glossarySources.hidden = true;
       syncGlossaryButton.disabled = true;
       return;
@@ -1179,7 +1261,7 @@ export const initializeChat = async ({
     const status = await api.getWorkGlossaryStatus({ sourceWork });
     syncGlossaryButton.disabled = !status.supported;
     if (!status.supported) {
-      glossaryStatus.textContent = '当前作品还没有内置社区词库；遇到未知词时会先澄清。';
+      glossaryStatus.textContent = '当前作品不需要额外词库；角色语气由已确认的角色资料控制。';
       glossarySources.hidden = true;
       return;
     }
@@ -1250,14 +1332,29 @@ export const initializeChat = async ({
       settingsStatus.textContent = '桌面 API 不可用。';
       return;
     }
-    const [providerConfiguration, conversationConfiguration, storedProfile, windowScale] =
-      await Promise.all([
-        api.getProviderConfiguration(),
-        api.getConversationConfiguration(),
-        api.getCharacterProfile(),
-        api.getWindowScale(),
-      ]);
+    const [
+      providerConfiguration,
+      conversationConfiguration,
+      storedProfile,
+      profileOptions,
+      windowScale,
+    ] = await Promise.all([
+      api.getProviderConfiguration(),
+      api.getConversationConfiguration(),
+      api.getCharacterProfile(),
+      api.listCharacterProfiles(),
+      api.getWindowScale(),
+    ]);
     profile = storedProfile;
+    characterProfileSelect.replaceChildren();
+    for (const optionValue of profileOptions) {
+      const option = document.createElement('option');
+      option.value = optionValue.id;
+      option.textContent = optionValue.name;
+      option.selected = optionValue.active;
+      characterProfileSelect.append(option);
+    }
+    characterProfileField.hidden = profileOptions.length <= 1;
     providerSelect.value = conversationConfiguration.selection?.providerId ?? 'anthropic';
     updateProviderVisibility();
     modelInput.value = conversationConfiguration.selection?.modelId ?? '';
@@ -1460,6 +1557,45 @@ export const initializeChat = async ({
     updateProviderVisibility();
     void updateSecretStatus();
   });
+  switchCharacterButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api || !profile || characterProfileSelect.value === profile.id) return;
+      if (
+        !(await confirmAction({
+          title: '切换角色',
+          message: `切换到“${characterProfileSelect.selectedOptions[0]?.textContent ?? '所选角色'}”？`,
+          details: '当前表单里尚未保存的修改会丢失；不同角色不会共享历史、摘要或长期记忆。',
+          confirmLabel: '切换',
+        }))
+      ) {
+        characterProfileSelect.value = profile.id;
+        return;
+      }
+      switchCharacterButton.disabled = true;
+      settingsStatus.textContent = '正在切换角色…';
+      const result = await api.activateCharacterProfile({ id: characterProfileSelect.value });
+      if (!result.ok) {
+        switchCharacterButton.disabled = false;
+        characterProfileSelect.value = profile.id;
+        settingsStatus.textContent = result.error.message;
+        return;
+      }
+      const loaded = await reloadCharacter();
+      if (!loaded) {
+        switchCharacterButton.disabled = false;
+        settingsStatus.textContent = '角色已经切换，但表现资源加载失败；请使用画面中的重新加载。';
+        return;
+      }
+      messages = await api.getConversationHistory();
+      activeReply = '';
+      subtitle.textContent = '';
+      subtitle.hidden = true;
+      await loadSettings();
+      renderHistory();
+      switchCharacterButton.disabled = false;
+      settingsStatus.textContent = '角色已切换。';
+    })();
+  });
   scaleInput.addEventListener('input', () => displayScale(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {
     if (!api) return;
@@ -1589,6 +1725,7 @@ export const initializeChat = async ({
       void api.cancelCharacterResearch({ requestId: activeCharacterResearchId });
     }
     disposeConversationListener?.();
+    disposeWindowScaleListener?.();
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
     shell.remove();

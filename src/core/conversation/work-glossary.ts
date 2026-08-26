@@ -19,9 +19,8 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 
 export const resolveWorkGlossaryId = (sourceWork: string): string | undefined => {
   const normalized = normalize(sourceWork).replace(/[《》\s_-]/g, '');
-  return normalized.includes('明日方舟') || normalized.includes('arknights')
-    ? 'arknights'
-    : undefined;
+  if (normalized.includes('明日方舟') || normalized.includes('arknights')) return 'arknights';
+  return undefined;
 };
 
 const containsAlias = (message: string, alias: string): boolean => {

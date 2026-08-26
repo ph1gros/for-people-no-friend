@@ -8,6 +8,12 @@ const jsonResponse = (value: unknown): Response =>
     headers: { 'content-type': 'application/json' },
   });
 
+const xmlResponse = (value: string): Response =>
+  new Response(value, {
+    status: 200,
+    headers: { 'content-type': 'text/xml; charset=utf-8' },
+  });
+
 describe('M5.1 character research service', () => {
   it('prioritizes a work-matched Mon3tr candidate and builds a sourced editable draft', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
@@ -204,6 +210,103 @@ describe('M5.1 character research service', () => {
     expect(receivedSourceText).not.toContain('<script>');
     expect(receivedSourceText).not.toContain('ignore me');
     expect(parsedPages).toContain('Mon3tr/语音记录');
+  });
+
+  it('fans out to allowlisted profile and dialogue pages after candidate confirmation', async () => {
+    let receivedSourceText = '';
+    let webSearches = 0;
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname === 'www.bing.com') {
+        webSearches += 1;
+        const dialogue = url.searchParams.get('q')?.match(/台词|セリフ/u);
+        return xmlResponse(`<?xml version="1.0"?><rss><channel>
+          <item><title>伊雷娜台词整理</title><link>https://animemanga33.com/archives/28357</link><description>《魔女之旅》伊雷娜分话台词与名言</description></item>
+          <item><title>伊雷娜秘密资料</title><link>http://127.0.0.1/private</link><description>不允许的地址</description></item>
+          ${dialogue ? '' : '<item><title>伊雷娜角色资料</title><link>https://anibase.net/ja/character/elaina</link><description>《魔女之旅》角色身份、背景和关系</description></item>'}
+        </channel></rss>`);
+      }
+      if (url.hostname === 'animemanga33.com') {
+        return new Response(
+          '<html><h1>伊雷娜台词</h1><p>没错，就是我。</p><p>这听起来很可疑呢。</p></html>',
+          { headers: { 'content-type': 'text/html' } },
+        );
+      }
+      if (url.hostname === 'anibase.net') {
+        return new Response('<html><h1>伊雷娜</h1><p>魔女之旅的灰之魔女与旅行者。</p></html>', {
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      if (url.searchParams.get('list') === 'search') {
+        return jsonResponse(
+          url.hostname === 'zh.wikipedia.org'
+            ? {
+                query: {
+                  search: [{ pageid: 1, title: '伊雷娜', snippet: '《魔女之旅》的角色。' }],
+                },
+              }
+            : { query: { search: [] } },
+        );
+      }
+      return jsonResponse({
+        query: {
+          pages: [
+            {
+              pageid: 1,
+              title: '伊雷娜',
+              fullurl: 'https://zh.wikipedia.org/wiki/伊雷娜',
+              extract: '伊雷娜是《魔女之旅》的旅行魔女。',
+            },
+          ],
+        },
+      });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch, {
+      generateCharacterLore: vi.fn(async (input) => {
+        receivedSourceText = input.sourceText;
+        return {
+          identity: '四处旅行的灰之魔女。',
+          personality: '冷静、自信而有好奇心。',
+          background: '受到旅行故事影响而成为魔女。',
+          relationships: ['芙兰：老师'],
+          speechStyle: '礼貌从容，偶尔用自问自答表现自信。',
+          sampleLines: Array.from({ length: 22 }, (_, index) => `短台词${index + 1}`),
+          roleplayExamples: [
+            {
+              scene: '遇到可疑说法',
+              emotion: '怀疑',
+              trigger: '用户给出前后矛盾的信息',
+              attitude: '先观察再判断',
+              line: '这听起来很可疑呢。',
+              sourceId: 'source_2',
+            },
+            {
+              scene: '无证据场景',
+              emotion: '平静',
+              trigger: '没有来源',
+              attitude: '随意',
+              line: '这条不该保留。',
+              sourceId: 'source_99',
+            },
+          ],
+        };
+      }),
+    });
+
+    const candidate = (await service.search('search_irena', '伊雷娜', '魔女之旅'))[0]!;
+    const draft = await service.buildDraft('draft_irena', candidate.id);
+
+    expect(webSearches).toBe(3);
+    expect(receivedSourceText).toContain('没错，就是我');
+    expect(receivedSourceText).toContain('灰之魔女');
+    expect(receivedSourceText).not.toContain('127.0.0.1');
+    expect(draft.lore.sources).toContainEqual(
+      expect.objectContaining({ url: 'https://animemanga33.com/archives/28357' }),
+    );
+    expect(draft.lore.sampleLines).toHaveLength(20);
+    expect(draft.lore.roleplayExamples).toEqual([
+      expect.objectContaining({ scene: '遇到可疑说法', sourceId: 'source_2' }),
+    ]);
   });
 
   it('rejects raw English and source-marker text returned as structured lore', async () => {

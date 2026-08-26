@@ -31,19 +31,22 @@ export class ConversationStore {
         : databaseOrUserDataPath;
   }
 
-  public async list(limit = 100): Promise<ConversationMessage[]> {
-    return this.database.listMessages(limit);
+  public async list(limit = 100, namespace = 'default-character'): Promise<ConversationMessage[]> {
+    return this.database.listMessages(limit, namespace);
   }
 
-  public async append(message: ConversationMessage): Promise<void> {
+  public async append(
+    message: ConversationMessage,
+    namespace = 'default-character',
+  ): Promise<void> {
     if (!isStoredMessage(message)) {
       throw new Error('The conversation message is invalid.');
     }
-    this.database.appendMessage({ ...message });
+    this.database.appendMessage({ ...message }, namespace);
   }
 
-  public async clear(): Promise<void> {
-    this.database.clearMessages();
+  public async clear(namespace = 'default-character'): Promise<void> {
+    this.database.clearMessages(namespace);
   }
 
   public close(): void {

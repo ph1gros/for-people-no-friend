@@ -20,16 +20,21 @@ characterHost.className = 'character-host';
 characterHost.setAttribute('aria-live', 'polite');
 
 const renderLoading = (): void => {
+  app.classList.add('character-is-loading');
+  app.style.removeProperty('--visible-frame-left');
+  app.style.removeProperty('--visible-frame-top');
+  app.style.removeProperty('--visible-frame-width');
+  app.style.removeProperty('--visible-frame-height');
   const loading = document.createElement('section');
   loading.className = 'model-loading';
-  loading.textContent = '正在加载 Live2D…';
+  loading.textContent = '正在加载角色…';
   characterHost.replaceChildren(loading);
 };
 
 let character: LoadedCharacter | undefined;
 let loadSequence = 0;
 
-const startCharacter = async (): Promise<void> => {
+const startCharacter = async (): Promise<boolean> => {
   const sequence = ++loadSequence;
   character?.dispose();
   character = undefined;
@@ -39,21 +44,29 @@ const startCharacter = async (): Promise<void> => {
     const loaded = await loadCharacter(characterHost);
     if (sequence !== loadSequence) {
       loaded.dispose();
-      return;
+      return false;
     }
     character = loaded;
-    characterHost.setAttribute('aria-label', `Live2D 角色：${loaded.name}`);
+    app.classList.remove('character-is-loading');
+    characterHost.setAttribute('aria-label', `桌面角色：${loaded.name}`);
     window.dispatchEvent(new Event('deskpet:character-loaded'));
+    return true;
   } catch (error) {
     if (sequence === loadSequence) {
+      app.classList.remove('character-is-loading');
       renderCharacterError(characterHost, error, () => void startCharacter());
     }
+    return false;
   }
 };
 
 app.append(dragHandle, characterHost);
 let disposeChat: (() => void) | undefined;
-void initializeChat({ root: app, getCharacter: () => character }).then((dispose) => {
+void initializeChat({
+  root: app,
+  getCharacter: () => character,
+  reloadCharacter: startCharacter,
+}).then((dispose) => {
   disposeChat = dispose;
 });
 window.addEventListener(

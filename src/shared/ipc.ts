@@ -1,4 +1,7 @@
-import type { CharacterProfile } from '../core/conversation/character-profile';
+import type {
+  CharacterProfile,
+  CharacterProfileOption,
+} from '../core/conversation/character-profile';
 import type {
   BuildCharacterDraftInput,
   CancelCharacterResearchInput,
@@ -59,6 +62,8 @@ export const IPC_CHANNELS = {
   getConversationConfiguration: 'conversation:getConfiguration',
   setConversationConfiguration: 'conversation:setConfiguration',
   getCharacterProfile: 'conversation:getCharacterProfile',
+  listCharacterProfiles: 'conversation:listCharacterProfiles',
+  activateCharacterProfile: 'conversation:activateCharacterProfile',
   setCharacterProfile: 'conversation:setCharacterProfile',
   getConversationHistory: 'conversation:getHistory',
   clearConversationHistory: 'conversation:clearHistory',
@@ -85,6 +90,7 @@ export const IPC_CHANNELS = {
   clearMemories: 'memory:clear',
   getWindowScale: 'window:getScale',
   setWindowScale: 'window:setScale',
+  windowScaleChanged: 'window:scaleChanged',
   setChatPanelExpanded: 'window:setChatPanelExpanded',
 } as const;
 
@@ -109,6 +115,8 @@ export interface DeskpetApi {
     configuration: ConversationConfiguration,
   ): Promise<ModelOperationResult>;
   getCharacterProfile(): Promise<CharacterProfile>;
+  listCharacterProfiles(): Promise<CharacterProfileOption[]>;
+  activateCharacterProfile(input: { id: string }): Promise<ModelOperationResult>;
   setCharacterProfile(profile: CharacterProfile): Promise<ModelOperationResult>;
   getConversationHistory(): Promise<ConversationMessage[]>;
   clearConversationHistory(): Promise<ModelOperationResult>;
@@ -135,5 +143,6 @@ export interface DeskpetApi {
   clearMemories(): Promise<MemoryOperationResult>;
   getWindowScale(): Promise<number>;
   setWindowScale(input: SetWindowScaleInput): Promise<number>;
+  onWindowScaleChanged(listener: (scale: number) => void): () => void;
   setChatPanelExpanded(input: SetChatPanelExpandedInput): Promise<void>;
 }

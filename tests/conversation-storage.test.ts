@@ -1,10 +1,13 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
+import {
+  DEFAULT_CHARACTER_PROFILE,
+  IRENA_CHARACTER_PROFILE,
+} from '../src/core/conversation/character-profile';
 import { CharacterProfileStore } from '../src/main/storage/character-profile-store';
 import { ConversationStore } from '../src/main/storage/conversation-store';
 
@@ -46,27 +49,35 @@ describe('M4 local conversation storage', () => {
     });
   });
 
-  it('loads an M4/M5 profile without the optional M5.1 lore fields', async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-migration-'));
+  it('keeps the Live2D profile separate from the GIF Version profile file', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-separated-'));
     await writeFile(
-      path.join(directory, 'character-profile.v1.json'),
+      path.join(directory, 'character-profiles.v5.json'),
       JSON.stringify({
-        version: 1,
-        profile: {
-          id: 'default-character',
-          name: '旧角色',
-          userDisplayName: '你',
-          bio: '旧简介',
-          personaPrompt: '旧人格',
-          live2dModelId: 'local-model',
-          memoryNamespace: 'default-character',
-        },
+        version: 5,
+        activeProfileId: 'irena',
+        profiles: [{ ...DEFAULT_CHARACTER_PROFILE, name: 'Live2D 角色' }, IRENA_CHARACTER_PROFILE],
       }),
       'utf8',
     );
     const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toMatchObject({ name: '旧角色' });
-    expect((await store.get()).lore).toBeUndefined();
+    expect(await store.get()).toMatchObject({ id: 'default-character', name: 'Live2D 角色' });
+
+    await store.set(DEFAULT_CHARACTER_PROFILE);
+    const shared = JSON.parse(
+      await readFile(path.join(directory, 'character-profiles.v5.json'), 'utf8'),
+    ) as { activeProfileId: string };
+    expect(shared.activeProfileId).toBe('irena');
+  });
+
+  it('does not expose or activate the GIF Version profile on main', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
+    const store = new CharacterProfileStore(directory);
+    expect(await store.list()).toEqual([
+      expect.objectContaining({ id: 'default-character', active: true }),
+    ]);
+
+    await expect(store.activate('irena')).rejects.toThrow('not found');
   });
 
   it('serializes concurrent appends and can clear the session', async () => {
@@ -92,6 +103,32 @@ describe('M4 local conversation storage', () => {
     expect(await store.list()).toHaveLength(2);
     await store.clear();
     expect(await store.list()).toEqual([]);
+    store.close();
+  });
+
+  it('isolates conversation history by character namespace', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-history-namespace-'));
+    const store = new ConversationStore(directory);
+    await store.append(
+      {
+        id: 'default-message',
+        role: 'user',
+        content: '默认角色',
+        createdAt: 1,
+        status: 'complete',
+      },
+      'default-character',
+    );
+    await store.append(
+      { id: 'irena-message', role: 'user', content: '伊雷娜', createdAt: 2, status: 'complete' },
+      'character-irena',
+    );
+    expect(await store.list(100, 'default-character')).toHaveLength(1);
+    expect(await store.list(100, 'character-irena')).toEqual([
+      expect.objectContaining({ id: 'irena-message' }),
+    ]);
+    await store.clear('character-irena');
+    expect(await store.list(100, 'default-character')).toHaveLength(1);
     store.close();
   });
 });
