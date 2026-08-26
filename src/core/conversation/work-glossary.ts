@@ -20,6 +20,14 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 export const resolveWorkGlossaryId = (sourceWork: string): string | undefined => {
   const normalized = normalize(sourceWork).replace(/[《》\s_-]/g, '');
   if (normalized.includes('明日方舟') || normalized.includes('arknights')) return 'arknights';
+  if (
+    normalized.includes('魔女之旅') ||
+    normalized.includes('魔女の旅々') ||
+    normalized.includes('wanderingwitch') ||
+    normalized.includes('journeyofelaina')
+  ) {
+    return 'wandering-witch';
+  }
   return undefined;
 };
 
@@ -49,11 +57,11 @@ export const findRelevantGlossaryEntries = (
 export const formatWorkGlossaryContext = (entries: readonly WorkGlossaryEntry[]): string => {
   if (entries.length === 0) return '';
   return [
-    '当前作品社区词库命中（这是玩家社区语境，不是角色世界观事实）：',
+    '当前作品词库命中（可能是作品专名或玩家社区语境，请按条目的来源与语境区分）：',
     ...entries.map(
       (entry) =>
         `- ${entry.term}（别名：${entry.aliases.join('、') || '无'}；置信度 ${entry.confidence.toFixed(2)}）：${entry.meaning}\n  来源与语境：${entry.originContext}\n  参考：${entry.sources.map((source) => `${source.siteName} ${source.url}`).join('；')}`,
     ),
-    '回答时可以保持角色口吻，并用“如果你指社区里说的……”区分社区梗与作品内事实；不得因为角色在世界观内不接触现实社区而拒绝解释。',
+    '回答时可以保持角色口吻；作品专名按来源说明，玩家梗则用“如果你指社区里说的……”与原作事实区分。',
   ].join('\n');
 };

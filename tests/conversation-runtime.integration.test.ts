@@ -106,7 +106,7 @@ describe('conversation runtime integration', () => {
     expect(capturedRequest?.systemPrompt).toContain('wave');
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');
     expect(capturedRequest?.systemPrompt).toContain('用户的猫叫团子');
-    expect(capturedRequest?.systemPrompt).toContain('玩家社区语境，不是角色世界观事实');
+    expect(capturedRequest?.systemPrompt).toContain('作品专名或玩家社区语境');
     expect(await history.list(100, 'character-irena')).toEqual([
       expect.objectContaining({ role: 'user', content: '你好', status: 'complete' }),
       expect.objectContaining({

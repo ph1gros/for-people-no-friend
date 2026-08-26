@@ -36,6 +36,6 @@ SQLite schema 升级到版本 3，把旧的 `default` 会话归入 `default-char
 
 - 不把动态 WebP 自动转换成 Live2D 骨骼模型。
 - 不加入任意目录导入、远程素材下载或 Renderer 文件读取。
-- M3 固定角色资料和表现包留在后续 V1.1 工作中。
+- M3 固定公开资料卡已在 `main` 提供；GIF Version 不复制或切换 Live2D 表现包。
 - Embedding、向量数据库和 Neo4j 参与更完整角色扮演资料库的方案留到 V1.2；V1.1c 继续使用本地结构化角色卡与关键词选择。
 - 不加入语音、Agent、MCP、工具调用、屏幕观察、桌面控制或安装包。

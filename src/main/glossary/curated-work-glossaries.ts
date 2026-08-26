@@ -43,4 +43,74 @@ export const CURATED_WORK_GLOSSARIES: readonly CuratedWorkGlossary[] = [
       },
     ],
   },
+  {
+    id: 'wandering-witch',
+    displayName: '魔女之旅',
+    entries: [
+      {
+        term: '灰之魔女',
+        aliases: ['灰の魔女', 'Ashen Witch'],
+        meaning: '伊雷娜成为正式魔女后使用的魔女名，与她灰色的头发相呼应。',
+        originContext: '作品内正式称号，不是玩家给伊雷娜起的外号。',
+        sources: [
+          {
+            title: 'TV 动画《魔女之旅》官方网站',
+            url: 'https://majotabi.jp/',
+            siteName: '《魔女之旅》动画官网',
+          },
+        ],
+        lastVerified: verifiedAt,
+        confidence: 0.95,
+        evidence: ['灰の魔女', 'イレイナ'],
+      },
+      {
+        term: '妮可冒险谭',
+        aliases: ['ニケの冒険譚', '妮可的冒险故事'],
+        meaning: '伊雷娜儿时喜爱的旅行故事，也是她向往周游各地的重要起点。',
+        originContext: '作品内书名；中文译名可能因版本而略有不同，因此同时保留日文原名。',
+        sources: [
+          {
+            title: 'TV 动画《魔女之旅》官方网站',
+            url: 'https://majotabi.jp/',
+            siteName: '《魔女之旅》动画官网',
+          },
+        ],
+        lastVerified: verifiedAt,
+        confidence: 0.94,
+        evidence: ['ニケの冒険譚', 'イレイナ'],
+      },
+      {
+        term: '星尘魔女',
+        aliases: ['星屑の魔女'],
+        meaning: '芙兰使用的魔女名；芙兰后来成为伊雷娜取得正式魔女资格前的老师。',
+        originContext: '作品内正式称号与人物关系，不是泛指会使用星尘魔法的魔女。',
+        sources: [
+          {
+            title: 'TV 动画《魔女之旅》官方网站',
+            url: 'https://majotabi.jp/',
+            siteName: '《魔女之旅》动画官网',
+          },
+        ],
+        lastVerified: verifiedAt,
+        confidence: 0.94,
+        evidence: ['星屑の魔女', 'フラン'],
+      },
+      {
+        term: '魔法统筹协会',
+        aliases: ['魔法統括協会'],
+        meaning: '作品中的魔法组织；席拉是隶属于该协会的干练调查员。',
+        originContext: '作品内组织名称；遇到不同中文译名时应结合日文原名确认。',
+        sources: [
+          {
+            title: 'TV 动画《魔女之旅》官方网站',
+            url: 'https://majotabi.jp/',
+            siteName: '《魔女之旅》动画官网',
+          },
+        ],
+        lastVerified: verifiedAt,
+        confidence: 0.93,
+        evidence: ['魔法統括協会', 'シーラ'],
+      },
+    ],
+  },
 ];

@@ -38,6 +38,8 @@ describe('work-specific community glossary', () => {
   it('resolves the character work and precisely matches numbers and aliases', () => {
     expect(resolveWorkGlossaryId('《明日方舟》')).toBe('arknights');
     expect(resolveWorkGlossaryId('Arknights')).toBe('arknights');
+    expect(resolveWorkGlossaryId('《魔女之旅》')).toBe('wandering-witch');
+    expect(resolveWorkGlossaryId('Wandering Witch')).toBe('wandering-witch');
     expect(findRelevantGlossaryEntries('325是什么？', [entry])).toEqual([entry]);
     expect(findRelevantGlossaryEntries('今天完成325大学习', [entry])).toEqual([entry]);
     expect(findRelevantGlossaryEntries('1325是什么？', [entry])).toEqual([]);
@@ -45,9 +47,22 @@ describe('work-specific community glossary', () => {
 
   it('formats matched entries as community context rather than canon', () => {
     const context = formatWorkGlossaryContext([entry]);
-    expect(context).toContain('玩家社区语境，不是角色世界观事实');
+    expect(context).toContain('作品专名或玩家社区语境');
     expect(context).toContain('如果你指社区里说的');
     expect(context).toContain('325');
+  });
+
+  it('ships an offline Witch Journey glossary separately from character lore', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-witch-glossary-test-'));
+    const service = new WorkGlossaryService(directory, fetch, undefined, '');
+    const status = await service.getStatus('魔女之旅');
+    expect(status).toMatchObject({ supported: true, workName: '魔女之旅', entryCount: 4 });
+    expect(await service.findMatches('魔女之旅', '妮可冒险谭是什么？')).toEqual([
+      expect.objectContaining({
+        term: '妮可冒险谭',
+        originContext: expect.stringContaining('作品内书名'),
+      }),
+    ]);
   });
 
   it('syncs only after multiple fake HTTP sources confirm the evidence', async () => {
