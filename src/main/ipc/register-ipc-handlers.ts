@@ -16,6 +16,11 @@ import {
   parseConversationConfiguration,
   parseStartConversationInput,
 } from '../../shared/conversation-ipc';
+import {
+  parseMediaCommandInput,
+  parseSetDesktopIntegrationSettingsInput,
+  type DesktopIntegrationStatus,
+} from '../../shared/desktop-integration-ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
 import {
   parseConfirmMemoryCandidateInput,
@@ -40,6 +45,7 @@ import { parseWorkGlossaryInput } from '../../shared/work-glossary-ipc';
 import type { CharacterResearchService } from '../character/character-research-service';
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
 import type { ConversationRuntime } from '../conversation/conversation-runtime';
+import type { DesktopIntegrationService } from '../desktop/desktop-integration-service';
 import type { ModelRuntime } from '../llm/model-runtime';
 import type { MemoryService } from '../memory/memory-service';
 import type { CharacterProfileStore } from '../storage/character-profile-store';
@@ -108,6 +114,7 @@ export const registerIpcHandlers = (
   memories: MemoryService,
   characterResearch: CharacterResearchService,
   workGlossary: WorkGlossaryService,
+  desktopIntegrations?: DesktopIntegrationService,
 ): void => {
   ipcMain.handle(IPC_CHANNELS.getAppVersion, (event) => {
     requireTrustedSender(event, windows);
@@ -400,5 +407,27 @@ export const registerIpcHandlers = (
   ipcMain.handle(IPC_CHANNELS.setChatPanelExpanded, (event, input: unknown) => {
     requireTrustedSender(event, windows);
     windows.setChatPanelExpanded(parseSetChatPanelExpandedInput(input).expanded);
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.getDesktopIntegrationStatus,
+    async (event): Promise<DesktopIntegrationStatus> => {
+      requireTrustedSender(event, windows);
+      return desktopIntegrations
+        ? desktopIntegrations.getStatus()
+        : {
+            settings: { globalShortcutsEnabled: false, mediaControlEnabled: false },
+            shortcutRegistered: false,
+            media: { supported: false },
+          };
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.setDesktopIntegrationSettings, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { settings } = parseSetDesktopIntegrationSettingsInput(input);
+    await desktopIntegrations?.setSettings(settings);
+  });
+  ipcMain.handle(IPC_CHANNELS.sendMediaCommand, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return desktopIntegrations?.sendMediaCommand(parseMediaCommandInput(input).command) ?? false;
   });
 };

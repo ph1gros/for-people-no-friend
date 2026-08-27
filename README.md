@@ -29,6 +29,10 @@ WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重�
 - 结构化角色卡与用户确认后的联网补全
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
+- 最近四条记录的短期情绪连续性，以及按来源分层、受预算保护的上下文
+- 新 WebP 文件的多标签候选建议；候选必须人工确认后才进入角色清单
+- 可选语义/关系检索、模型任务路由和角色包的安全接口（外部服务尚未接入）
+- 默认关闭的固定全局快捷键；不会记录普通按键内容
 
 ## 当前不包含
 
@@ -56,7 +60,10 @@ WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重�
 - V1.1c：GIF Version 分支、版本化 WebP 角色模板与伊雷娜资源包
 - V1.2 / M6：可追溯角色资料、轻量本地模型预算与 WebP 表现恢复闭环
 - V1.3：双版本表现能力与真人目视验收，以及 `gif-version` 的 WebP 标签判定与调度规则
-- 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+- V1.4：角色包、短期/长期混合记忆与本地/远端模型协作
+- V1.5：受限快捷键、媒体控制接口与声明式扩展边界
+- V1.6：语音输入输出与取消回退接口开头；真实 ASR/TTS/VAD 仍未接入
+- 后续：真实 UI 自动化、高级记忆适配器和受控扩展能力
 
 ## 开发参考原则
 
@@ -100,6 +107,10 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 - [公开示例角色包](docs/EXAMPLE_CHARACTER_PACK.md)
 - [M6 双版本角色生成收尾](docs/M6_DUAL_VERSION_CHARACTER_GENERATION.md)
 - [V1.2 / M6 GIF Version 实现](docs/V1_2_IMPLEMENTATION.md)
+- [V1.3 AIRI / SillyTavern 成熟方案对照](docs/V1_3_AIRI_SILLYTAVERN_ADOPTION.md)
+- [V1.3 GIF Version 表现标准](docs/V1_3_GIF_PERFORMANCE_STANDARD.md)
+- [V1.4 角色包、混合记忆与模型协作](docs/V1_4_CHARACTER_PACKAGE_AND_MODEL_ROUTING.md)
+- [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 

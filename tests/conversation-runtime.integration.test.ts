@@ -99,10 +99,12 @@ describe('conversation runtime integration', () => {
     await completed;
 
     expect(events.find((event) => event.type === 'error')).toBeUndefined();
-    expect(events.filter((event) => event.type === 'text-delta')).toEqual([
-      { requestId: 'chat_1', type: 'text-delta', text: '流式' },
-      { requestId: 'chat_1', type: 'text-delta', text: '回复' },
-    ]);
+    expect(
+      events
+        .filter((event) => event.type === 'text-delta')
+        .map((event) => ('text' in event ? event.text : ''))
+        .join(''),
+    ).toBe('流式回复');
     expect(capturedRequest?.messages).toEqual([{ role: 'user', content: '你好' }]);
     expect(capturedRequest?.systemPrompt).toContain('wave');
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');

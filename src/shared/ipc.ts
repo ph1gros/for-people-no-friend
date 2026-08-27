@@ -15,6 +15,11 @@ import type {
   StartConversationResult,
 } from './conversation-ipc';
 import type {
+  DesktopIntegrationStatus,
+  MediaCommandInput,
+  SetDesktopIntegrationSettingsInput,
+} from './desktop-integration-ipc';
+import type {
   ConfirmMemoryCandidateInput,
   MergeMemoryCandidatesInput,
   MemoryCandidateListResult,
@@ -87,6 +92,9 @@ export const IPC_CHANNELS = {
   setWindowScale: 'window:setScale',
   windowScaleChanged: 'window:scaleChanged',
   setChatPanelExpanded: 'window:setChatPanelExpanded',
+  getDesktopIntegrationStatus: 'desktop:getIntegrationStatus',
+  setDesktopIntegrationSettings: 'desktop:setIntegrationSettings',
+  sendMediaCommand: 'desktop:sendMediaCommand',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -138,4 +146,7 @@ export interface DeskpetApi {
   setWindowScale(input: SetWindowScaleInput): Promise<number>;
   onWindowScaleChanged(listener: (scale: number) => void): () => void;
   setChatPanelExpanded(input: SetChatPanelExpandedInput): Promise<void>;
+  getDesktopIntegrationStatus(): Promise<DesktopIntegrationStatus>;
+  setDesktopIntegrationSettings(input: SetDesktopIntegrationSettingsInput): Promise<void>;
+  sendMediaCommand(input: MediaCommandInput): Promise<boolean>;
 }

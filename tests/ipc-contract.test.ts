@@ -18,7 +18,7 @@ describe('IPC whitelist', () => {
     expect(channels).not.toContain('conversation:activateCharacterProfile');
   });
 
-  it('contains only the expected M1 to V1.1c surface', () => {
+  it('contains only the expected named desktop surface', () => {
     expect(Object.values(IPC_CHANNELS)).toEqual([
       'app:getVersion',
       'tracking:getGlobalPoint',
@@ -61,6 +61,9 @@ describe('IPC whitelist', () => {
       'window:setScale',
       'window:scaleChanged',
       'window:setChatPanelExpanded',
+      'desktop:getIntegrationStatus',
+      'desktop:setIntegrationSettings',
+      'desktop:sendMediaCommand',
     ]);
   });
 

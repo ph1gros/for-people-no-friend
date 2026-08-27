@@ -77,6 +77,8 @@ describe('conversation context assembly', () => {
     expect(casualPrompt).toContain('必须遵循的角色说话方式：自信而有舞台感');
     expect(casualPrompt).toContain('自然采用上述称呼、语气、句式和措辞');
     expect(casualPrompt).toContain('角色本人而不是角色资料解说员');
+    expect(casualPrompt).toContain('不替用户决定行动');
+    expect(casualPrompt).toContain('一次只给出当前角色的一次回应');
     expect(casualPrompt).toContain('禁止只在通用答案的开头或结尾添加角色称呼');
     expect(casualPrompt).toContain('通常用二至五句话直接回应');
     expect(casualPrompt).toContain('不得把训练知识冒充为当前事实');
@@ -150,7 +152,8 @@ describe('conversation context assembly', () => {
       '我今天失败了，有点难过，能陪我聊聊吗？',
     );
 
-    expect(prompt).toContain('当前对话可参考的角色反应');
+    expect(prompt).toContain('当前情境命中的角色反应示例');
+    expect(prompt).toContain('不是已经发生的聊天记录');
     expect(prompt).toContain('用户情绪低落');
     expect(prompt).toContain('别担心，我会看着你的。');
     expect(prompt).not.toContain('事情似乎更有趣了。');

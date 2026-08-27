@@ -18,6 +18,40 @@ export interface AnimatedWebpAsset {
   tags: string[];
 }
 
+export interface AnimatedWebpTagCandidate {
+  tags: string[];
+  confidence: number;
+  reasons: string[];
+  requiresConfirmation: true;
+}
+
+const TAG_HINTS: ReadonlyArray<{ pattern: RegExp; tag: string; reason: string }> = [
+  { pattern: /开心|高兴|happy/i, tag: 'emotion:happy', reason: '文件名含开心线索' },
+  { pattern: /生气|愤怒|angry/i, tag: 'emotion:angry', reason: '文件名含愤怒线索' },
+  { pattern: /哭|难过|sad/i, tag: 'emotion:sad', reason: '文件名含低落线索' },
+  { pattern: /害羞|脸红|shy/i, tag: 'emotion:shy', reason: '文件名含害羞线索' },
+  { pattern: /惊|吓|surpris/i, tag: 'emotion:surprised', reason: '文件名含惊讶线索' },
+  { pattern: /思考|想|think/i, tag: 'state:thinking', reason: '文件名含思考线索' },
+  { pattern: /说话|说|talk/i, tag: 'state:talking', reason: '文件名含说话线索' },
+  { pattern: /待机|idle/i, tag: 'state:idle', reason: '文件名含待机线索' },
+  { pattern: /敲|打字|typing/i, tag: 'action:typing', reason: '文件名含打字动作线索' },
+  { pattern: /探头|peek/i, tag: 'action:peek', reason: '文件名含探头动作线索' },
+];
+
+export const suggestAnimatedWebpTags = (fileName: string): AnimatedWebpTagCandidate => {
+  const safeName = fileName.normalize('NFKC').slice(0, 240);
+  const matches = TAG_HINTS.filter(({ pattern }) => pattern.test(safeName));
+  return {
+    tags: ['format:animated-webp', ...new Set(matches.map(({ tag }) => tag))],
+    confidence: matches.length > 0 ? Math.min(0.8, 0.55 + matches.length * 0.1) : 0.25,
+    reasons:
+      matches.length > 0
+        ? matches.map(({ reason }) => reason)
+        : ['文件名没有足够线索，需要人工预览'],
+    requiresConfirmation: true,
+  };
+};
+
 export interface AnimatedWebpCharacterManifest {
   schemaVersion: 1;
   id: string;

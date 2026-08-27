@@ -4,6 +4,7 @@ import {
   deriveCurrentEmotionalSignal,
   deriveRecentMoodContinuity,
   formatCompanionSignals,
+  resolveCompanionReplyEmotion,
 } from '../src/core/conversation/companion-signals';
 
 describe('GIF Version companion emotion signals', () => {
@@ -65,5 +66,27 @@ describe('GIF Version companion emotion signals', () => {
         { role: 'user', content: '下一步是什么？' },
       ]),
     ).toBeUndefined();
+  });
+
+  it('makes an explicit current cue authoritative for the visible reply emotion', () => {
+    expect(
+      resolveCompanionReplyEmotion('neutral', [
+        { role: 'assistant', content: '我们继续。' },
+        { role: 'user', content: '你就是个大傻逼' },
+      ]),
+    ).toBe('angry');
+    expect(
+      resolveCompanionReplyEmotion('happy', [{ role: 'user', content: '我今天失败了，真的想哭' }]),
+    ).toBe('sad');
+  });
+
+  it('uses carried mood only to fill neutral and lets a new non-neutral reply move on', () => {
+    const recent = [
+      { role: 'user' as const, content: '你就是个大傻逼' },
+      { role: 'assistant' as const, content: '请注意措辞。' },
+      { role: 'user' as const, content: '那继续说刚才的事吧' },
+    ];
+    expect(resolveCompanionReplyEmotion('neutral', recent)).toBe('angry');
+    expect(resolveCompanionReplyEmotion('playful', recent)).toBe('playful');
   });
 });

@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AnimatedWebpDriver } from '../src/renderer/character/animated-webp-driver';
 import { waitForVisibleCharacterFrame } from '../src/renderer/live2d/character-runtime';
-import { parseAnimatedWebpCharacterManifest } from '../src/renderer/character/character-manifest';
+import {
+  parseAnimatedWebpCharacterManifest,
+  suggestAnimatedWebpTags,
+} from '../src/renderer/character/character-manifest';
 
 const asset = {
   id: 'idle',
@@ -49,6 +52,20 @@ const validManifest = {
 
 describe('versioned animated WebP character manifest', () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it('creates review-only multi-tag candidates from new asset names', () => {
+    expect(suggestAnimatedWebpTags('敲键盘_快且生气的.webp')).toEqual(
+      expect.objectContaining({
+        tags: expect.arrayContaining(['format:animated-webp', 'action:typing', 'emotion:angry']),
+        requiresConfirmation: true,
+      }),
+    );
+    expect(suggestAnimatedWebpTags('新表情.webp')).toMatchObject({
+      tags: ['format:animated-webp'],
+      confidence: 0.25,
+      requiresConfirmation: true,
+    });
+  });
 
   it('accepts a local versioned pack with explicit channels and attribution', () => {
     expect(parseAnimatedWebpCharacterManifest(validManifest)).toMatchObject({

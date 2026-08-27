@@ -57,6 +57,7 @@ export const selectRoleplayExamples = (
   lore: CharacterLore,
   query: string,
   maximum = 4,
+  maximumCharacters = 1_800,
 ): CharacterRoleplayExample[] => {
   const examples = lore.roleplayExamples ?? [];
   if (examples.length === 0 || maximum <= 0) return [];
@@ -64,7 +65,7 @@ export const selectRoleplayExamples = (
   const hintedWords = EXAMPLE_INTENT_HINTS.flatMap(([pattern, words]) =>
     pattern.test(normalizedQuery) ? words : [],
   );
-  return examples
+  const ranked = examples
     .map((example, index) => {
       const metadata = [example.scene, example.emotion, example.trigger, example.attitude]
         .join(' ')
@@ -78,8 +79,23 @@ export const selectRoleplayExamples = (
     })
     .sort((left, right) => right.score - left.score || left.index - right.index)
     .filter(({ score }) => score > 0)
-    .slice(0, Math.min(4, maximum))
     .map(({ example }) => example);
+  const selected: CharacterRoleplayExample[] = [];
+  let usedCharacters = 0;
+  for (const example of ranked) {
+    const size = [
+      example.scene,
+      example.emotion,
+      example.trigger,
+      example.attitude,
+      example.line,
+    ].join('').length;
+    if (selected.length >= Math.min(4, maximum)) break;
+    if (selected.length > 0 && usedCharacters + size > maximumCharacters) continue;
+    selected.push(example);
+    usedCharacters += size;
+  }
+  return selected;
 };
 
 export const formatCharacterLore = (
@@ -106,7 +122,7 @@ export const formatCharacterLore = (
     lore.speechStyle ? `必须遵循的角色说话方式：${lore.speechStyle}` : '',
     selectedExamples.length
       ? [
-          '当前对话可参考的角色反应（学习行为与语气，不要逐字复读）：',
+          '当前情境命中的角色反应示例（不是已经发生的聊天记录；学习行为与语气，不要逐字复读）：',
           ...selectedExamples.map(
             (example) =>
               `- 场景：${example.scene}；情绪：${example.emotion}；触发：${example.trigger}；态度：${example.attitude}；示例：${example.line}`,
