@@ -22,6 +22,90 @@ describe('M5.1 character research service', () => {
     expect(DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS).toBe(180_000);
   });
 
+  it('rejects work-wide list pages and accepts a work-matched individual Wuthering Waves page', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      expect(url.hostname).toBe('wutheringwaves.fandom.com');
+      expect(url.pathname).toBe('/zh/api.php');
+      return jsonResponse({
+        query: {
+          search: [
+            { pageid: 10, title: '鸣潮角色列表', snippet: '正文中提到了守岸人。' },
+            { pageid: 11, title: '守岸人', snippet: '《鸣潮》中的可操作角色。' },
+          ],
+        },
+      });
+    }) as unknown as typeof fetch;
+
+    const service = new CharacterResearchService(fetcher);
+    const candidates = await service.search('search_shorekeeper', '守岸人', '鸣潮');
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      name: '守岸人',
+      sourceWork: '鸣潮 / Wuthering Waves',
+      sourceName: '鸣潮 Wiki',
+    });
+  });
+
+  it('does not expose a loosely related general-wiki result as a character candidate', async () => {
+    const fetcher = vi.fn(async () =>
+      jsonResponse({
+        query: {
+          search: [
+            {
+              pageid: 12,
+              title: '鸣潮角色列表',
+              snippet: '2026年，某段正文碰巧提到了守岸人。',
+            },
+          ],
+        },
+      }),
+    ) as unknown as typeof fetch;
+
+    const service = new CharacterResearchService(fetcher);
+    await expect(service.search('search_bad_list', '守岸人', '未知作品')).resolves.toEqual([]);
+  });
+
+  it('falls back to a public web query composed from the character name and source work', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname.endsWith('wikipedia.org')) {
+        return jsonResponse({
+          query: {
+            search: [{ pageid: 9, title: '角色甲', snippet: '这是《另一部作品》的同名人物。' }],
+          },
+        });
+      }
+      expect(url.hostname).toBe('html.duckduckgo.com');
+      expect(url.searchParams.get('q')).toBe('角色甲 测试游戏 角色资料');
+      const target = encodeURIComponent('https://example.fandom.com/zh/wiki/角色甲');
+      const baiduTarget = encodeURIComponent('https://baike.baidu.com/item/角色甲');
+      return new Response(
+        `<html><div class="result results_links result--url-above-snippet">
+          <a class="result__a" href="//duckduckgo.com/l/?uddg=${baiduTarget}">角色甲 - 百度百科</a>
+          <a class="result__snippet">角色甲是《测试游戏》中的登场角色。</a>
+          <div class="clear"></div></div>
+          <div class="result results_links result--url-above-snippet">
+          <a class="result__a" href="//duckduckgo.com/l/?uddg=${target}">角色甲 | 测试游戏 Wiki</a>
+          <a class="result__snippet">角色甲是《测试游戏》中的登场角色。</a>
+          <div class="clear"></div></div></html>`,
+        { headers: { 'content-type': 'text/html; charset=UTF-8' } },
+      );
+    }) as unknown as typeof fetch;
+
+    const service = new CharacterResearchService(fetcher);
+    const candidates = await service.search('search_public_web', '角色甲', '测试游戏');
+
+    expect(candidates).toHaveLength(2);
+    expect(candidates[0]).toMatchObject({
+      name: '角色甲',
+      sourceWork: '测试游戏',
+      sourceName: 'Fandom 社区 Wiki',
+    });
+    expect(candidates[1]?.sourceName).toBe('百度百科');
+  });
+
   it('prioritizes a work-matched Kaltsit candidate and builds a sourced editable draft', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
@@ -154,11 +238,47 @@ describe('M5.1 character research service', () => {
     expect(draft.lore.background).not.toContain('[source_');
     expect(draft.lore.sources).toHaveLength(1);
     expect(draft.profileFields).toEqual({
-      userDisplayName: '你',
+      userDisplayName: '博士',
       bio: '陪伴在桌面上的 AI 角色。',
       personaPrompt: '保持自然、真诚、简洁的交流风格。不要假装拥有未提供的记忆或能力。',
     });
     expect(draft.warnings[0]).toContain('详细字段保持为空');
+  });
+
+  it('uses the work-level player title without misreading a speech-style sentence', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.searchParams.get('list') === 'search') {
+        return jsonResponse(
+          url.hostname === 'zh.wikipedia.org'
+            ? { query: { search: [{ pageid: 7, title: '刻晴', snippet: '《原神》中的角色。' }] } }
+            : { query: { search: [] } },
+        );
+      }
+      return jsonResponse({
+        query: {
+          pages: [
+            {
+              pageid: 7,
+              title: '刻晴',
+              fullurl: 'https://zh.wikipedia.org/wiki/刻晴',
+              extract: '刻晴是《原神》中的璃月七星玉衡星。',
+            },
+          ],
+        },
+      });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch, {
+      generateCharacterLore: vi.fn(async () => ({
+        identity: '璃月七星中的玉衡星。',
+        speechStyle: '对用户说话时较为直接，表达清楚而果断。',
+      })),
+    });
+    const candidate = (await service.search('search_keqing', '刻晴', '原神'))[0]!;
+    const draft = await service.buildDraft('draft_keqing', candidate.id);
+
+    expect(draft.profileFields.userDisplayName).toBe('旅行者');
+    expect(draft.profileFields.userDisplayName).not.toBe('时较为直接');
   });
 
   it('turns parsed community-wiki HTML into plain text before model整理', async () => {
@@ -221,9 +341,15 @@ describe('M5.1 character research service', () => {
     let webSearches = 0;
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
-      if (url.hostname === 'www.bing.com') {
+      if (url.hostname === 'html.duckduckgo.com') {
         webSearches += 1;
+        const address = url.searchParams.get('q')?.match(/称呼|玩家|主角/u);
         const dialogue = url.searchParams.get('q')?.match(/台词|セリフ/u);
+        if (address) {
+          return xmlResponse(`<?xml version="1.0"?><rss><channel>
+            <item><title>伊雷娜如何称呼玩家</title><link>https://anibase.net/ja/character/elaina-address</link><description>伊雷娜与玩家对话时使用旅行者这一称呼</description></item>
+          </channel></rss>`);
+        }
         return xmlResponse(`<?xml version="1.0"?><rss><channel>
           <item><title>伊雷娜台词整理</title><link>https://animemanga33.com/archives/28357</link><description>《魔女之旅》伊雷娜分话台词与名言</description></item>
           <item><title>伊雷娜秘密资料</title><link>http://127.0.0.1/private</link><description>不允许的地址</description></item>
@@ -237,9 +363,12 @@ describe('M5.1 character research service', () => {
         );
       }
       if (url.hostname === 'anibase.net') {
-        return new Response('<html><h1>伊雷娜</h1><p>魔女之旅的灰之魔女与旅行者。</p></html>', {
-          headers: { 'content-type': 'text/html' },
-        });
+        return new Response(
+          url.pathname.endsWith('elaina-address')
+            ? '<html><h1>伊雷娜玩家称呼</h1><p>与玩家对话时称为旅行者。</p></html>'
+            : '<html><h1>伊雷娜</h1><p>魔女之旅的灰之魔女与旅行者。</p></html>',
+          { headers: { 'content-type': 'text/html' } },
+        );
       }
       if (url.searchParams.get('list') === 'search') {
         return jsonResponse(
@@ -300,9 +429,10 @@ describe('M5.1 character research service', () => {
     const candidate = (await service.search('search_irena', '伊雷娜', '魔女之旅'))[0]!;
     const draft = await service.buildDraft('draft_irena', candidate.id);
 
-    expect(webSearches).toBe(3);
+    expect(webSearches).toBe(4);
     expect(receivedSourceText).toContain('没错，就是我');
     expect(receivedSourceText).toContain('灰之魔女');
+    expect(receivedSourceText).toContain('称为旅行者');
     expect(receivedSourceText).not.toContain('127.0.0.1');
     expect(draft.lore.sources).toContainEqual(
       expect.objectContaining({ url: 'https://animemanga33.com/archives/28357' }),

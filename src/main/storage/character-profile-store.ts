@@ -6,6 +6,7 @@ import {
   type CharacterProfile,
   validateCharacterProfile,
 } from '../../core/conversation/character-profile';
+import { resolveCharacterMemoryNamespace } from '../character/character-namespace';
 
 interface Live2DCharacterProfilesFile {
   version: 1;
@@ -67,6 +68,16 @@ export class CharacterProfileStore {
           version: 1 as const,
           activeProfileId: KALTSIT_CHARACTER_PROFILE.id,
           profiles: [KALTSIT_CHARACTER_PROFILE],
+        };
+        await this.saveCollection(migrated);
+        return migrated;
+      }
+      const profile = loaded.profiles[0]!;
+      const expectedNamespace = resolveCharacterMemoryNamespace(profile);
+      if (profile.memoryNamespace !== expectedNamespace) {
+        const migrated = {
+          ...loaded,
+          profiles: [{ ...profile, memoryNamespace: expectedNamespace }],
         };
         await this.saveCollection(migrated);
         return migrated;

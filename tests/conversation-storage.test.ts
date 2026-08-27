@@ -84,6 +84,35 @@ describe('M4 local conversation storage', () => {
     expect(await store.get()).toEqual(KALTSIT_CHARACTER_PROFILE);
   });
 
+  it('migrates a custom character that inherited another persona namespace', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-namespace-migration-'));
+    await writeFile(
+      path.join(directory, 'character-profiles.live2d.v1.json'),
+      JSON.stringify({
+        version: 1,
+        activeProfileId: KALTSIT_CHARACTER_PROFILE.id,
+        profiles: [
+          {
+            ...KALTSIT_CHARACTER_PROFILE,
+            name: '芙宁娜',
+            userDisplayName: '旅行者',
+            memoryNamespace: 'character-kaltsit',
+            lore: {
+              ...KALTSIT_CHARACTER_PROFILE.lore,
+              canonicalName: '芙宁娜',
+              sourceWork: '原神',
+            },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const profile = await new CharacterProfileStore(directory).get();
+    expect(profile.memoryNamespace).toMatch(/^character-[a-f0-9]{24}$/u);
+    expect(profile.memoryNamespace).not.toBe('character-kaltsit');
+  });
+
   it('keeps the Live2D profile separate from the GIF Version profile file', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-separated-'));
     await writeFile(

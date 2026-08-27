@@ -280,6 +280,116 @@ describe('conversation runtime integration', () => {
     database.close();
   });
 
+  it('moves a different character to an isolated history and memory namespace', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-character-switch-'));
+    const database = new DeskpetDatabase(directory);
+    const profiles = new CharacterProfileStore(directory);
+    const history = new ConversationStore(database);
+    const knowledge = new CharacterKnowledgeStore(database);
+    await history.append(
+      {
+        id: 'keqing-era-message',
+        role: 'assistant',
+        content: '我是刻晴，璃月七星之一。',
+        createdAt: 1,
+        status: 'complete',
+      },
+      'character-kaltsit',
+    );
+    const runtime = new ConversationRuntime(
+      {} as ModelRuntime,
+      profiles,
+      history,
+      undefined,
+      undefined,
+      knowledge,
+    );
+    await runtime.setCharacterProfile({
+      ...KALTSIT_CHARACTER_PROFILE,
+      name: '芙宁娜',
+      userDisplayName: '旅行者',
+      bio: '枫丹的重要人物。',
+      personaPrompt: '以芙宁娜的身份交流。',
+      lore: {
+        ...KALTSIT_CHARACTER_PROFILE.lore!,
+        canonicalName: '芙宁娜',
+        sourceWork: '原神',
+        identity: '枫丹的重要人物。',
+      },
+    });
+
+    const stored = await profiles.get();
+    expect(stored.memoryNamespace).toMatch(/^character-[a-f0-9]{24}$/u);
+    expect(stored.memoryNamespace).not.toBe('character-kaltsit');
+    expect(await runtime.listHistory()).toEqual([]);
+    expect(await history.list(100, 'character-kaltsit')).toEqual([
+      expect.objectContaining({ id: 'keqing-era-message' }),
+    ]);
+    expect(knowledge.get(stored.memoryNamespace)).toMatchObject({
+      characterNamespace: stored.memoryNamespace,
+    });
+    database.close();
+  });
+
+  it('restores each persona history when switching away and back again', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-character-roundtrip-'));
+    const database = new DeskpetDatabase(directory);
+    const profiles = new CharacterProfileStore(directory);
+    const history = new ConversationStore(database);
+    const runtime = new ConversationRuntime({} as ModelRuntime, profiles, history);
+    const profileFor = (name: string) => ({
+      ...KALTSIT_CHARACTER_PROFILE,
+      name,
+      userDisplayName: '旅行者',
+      bio: `${name}的角色身份。`,
+      personaPrompt: `以${name}的身份交流。`,
+      lore: {
+        ...KALTSIT_CHARACTER_PROFILE.lore!,
+        canonicalName: name,
+        sourceWork: '原神',
+        identity: `${name}的角色身份。`,
+      },
+    });
+
+    await runtime.setCharacterProfile(profileFor('芙宁娜'));
+    const furinaNamespace = (await profiles.get()).memoryNamespace;
+    await history.append(
+      {
+        id: 'furina-message',
+        role: 'assistant',
+        content: '这里是枫丹。',
+        createdAt: 1,
+        status: 'complete',
+      },
+      furinaNamespace,
+    );
+
+    await runtime.setCharacterProfile(profileFor('刻晴'));
+    const keqingNamespace = (await profiles.get()).memoryNamespace;
+    expect(keqingNamespace).not.toBe(furinaNamespace);
+    expect(await runtime.listHistory()).toEqual([]);
+    await history.append(
+      {
+        id: 'keqing-message',
+        role: 'assistant',
+        content: '这里是璃月。',
+        createdAt: 2,
+        status: 'complete',
+      },
+      keqingNamespace,
+    );
+
+    await runtime.setCharacterProfile(profileFor('芙宁娜'));
+    expect((await profiles.get()).memoryNamespace).toBe(furinaNamespace);
+    expect(await runtime.listHistory()).toEqual([
+      expect.objectContaining({ id: 'furina-message', content: '这里是枫丹。' }),
+    ]);
+    expect(await history.list(100, keqingNamespace)).toEqual([
+      expect.objectContaining({ id: 'keqing-message', content: '这里是璃月。' }),
+    ]);
+    database.close();
+  });
+
   it('rejects stale stored lore after the profile changes', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-conversation-test-'));
     let capturedRequest: ChatRequest | undefined;

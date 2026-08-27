@@ -1245,7 +1245,9 @@ export const initializeChat = async ({
     }
     glossaryStatus.textContent = status.lastSynced
       ? `${status.workName}社区词库使用已同步缓存，共 ${status.entryCount} 条；上次同步：${new Date(status.lastSynced).toLocaleString()}。`
-      : `${status.workName}社区词库使用随程序提供的校对版本，共 ${status.entryCount} 条；可主动联网核对并生成缓存。`;
+      : status.entryCount > 0
+        ? `${status.workName}社区词库有 ${status.entryCount} 条内置校对内容；可点击同步，主动联网搜索更多社区术语。`
+        : `${status.workName}还没有本地作品词库；可点击同步，主动联网搜索社区梗、黑话、术语和别名。`;
     const sourceLabels = status.sources.map((source) => `${source.siteName} · ${source.title}`);
     glossarySources.open = false;
     glossarySources.hidden = sourceLabels.length === 0;
@@ -1380,6 +1382,7 @@ export const initializeChat = async ({
     apiKeyInput.value = '';
     settingsStatus.textContent = '已保存。';
     await loadSettings();
+    messages = await api.getConversationHistory();
     renderHistory();
     return true;
   };
@@ -1401,14 +1404,15 @@ export const initializeChat = async ({
         !(await confirmAction({
           title: '同步作品词库',
           message: `将同步“${sourceWork}”的社区词库。`,
-          details: '只会核对公开来源并更新本地缓存；普通聊天不会因此自动联网。',
+          details:
+            '会主动搜索公开网页，核对社区梗、黑话、术语和别名后更新本地缓存；普通聊天不会因此自动联网。',
           confirmLabel: '开始同步',
         }))
       ) {
         return;
       }
       syncGlossaryButton.disabled = true;
-      glossaryStatus.textContent = '正在核对多个公开来源…';
+      glossaryStatus.textContent = '正在联网搜索并核对多个公开来源…';
       const result = await api.syncWorkGlossary({ sourceWork });
       glossaryStatus.textContent = result.message;
       if (result.ok) await loadGlossaryStatus(sourceWork);
