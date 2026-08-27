@@ -21,6 +21,7 @@ import {
 import type { ConversationEvent, ConversationMessage } from '../../shared/conversation-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
+import { WindowScaleSync } from '../settings/window-scale-sync';
 
 interface ChatControllerOptions {
   root: HTMLElement;
@@ -502,11 +503,10 @@ export const initializeChat = async ({
     scaleInput.value = scale.toFixed(2);
     scaleOutput.textContent = `${Math.round(scale * 100)}%`;
   };
-
+  const windowScaleSync = api ? new WindowScaleSync(api, displayScale) : undefined;
   const loadWindowScale = async (): Promise<void> => {
-    if (api) displayScale(await api.getWindowScale());
+    await windowScaleSync?.load();
   };
-  const disposeWindowScaleListener = api?.onWindowScaleChanged(displayScale);
 
   const characterDisplayName = (): string =>
     resolveCharacterDisplayName(profile?.name, getCharacter()?.name);
@@ -1245,7 +1245,9 @@ export const initializeChat = async ({
     }
     glossaryStatus.textContent = status.lastSynced
       ? `${status.workName}社区词库使用已同步缓存，共 ${status.entryCount} 条；上次同步：${new Date(status.lastSynced).toLocaleString()}。`
-      : `${status.workName}社区词库使用随程序提供的校对版本，共 ${status.entryCount} 条；可主动联网核对并生成缓存。`;
+      : status.entryCount > 0
+        ? `${status.workName}社区词库有 ${status.entryCount} 条内置校对内容；可点击同步，主动联网搜索更多社区术语。`
+        : `${status.workName}还没有本地作品词库；可点击同步，主动联网搜索社区梗、黑话、术语和别名。`;
     const sourceLabels = status.sources.map((source) => `${source.siteName} · ${source.title}`);
     glossarySources.open = false;
     glossarySources.hidden = sourceLabels.length === 0;
@@ -1380,6 +1382,7 @@ export const initializeChat = async ({
     apiKeyInput.value = '';
     settingsStatus.textContent = '已保存。';
     await loadSettings();
+    messages = await api.getConversationHistory();
     renderHistory();
     return true;
   };
@@ -1401,14 +1404,15 @@ export const initializeChat = async ({
         !(await confirmAction({
           title: '同步作品词库',
           message: `将同步“${sourceWork}”的社区词库。`,
-          details: '只会核对公开来源并更新本地缓存；普通聊天不会因此自动联网。',
+          details:
+            '会主动搜索公开网页，核对社区梗、黑话、术语和别名后更新本地缓存；普通聊天不会因此自动联网。',
           confirmLabel: '开始同步',
         }))
       ) {
         return;
       }
       syncGlossaryButton.disabled = true;
-      glossaryStatus.textContent = '正在核对多个公开来源…';
+      glossaryStatus.textContent = '正在联网搜索并核对多个公开来源…';
       const result = await api.syncWorkGlossary({ sourceWork });
       glossaryStatus.textContent = result.message;
       if (result.ok) await loadGlossaryStatus(sourceWork);
@@ -1520,12 +1524,9 @@ export const initializeChat = async ({
     updateProviderVisibility();
     void updateSecretStatus();
   });
-  scaleInput.addEventListener('input', () => displayScale(Number(scaleInput.value)));
+  scaleInput.addEventListener('input', () => windowScaleSync?.preview(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {
-    if (!api) return;
-    void api
-      .setWindowScale({ scale: Number(scaleInput.value) })
-      .then((appliedScale) => displayScale(appliedScale));
+    void windowScaleSync?.commit(Number(scaleInput.value));
   });
   settingsPanel.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1649,7 +1650,7 @@ export const initializeChat = async ({
       void api.cancelCharacterResearch({ requestId: activeCharacterResearchId });
     }
     disposeConversationListener?.();
-    disposeWindowScaleListener?.();
+    windowScaleSync?.dispose();
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
     shell.remove();

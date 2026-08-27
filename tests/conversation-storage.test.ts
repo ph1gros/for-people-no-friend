@@ -73,6 +73,34 @@ describe('M4 local conversation storage', () => {
     expect(shared.activeProfileId).toBe('default-character');
   });
 
+  it('migrates a generated WebP persona that inherited the bundled Irena namespace', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-webp-profile-migration-'));
+    await writeFile(
+      path.join(directory, 'character-profiles.webp.v1.json'),
+      JSON.stringify({
+        version: 1,
+        activeProfileId: IRENA_CHARACTER_PROFILE.id,
+        profiles: [
+          {
+            ...IRENA_CHARACTER_PROFILE,
+            name: '芙莉莲',
+            memoryNamespace: 'character-irena',
+            lore: {
+              ...IRENA_CHARACTER_PROFILE.lore,
+              canonicalName: '芙莉莲',
+              sourceWork: '葬送的芙莉莲',
+            },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const migrated = await new CharacterProfileStore(directory).get();
+    expect(migrated.memoryNamespace).toMatch(/^character-[a-f0-9]{24}$/u);
+    expect(migrated.memoryNamespace).not.toBe('character-irena');
+  });
+
   it('does not accept a Live2D profile in GIF Version', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
     const store = new CharacterProfileStore(directory);

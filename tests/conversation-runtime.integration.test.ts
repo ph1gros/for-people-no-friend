@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ChatEvent, ChatRequest, ModelSelection } from '../src/core/llm/contracts';
+import { IRENA_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
 import { ConversationRuntime } from '../src/main/conversation/conversation-runtime';
 import type { ModelRuntime } from '../src/main/llm/model-runtime';
 import type { MemoryService } from '../src/main/memory/memory-service';
@@ -106,7 +107,7 @@ describe('conversation runtime integration', () => {
     expect(capturedRequest?.systemPrompt).toContain('wave');
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');
     expect(capturedRequest?.systemPrompt).toContain('用户的猫叫团子');
-    expect(capturedRequest?.systemPrompt).toContain('作品专名或玩家社区语境');
+    expect(capturedRequest?.systemPrompt).toContain('当前作品社区词库命中');
     expect(await history.list(100, 'character-irena')).toEqual([
       expect.objectContaining({ role: 'user', content: '你好', status: 'complete' }),
       expect.objectContaining({
@@ -138,6 +139,63 @@ describe('conversation runtime integration', () => {
       type: 'error',
       error: { code: 'configuration' },
     });
+    history.close();
+  });
+
+  it('isolates and restores generated WebP persona history', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-webp-persona-history-'));
+    const profiles = new CharacterProfileStore(directory);
+    const history = new ConversationStore(directory);
+    const runtime = new ConversationRuntime({} as ModelRuntime, profiles, history);
+    const profileFor = (name: string) => ({
+      ...IRENA_CHARACTER_PROFILE,
+      name,
+      bio: `${name}的角色身份。`,
+      personaPrompt: `以${name}的身份交流。`,
+      lore: {
+        ...IRENA_CHARACTER_PROFILE.lore!,
+        canonicalName: name,
+        sourceWork: '葬送的芙莉莲',
+        identity: `${name}的角色身份。`,
+      },
+    });
+
+    await runtime.setCharacterProfile(profileFor('芙莉莲'));
+    const frierenNamespace = (await profiles.get()).memoryNamespace;
+    await history.append(
+      {
+        id: 'frieren-message',
+        role: 'assistant',
+        content: '这是芙莉莲的历史。',
+        createdAt: 1,
+        status: 'complete',
+      },
+      frierenNamespace,
+    );
+
+    await runtime.setCharacterProfile(profileFor('菲伦'));
+    const fernNamespace = (await profiles.get()).memoryNamespace;
+    expect(fernNamespace).not.toBe(frierenNamespace);
+    expect(await runtime.listHistory()).toEqual([]);
+    await history.append(
+      {
+        id: 'fern-message',
+        role: 'assistant',
+        content: '这是菲伦的历史。',
+        createdAt: 2,
+        status: 'complete',
+      },
+      fernNamespace,
+    );
+
+    await runtime.setCharacterProfile(profileFor('芙莉莲'));
+    expect((await profiles.get()).memoryNamespace).toBe(frierenNamespace);
+    expect(await runtime.listHistory()).toEqual([
+      expect.objectContaining({ id: 'frieren-message', content: '这是芙莉莲的历史。' }),
+    ]);
+    expect(await history.list(100, fernNamespace)).toEqual([
+      expect.objectContaining({ id: 'fern-message', content: '这是菲伦的历史。' }),
+    ]);
     history.close();
   });
 });

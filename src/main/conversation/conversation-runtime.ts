@@ -20,6 +20,7 @@ import type {
   StartConversationInput,
   StartConversationResult,
 } from '../../shared/conversation-ipc';
+import { resolveCharacterMemoryNamespace } from '../character/character-namespace';
 import type { ModelRuntime } from '../llm/model-runtime';
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
 import { formatMemoryContext, type MemoryService } from '../memory/memory-service';
@@ -71,7 +72,11 @@ export class ConversationRuntime {
     if (this.active.size > 0) {
       throw new Error('Character cannot be updated during a reply.');
     }
-    const validated = validateCharacterProfile(profile);
+    const input = validateCharacterProfile(profile);
+    const validated = validateCharacterProfile({
+      ...input,
+      memoryNamespace: resolveCharacterMemoryNamespace(input),
+    });
     const current = await this.profiles.get();
     const previousRevision = current.lore ? createCharacterLoreRevision(current.lore) : undefined;
     const nextRevision = validated.lore ? createCharacterLoreRevision(validated.lore) : undefined;
@@ -172,7 +177,14 @@ export class ConversationRuntime {
       const [workGlossaryContext, characterKnowledgeContext] = await Promise.all([
         this.glossary
           ? this.glossary
-              .findMatches(profile.lore?.sourceWork ?? '', input.message)
+              .findMatches(
+                profile.lore?.sourceWork ?? '',
+                input.message,
+                existingHistory
+                  .filter((message) => message.status === 'complete')
+                  .slice(-4)
+                  .map((message) => message.content),
+              )
               .then(formatWorkGlossaryContext)
               .catch(() => '')
           : '',

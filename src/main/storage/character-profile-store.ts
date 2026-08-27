@@ -6,6 +6,7 @@ import {
   type CharacterProfile,
   validateCharacterProfile,
 } from '../../core/conversation/character-profile';
+import { resolveCharacterMemoryNamespace } from '../character/character-namespace';
 
 interface CharacterProfilesFile {
   version: 1;
@@ -35,7 +36,11 @@ export class CharacterProfileStore {
   }
 
   public async set(profile: CharacterProfile): Promise<void> {
-    const validated = validateCharacterProfile(profile);
+    const input = validateCharacterProfile(profile);
+    const validated = validateCharacterProfile({
+      ...input,
+      memoryNamespace: resolveCharacterMemoryNamespace(input),
+    });
     const collection = await this.load();
     if (validated.id !== collection.activeProfileId) {
       throw new Error('Only the active character profile can be updated.');
@@ -59,7 +64,20 @@ export class CharacterProfileStore {
 
   private async loadUncached(): Promise<CharacterProfilesFile> {
     try {
-      return this.validateCollection(JSON.parse(await readFile(this.filePath, 'utf8')) as unknown);
+      const loaded = this.validateCollection(
+        JSON.parse(await readFile(this.filePath, 'utf8')) as unknown,
+      );
+      const profile = loaded.profiles[0]!;
+      const expectedNamespace = resolveCharacterMemoryNamespace(profile);
+      if (profile.memoryNamespace !== expectedNamespace) {
+        const migrated = {
+          ...loaded,
+          profiles: [{ ...profile, memoryNamespace: expectedNamespace }],
+        };
+        await this.saveCollection(migrated);
+        return migrated;
+      }
+      return loaded;
     } catch (error) {
       if (!isMissingFile(error)) throw error;
     }
@@ -77,7 +95,13 @@ export class CharacterProfileStore {
                 value.id === IRENA_CHARACTER_PROFILE.id,
             )
           : undefined;
-        if (candidate) profile = validateCharacterProfile(candidate);
+        if (candidate) {
+          const validated = validateCharacterProfile(candidate);
+          profile = validateCharacterProfile({
+            ...validated,
+            memoryNamespace: resolveCharacterMemoryNamespace(validated),
+          });
+        }
       }
     } catch (error) {
       if (!isMissingFile(error)) throw error;

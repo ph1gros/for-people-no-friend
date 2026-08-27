@@ -14,6 +14,9 @@ export interface WorkGlossaryStatus {
 }
 
 export interface WorkGlossarySyncReport {
+  searchedQueries: number;
+  discoveredEntries: number;
+  searchFailed: boolean;
   checkedSources: number;
   verifiedSources: number;
   failedSourceTitles: string[];
