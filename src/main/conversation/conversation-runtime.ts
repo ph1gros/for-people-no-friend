@@ -172,7 +172,14 @@ export class ConversationRuntime {
       const [workGlossaryContext, characterKnowledgeContext] = await Promise.all([
         this.glossary
           ? this.glossary
-              .findMatches(profile.lore?.sourceWork ?? '', input.message)
+              .findMatches(
+                profile.lore?.sourceWork ?? '',
+                input.message,
+                existingHistory
+                  .filter((message) => message.status === 'complete')
+                  .slice(-4)
+                  .map((message) => message.content),
+              )
               .then(formatWorkGlossaryContext)
               .catch(() => '')
           : '',

@@ -20,6 +20,15 @@ const uniqueStrings = (values: readonly string[]): string[] => [
   ...new Set(values.map((value) => value.trim()).filter(Boolean)),
 ];
 
+const MAX_QUERY_VARIANTS = 3;
+const MAX_QUERY_CHARACTERS = 800;
+const RRF_RANK_CONSTANT = 60;
+
+export interface WorkGlossaryQueryContext {
+  message: string;
+  recentMessages?: readonly string[];
+}
+
 const validateSource = (value: unknown): WorkGlossarySource => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('The work glossary source is invalid.');
@@ -137,22 +146,136 @@ const searchScore = (message: string, entry: WorkGlossaryEntry): number => {
   return overlap.length >= 2 ? overlap.length : 0;
 };
 
+const extractFocusedQuery = (message: string): string | undefined => {
+  const normalized = normalize(message);
+  const quoted = normalized.match(/[“"「『]([^”"」』]{1,80})[”"」』]/u)?.[1]?.trim();
+  if (quoted) return quoted;
+  const explained = normalized.match(
+    /([a-z0-9][a-z0-9._-]{1,39}|[\u3400-\u9fff]{2,20})(?:是什么梗|什么梗|是什么意思|什么意思|啥意思)/u,
+  )?.[1];
+  const candidate = explained?.trim();
+  if (!candidate || /^(?:这个|那个|这些|那些|它|他|她)(?:又是|是|叫|说)?$/u.test(candidate)) {
+    return undefined;
+  }
+  return candidate;
+};
+
+export const buildWorkGlossaryQueries = ({
+  message,
+  recentMessages = [],
+}: WorkGlossaryQueryContext): string[] => {
+  const current = message.trim().slice(0, MAX_QUERY_CHARACTERS);
+  if (!current) return [];
+  const focused = extractFocusedQuery(current);
+  const previous = [...recentMessages]
+    .reverse()
+    .map((value) => value.trim())
+    .find((value) => value && normalize(value) !== normalize(current));
+  return uniqueStrings([
+    current,
+    ...(focused ? [focused] : []),
+    ...(previous
+      ? [`${previous.slice(0, MAX_QUERY_CHARACTERS / 2)} ${current}`.slice(0, MAX_QUERY_CHARACTERS)]
+      : []),
+  ]).slice(0, MAX_QUERY_VARIANTS);
+};
+
+const rankEntries = (
+  query: string,
+  entries: readonly WorkGlossaryEntry[],
+): Array<{ entry: WorkGlossaryEntry; score: number }> =>
+  entries
+    .map((entry) => ({ entry, score: searchScore(normalize(query), entry) }))
+    .filter(({ score }) => score > 0)
+    .sort(
+      (first, second) =>
+        second.score - first.score ||
+        second.entry.confidence - first.entry.confidence ||
+        first.entry.term.localeCompare(second.entry.term, 'zh-CN'),
+    );
+
+const findRelatedEntries = (
+  entry: WorkGlossaryEntry,
+  entries: readonly WorkGlossaryEntry[],
+  selectedTerms: ReadonlySet<string>,
+): WorkGlossaryEntry[] => {
+  const relationText = normalize(`${entry.meaning} ${entry.originContext}`);
+  return entries
+    .filter((candidate) => !selectedTerms.has(normalize(candidate.term)))
+    .filter((candidate) =>
+      [candidate.term, ...candidate.aliases].some((alias) => containsAlias(relationText, alias)),
+    )
+    .sort(
+      (first, second) =>
+        second.confidence - first.confidence || first.term.localeCompare(second.term, 'zh-CN'),
+    );
+};
+
+export const findRelevantGlossaryEntriesForContext = (
+  context: WorkGlossaryQueryContext,
+  entries: readonly WorkGlossaryEntry[],
+  limit = 3,
+  maximumRelationDepth = 2,
+): WorkGlossaryEntry[] => {
+  const safeLimit = Math.max(0, Math.min(8, Math.trunc(limit)));
+  if (safeLimit === 0) return [];
+  const validatedEntries = entries.map((entry) => validateWorkGlossaryEntry(entry));
+  const rankings = new Map<
+    string,
+    { entry: WorkGlossaryEntry; exact: boolean; reciprocalRank: number; bestScore: number }
+  >();
+  for (const query of buildWorkGlossaryQueries(context)) {
+    rankEntries(query, validatedEntries).forEach(({ entry, score }, index) => {
+      const key = normalize(entry.term);
+      const previous = rankings.get(key);
+      rankings.set(key, {
+        entry,
+        exact: (previous?.exact ?? false) || score >= 100,
+        reciprocalRank: (previous?.reciprocalRank ?? 0) + 1 / (RRF_RANK_CONSTANT + index + 1),
+        bestScore: Math.max(previous?.bestScore ?? 0, score),
+      });
+    });
+  }
+  const selected = [...rankings.values()]
+    .sort(
+      (first, second) =>
+        Number(second.exact) - Number(first.exact) ||
+        second.reciprocalRank - first.reciprocalRank ||
+        second.bestScore - first.bestScore ||
+        second.entry.confidence - first.entry.confidence ||
+        first.entry.term.localeCompare(second.entry.term, 'zh-CN'),
+    )
+    .map(({ entry }) => entry)
+    .slice(0, safeLimit);
+
+  const selectedTerms = new Set(selected.map((entry) => normalize(entry.term)));
+  let frontier = [...selected];
+  const depthLimit = Math.max(0, Math.min(2, Math.trunc(maximumRelationDepth)));
+  for (let depth = 0; depth < depthLimit && selected.length < safeLimit; depth += 1) {
+    const next: WorkGlossaryEntry[] = [];
+    for (const seed of frontier) {
+      for (const related of findRelatedEntries(seed, validatedEntries, selectedTerms)) {
+        const key = normalize(related.term);
+        if (selectedTerms.has(key)) continue;
+        selected.push(related);
+        selectedTerms.add(key);
+        next.push(related);
+        if (selected.length >= safeLimit) break;
+      }
+      if (selected.length >= safeLimit) break;
+    }
+    frontier = next;
+    if (frontier.length === 0) break;
+  }
+  return selected;
+};
+
 export const findRelevantGlossaryEntries = (
   message: string,
   entries: readonly WorkGlossaryEntry[],
   limit = 3,
 ): WorkGlossaryEntry[] => {
-  const normalizedMessage = normalize(message);
-  return entries
-    .map((entry) => validateWorkGlossaryEntry(entry))
-    .map((entry) => ({ entry, score: searchScore(normalizedMessage, entry) }))
-    .filter(({ score }) => score > 0)
-    .sort(
-      (first, second) =>
-        second.score - first.score || second.entry.confidence - first.entry.confidence,
-    )
-    .map(({ entry }) => entry)
-    .slice(0, limit);
+  return findRelevantGlossaryEntriesForContext({ message }, entries, limit, 0);
 };
 
 export const formatWorkGlossaryContext = (entries: readonly WorkGlossaryEntry[]): string => {

@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { CharacterResearchService } from '../src/main/character/character-research-service';
+import {
+  CharacterResearchService,
+  DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS,
+} from '../src/main/character/character-research-service';
 
 const jsonResponse = (value: unknown): Response =>
   new Response(JSON.stringify(value), {
@@ -15,6 +18,10 @@ const xmlResponse = (value: string): Response =>
   });
 
 describe('M5.1 character research service', () => {
+  it('allows character generation to run longer than the old 30 second limit', () => {
+    expect(DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS).toBe(180_000);
+  });
+
   it('prioritizes a work-matched Kaltsit candidate and builds a sourced editable draft', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());

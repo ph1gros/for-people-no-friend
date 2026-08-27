@@ -129,7 +129,7 @@ const MAX_RESPONSE_CHARACTERS = 1_000_000;
 const MAX_SOURCE_TEXT_CHARACTERS = 12_000;
 const CANDIDATE_TTL_MS = 10 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 5_000;
-const GENERATION_TIMEOUT_MS = 30_000;
+export const DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS = 180_000;
 const WEB_SEARCH_ORIGIN = 'https://www.bing.com';
 const WEB_SEARCH_PATH = '/search';
 const SUPPLEMENTAL_HOSTS = [
@@ -385,6 +385,7 @@ export class CharacterResearchService {
   public constructor(
     private readonly fetcher: typeof globalThis.fetch,
     private readonly generator?: CharacterLoreGenerator,
+    private readonly generationTimeoutMs = DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS,
   ) {}
 
   public async search(
@@ -469,7 +470,11 @@ export class CharacterResearchService {
       let generated: Partial<Omit<CharacterLore, 'sources'>> = {};
       const warnings: string[] = [];
       if (this.generator && sourceText) {
-        const generationTimeout = AbortSignal.timeout(GENERATION_TIMEOUT_MS);
+        const generationTimeoutMs = Math.max(
+          1_000,
+          Math.min(300_000, Math.trunc(this.generationTimeoutMs)),
+        );
+        const generationTimeout = AbortSignal.timeout(generationTimeoutMs);
         try {
           generated = await this.generator.generateCharacterLore(
             {
@@ -483,7 +488,7 @@ export class CharacterResearchService {
           if (signal.aborted) throw error;
           warnings.push(
             generationTimeout.aborted
-              ? '资料已找到，但模型在 30 秒内没有完成整理。你可以直接重新整理或手动填写。'
+              ? `资料已找到，但模型在 ${Math.ceil(generationTimeoutMs / 1_000)} 秒内没有完成整理。你可以直接重新整理或手动填写。`
               : generationFailureWarning(error),
           );
         }

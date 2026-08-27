@@ -114,7 +114,9 @@ export class OpenAICompatibleProvider implements LlmProvider {
     const apiKey = configuration.apiKey?.trim();
     const fetchImplementation = this.options.fetch ?? globalThis.fetch;
 
-    const timeoutSignal = AbortSignal.timeout(this.options.timeoutMs ?? 60_000);
+    const timeoutSignal = AbortSignal.timeout(
+      request.timeoutMs ?? this.options.timeoutMs ?? 60_000,
+    );
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
 
     let response: Response;

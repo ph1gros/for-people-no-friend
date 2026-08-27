@@ -19,7 +19,10 @@ import type {
   TestProviderConnectionInput,
 } from '../../shared/model-ipc';
 import type { ConversationConfiguration } from '../../shared/conversation-ipc';
-import type { CharacterLoreGenerationInput } from '../character/character-research-service';
+import {
+  DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS,
+  type CharacterLoreGenerationInput,
+} from '../character/character-research-service';
 import { SecretStore } from '../security/secret-store';
 import { ProviderConfigStore } from '../storage/provider-config-store';
 
@@ -182,6 +185,7 @@ export class ModelRuntime {
         ],
         temperature: 0,
         maxOutputTokens: 3_000,
+        timeoutMs: DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS,
         ...(supportsStructuredOutput ? { responseSchema: CHARACTER_LORE_SCHEMA } : {}),
       },
       signal,

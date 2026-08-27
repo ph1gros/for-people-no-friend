@@ -5,7 +5,9 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  buildWorkGlossaryQueries,
   findRelevantGlossaryEntries,
+  findRelevantGlossaryEntriesForContext,
   formatWorkGlossaryContext,
   resolveWorkGlossaryId,
   type WorkGlossaryEntry,
@@ -43,6 +45,59 @@ describe('work-specific community glossary', () => {
     expect(findRelevantGlossaryEntries('今天完成325大学习', [entry])).toEqual([entry]);
     expect(findRelevantGlossaryEntries('1325是什么？', [entry])).toEqual([]);
     expect(findRelevantGlossaryEntries('方舟社区那个低分梗是什么？', [entry])).toEqual([entry]);
+  });
+
+  it('expands an ambiguous follow-up with bounded recent context', () => {
+    expect(
+      buildWorkGlossaryQueries({
+        message: '这个又是什么意思？',
+        recentMessages: ['先不聊天气', '我刚看到“325大学习”'],
+      }),
+    ).toEqual(['这个又是什么意思？', '我刚看到“325大学习” 这个又是什么意思？']);
+    expect(
+      findRelevantGlossaryEntriesForContext(
+        {
+          message: '这个又是什么意思？',
+          recentMessages: ['我刚看到“325大学习”'],
+        },
+        [entry],
+      ),
+    ).toEqual([entry]);
+  });
+
+  it('uses deterministic RRF ordering and follows at most two explicit term relations', () => {
+    const entries: WorkGlossaryEntry[] = [
+      entry,
+      {
+        ...entry,
+        term: '仙术杯',
+        aliases: [],
+        meaning: '明日方舟集成战略的社区赛事，相关讨论里也会提到魔法Zc目录。',
+        originContext: '社区赛事资料。',
+        confidence: 0.9,
+      },
+      {
+        ...entry,
+        term: '魔法Zc目录',
+        aliases: ['目录'],
+        meaning: '参加仙术杯的选手。',
+        originContext: '社区赛事资料。',
+        confidence: 0.88,
+      },
+      {
+        ...entry,
+        term: '无关词条',
+        aliases: [],
+        meaning: '不会被关联的另一条资料。',
+        originContext: '其他语境。',
+        confidence: 1,
+      },
+    ];
+    expect(
+      findRelevantGlossaryEntriesForContext({ message: '325是什么梗？' }, entries, 3, 2).map(
+        ({ term }) => term,
+      ),
+    ).toEqual(['325', '仙术杯', '魔法Zc目录']);
   });
 
   it('rejects unsafe glossary sources and ignores a damaged cache', async () => {

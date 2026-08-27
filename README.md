@@ -6,11 +6,9 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
+当前 `main` 是 **Live2D Version**，以凯尔希作为完整 Live2D 示例；伊雷娜动态 WebP 在 `gif-version` 独立发展。
 
-当前 `main` 是 **Live2D Version**：凯尔希作为完整公开示例，模型、角色资料、情境表达参考和《明日方舟》作品社区词库保持同一角色归属。项目继续支持 Live2D、文字对话、安全的模型提供商配置、可信长期记忆、侧拉对话 HUD 与作品社区词库；动态 WebP 伊雷娜则作为另一套完整示例，在独立的 `gif-version` 分支发展。
-
-两条路线的产品重心并不相同：WebP Version 面向本地小模型和快速角色扮演，尽量用较短的角色卡、较小的上下文预算和少量步骤完成一个角色；Live2D Version 面向能力更强的大模型与长期陪伴，更重视可信记忆、关系连续性、情绪理解，以及回复和表情动作的一致。二者都能生成角色，但不会为了“功能看起来一样多”而背上同一套运行成本。
+Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
 ## 1.0.0 已完成能力
 
@@ -56,17 +54,25 @@ A local-first Windows AI character companion for days when socializing feels lik
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：角色资料与情境对话增强；动态 WebP 伊雷娜进入 `gif-version` 支线
 - V1.2 / M6：双版本各自完成带来源角色生成、资料检索、隔离与安全回退
+- V1.3：双版本表现能力验收，以及 `gif-version` 的 WebP 标签判定与调度规则
 - 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
-吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[另一只 BongoCat](https://github.com/bongocat-pet/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
-
-能带走的是思路、经验和测试方法，不能顺手打包带走的是许可证不兼容的源码。看懂以后再核对官方文档和本项目的安全边界，用自己的代码重新实现并测试；也不因为别人家功能多，就把语音、Agent、MCP 和桌面控制一锅端进来。
+吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V1.1b 完成可信长期记忆闭环；V1.1c 在主线增强联网角色资料和情境对话，Live2D 继续作为完整功能主线，动态 WebP 则在 `gif-version` 支线发展。当前仓库不提供 Windows 安装包、签名或可执行发布产物。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库与安全检索闭环。动态 WebP 在 `gif-version` 支线独立发展。当前仓库不提供 Windows 安装包、签名或可执行发布产物。
+
+## 示例模型与素材来源
+
+| 角色   | 所在版本                          | 作者                                                   | 原始来源                                                                            | 收录说明                       |
+| ------ | --------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------ |
+| 凯尔希 | `main` · Live2D Version           | [什行在要](https://space.bilibili.com/2695839)         | [“工作凯尔希”Live2D](https://www.bilibili.com/video/BV1Le411976u/)                  | 已获许可，仅限非盈利收录与分发 |
+| 伊雷娜 | `gif-version` · 动态 WebP Version | [白之魔女-霜娜](https://space.bilibili.com/2125763952) | [伊雷娜动态 WebP 表情原始发布页](https://www.bilibili.com/opus/1209543497317613574) | 经用户确认，作者允许使用与分发 |
+
+模型和表情素材只负责角色外观与动作，角色资料、作品词库、用户记忆和私人对话分别保存。来源链接只用于署名与查阅，不会在运行时远程加载素材。
 
 ## 文档
 
@@ -95,7 +101,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 
 ## 角色与表现资源
 
-主线新安装默认使用凯尔希资料卡，并提供已获作者非盈利授权的“工作凯尔希”Live2D 运行素材。它们共同组成主线完整示例；角色资料和模型文件仍保持独立命名空间，方便以后替换或增加角色。启用方法、作者来源和许可边界见 [本地 Live2D 兼容模型](assets/models/README.md)。
+主线新安装默认使用凯尔希资料卡和“工作凯尔希”Live2D 运行素材。启用方法与完整许可边界见 [本地 Live2D 兼容模型](assets/models/README.md)。
 
 主线与支线共享角色资料学习、长期记忆和安全边界，但不是同一个程序里的两套皮肤，也不提供凯尔希与伊蕾娜的运行时互切：`main` 专注 Live2D 的完整表现能力，`gif-version` 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
 

@@ -18,6 +18,7 @@ export interface ChatRequest {
   responseSchema?: Record<string, unknown>;
   temperature?: number;
   maxOutputTokens?: number;
+  timeoutMs?: number;
 }
 
 export type ChatEvent =

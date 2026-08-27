@@ -1,5 +1,5 @@
 import {
-  findRelevantGlossaryEntries,
+  findRelevantGlossaryEntriesForContext,
   resolveWorkGlossaryId,
   type WorkGlossaryEntry,
   type WorkGlossarySource,
@@ -40,12 +40,19 @@ export class WorkGlossaryService {
     this.store = new WorkGlossaryStore(userDataPath);
   }
 
-  public async findMatches(sourceWork: string, message: string): Promise<WorkGlossaryEntry[]> {
+  public async findMatches(
+    sourceWork: string,
+    message: string,
+    recentMessages: readonly string[] = [],
+  ): Promise<WorkGlossaryEntry[]> {
     try {
       const glossary = this.resolve(sourceWork);
       if (!glossary) return [];
       const cached = await this.store.get(glossary.id);
-      return findRelevantGlossaryEntries(message, cached?.entries ?? glossary.entries);
+      return findRelevantGlossaryEntriesForContext(
+        { message, recentMessages },
+        cached?.entries ?? glossary.entries,
+      );
     } catch {
       return [];
     }
