@@ -12,6 +12,7 @@ dist/
 dist-electron/
 out/
 release/
+.release/
 coverage/
 .vite/
 
