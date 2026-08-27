@@ -67,15 +67,18 @@ export const applyNormalizedTracking = (
 export const fitModelToScreen = (
   model: ScreenDimensions,
   screen: ScreenDimensions,
+  presentation: { scale?: number; offsetX?: number; offsetY?: number } = {},
 ): { scale: number; x: number; y: number } => {
-  const scale = Math.min(
+  const baseScale = Math.min(
     Math.max(1, screen.width - 2) / model.width,
     Math.max(1, screen.height - 2) / model.height,
   );
+  const presentationScale = presentation.scale ?? 1;
+  const scale = baseScale * presentationScale;
   return {
     scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
-    x: screen.width / 2,
-    y: screen.height / 2,
+    x: screen.width * (0.5 + (presentation.offsetX ?? 0) / 2),
+    y: screen.height * (0.5 + (presentation.offsetY ?? 0) / 2),
   };
 };
 

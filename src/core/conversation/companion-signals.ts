@@ -20,6 +20,8 @@ export interface RecentMoodContinuity {
   contributingRecords: number;
 }
 
+export type CompanionReplyEmotion = CompanionMoodEmotion | 'neutral' | 'shy' | 'playful';
+
 interface SignalRule {
   mode: EmotionalResponseMode;
   confidence: CurrentEmotionalSignal['confidence'];
@@ -114,6 +116,22 @@ export const deriveRecentMoodContinuity = (
     source: currentMode === mode ? 'current' : 'carried',
     contributingRecords: scores.get(mode)?.count ?? 1,
   };
+};
+
+export const resolveCompanionReplyEmotion = (
+  requestedEmotion: CompanionReplyEmotion,
+  records: readonly RecentCompanionRecord[],
+): CompanionReplyEmotion => {
+  const mood = deriveRecentMoodContinuity(records);
+  if (!mood) return requestedEmotion;
+
+  // An explicit current cue is the safest source for the visible performance.
+  // A carried cue only fills a neutral result, so an older mood cannot override
+  // a new non-neutral reply forever.
+  if (mood.source === 'current' || requestedEmotion === 'neutral') {
+    return mood.emotion;
+  }
+  return requestedEmotion;
 };
 
 export const formatLive2DCompanionSignals = (

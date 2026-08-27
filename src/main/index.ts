@@ -1,7 +1,8 @@
-import { app, net, safeStorage, type Tray } from 'electron';
+import { app, globalShortcut, net, safeStorage, type Tray } from 'electron';
 
 import { CharacterResearchService } from './character/character-research-service';
 import { ConversationRuntime } from './conversation/conversation-runtime';
+import { DesktopIntegrationService } from './desktop/desktop-integration-service';
 import { WorkGlossaryService } from './glossary/work-glossary-service';
 import { registerIpcHandlers } from './ipc/register-ipc-handlers';
 import { ModelRuntime } from './llm/model-runtime';
@@ -11,6 +12,7 @@ import { CharacterProfileStore } from './storage/character-profile-store';
 import { CharacterKnowledgeStore } from './storage/character-knowledge-store';
 import { ConversationStore } from './storage/conversation-store';
 import { DeskpetDatabase } from './storage/deskpet-database';
+import { DesktopIntegrationStore } from './storage/desktop-integration-store';
 import { ProviderConfigStore } from './storage/provider-config-store';
 import { createDeskpetTray } from './tray/create-tray';
 import { WindowManager } from './windows/window-manager';
@@ -30,10 +32,11 @@ if (!hasSingleInstanceLock) {
   let database: DeskpetDatabase | undefined;
   let workGlossary: WorkGlossaryService | undefined;
   let tray: Tray | undefined;
+  let desktopIntegrations: DesktopIntegrationService | undefined;
 
   app.on('second-instance', () => windowManager?.show());
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     windowManager = new WindowManager();
     const userDataPath = app.getPath('userData');
     const providerConfiguration = new ProviderConfigStore(userDataPath);
@@ -57,6 +60,12 @@ if (!hasSingleInstanceLock) {
       workGlossary,
       new CharacterKnowledgeStore(database),
     );
+    desktopIntegrations = new DesktopIntegrationService(
+      new DesktopIntegrationStore(userDataPath),
+      globalShortcut,
+      () => windowManager?.toggleVisibility(),
+    );
+    await desktopIntegrations.initialize();
     registerIpcHandlers(
       windowManager,
       modelRuntime,
@@ -65,6 +74,7 @@ if (!hasSingleInstanceLock) {
       memoryService,
       characterResearch,
       workGlossary,
+      desktopIntegrations,
     );
     windowManager.create();
     tray = createDeskpetTray({
@@ -78,6 +88,8 @@ if (!hasSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    desktopIntegrations?.dispose();
+    desktopIntegrations = undefined;
     conversationRuntime?.dispose();
     conversationRuntime = undefined;
     memoryService?.dispose();

@@ -4,6 +4,11 @@
   "core": "live2dcubismcore.min.js",
   "model": "kaltsit-work/凯尔希直播版1.model3.json",
   "parameters": {},
+  "presentation": {
+    "scale": 1,
+    "offsetX": 0,
+    "offsetY": 0
+  },
   "controls": {
     "states": {
       "idle": { "group": "Idle", "index": 0 },
@@ -19,6 +24,14 @@
       "question": { "group": "Question", "index": 0 },
       "coldSweat": { "group": "ColdSweat", "index": 0 }
     },
-    "emotions": {}
+    "emotions": {},
+    "emotionActions": {
+      "happy": "wish",
+      "sad": "sigh",
+      "angry": "annoyed",
+      "surprised": "surprised",
+      "shy": "coldSweat",
+      "playful": "earWiggle"
+    }
   }
 }

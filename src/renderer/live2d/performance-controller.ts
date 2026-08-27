@@ -40,14 +40,29 @@ interface QueuedAction {
   resolve: (played: boolean) => void;
 }
 
+export interface PerformanceTimingPolicy {
+  actionTimeoutMs: number;
+  actionCooldownMs: number;
+  recoveryDelayMs: number;
+}
+
+export const DEFAULT_PERFORMANCE_TIMING: Readonly<PerformanceTimingPolicy> = Object.freeze({
+  actionTimeoutMs: 12_000,
+  actionCooldownMs: 1_200,
+  recoveryDelayMs: 0,
+});
+
 export class ActionChannel {
   private readonly queue: QueuedAction[] = [];
+  private readonly lastQueuedAt = new Map<string, number>();
   private active = false;
   private restoreState: () => Promise<boolean> = async () => false;
 
   public constructor(
     private readonly driver: Live2DDriver,
     private readonly motions: Live2DControlMap['actions'],
+    private readonly timing: Readonly<PerformanceTimingPolicy> = DEFAULT_PERFORMANCE_TIMING,
+    private readonly now: () => number = Date.now,
   ) {}
 
   public get isActive(): boolean {
@@ -63,11 +78,39 @@ export class ActionChannel {
     if (!motion) {
       return Promise.resolve(false);
     }
+    const queuedAt = this.now();
+    const previous = this.lastQueuedAt.get(action);
+    if (previous !== undefined && queuedAt - previous < this.timing.actionCooldownMs) {
+      return Promise.resolve(false);
+    }
+    this.lastQueuedAt.set(action, queuedAt);
 
     return new Promise<boolean>((resolve) => {
       this.queue.push({ motion, resolve });
       void this.drain();
     });
+  }
+
+  private playWithTimeout(motion: MotionReference): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (played: boolean): void => {
+        if (settled) return;
+        settled = true;
+        globalThis.clearTimeout(timeout);
+        resolve(played);
+      };
+      const timeout = globalThis.setTimeout(() => finish(false), this.timing.actionTimeoutMs);
+      void this.driver.playAction(motion).then(
+        (played) => finish(played),
+        () => finish(false),
+      );
+    });
+  }
+
+  private waitForRecovery(): Promise<void> {
+    if (this.timing.recoveryDelayMs <= 0) return Promise.resolve();
+    return new Promise((resolve) => globalThis.setTimeout(resolve, this.timing.recoveryDelayMs));
   }
 
   private async drain(): Promise<void> {
@@ -81,7 +124,7 @@ export class ActionChannel {
       while (next) {
         let played = false;
         try {
-          played = await this.driver.playAction(next.motion);
+          played = await this.playWithTimeout(next.motion);
         } catch {
           played = false;
         } finally {
@@ -91,6 +134,7 @@ export class ActionChannel {
       }
     } finally {
       this.active = false;
+      await this.waitForRecovery();
       await this.restoreState();
     }
   }
@@ -160,16 +204,26 @@ export class Live2DPerformanceController {
   public readonly action: ActionChannel;
   public readonly emotion: EmotionChannel;
   public readonly tracking: TrackingChannel;
+  private readonly emotionActions: Live2DControlMap['emotionActions'];
 
   public constructor(
     private readonly driver: Live2DDriver,
     controls: Live2DControlMap,
+    timing: Readonly<PerformanceTimingPolicy> = DEFAULT_PERFORMANCE_TIMING,
+    now: () => number = Date.now,
   ) {
-    this.action = new ActionChannel(driver, controls.actions);
+    this.action = new ActionChannel(driver, controls.actions, timing, now);
     this.state = new StateChannel(driver, controls.states, () => this.action.isActive);
     this.action.bindStateRestore(() => this.state.restore());
     this.emotion = new EmotionChannel(driver, controls.emotions);
+    this.emotionActions = controls.emotionActions;
     this.tracking = new TrackingChannel(driver);
+  }
+
+  public async respond(emotion: CharacterEmotion, requestedAction?: string): Promise<void> {
+    await this.emotion.set(emotion);
+    const action = requestedAction ?? this.emotionActions?.[emotion];
+    if (action) void this.action.enqueue(action);
   }
 
   public async start(): Promise<void> {

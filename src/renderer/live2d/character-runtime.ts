@@ -1,10 +1,15 @@
 import { Live2DPerformanceController } from './performance-controller';
+import {
+  inspectLive2DModelCapabilities,
+  type Live2DModelCapabilityReport,
+} from './model-capabilities';
 import { loadLocalModelManifest, ModelManifestError, resolveLocalModelUrl } from './model-manifest';
 import { createLive2DRenderer, loadCubismCore } from './pixi-driver';
 
 export interface LoadedCharacter {
   name: string;
   availableActions: string[];
+  capabilityReport: Live2DModelCapabilityReport;
   controller: Live2DPerformanceController;
   dispose(): void;
 }
@@ -71,11 +76,20 @@ export const renderCharacterError = (
 
 export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter> => {
   const manifest = await loadLocalModelManifest();
+  const modelResponse = await fetch(resolveLocalModelUrl(manifest.model), { cache: 'no-store' });
+  if (!modelResponse.ok) {
+    throw new ModelManifestError(
+      `模型文件读取失败（HTTP ${modelResponse.status}）。`,
+      'unavailable',
+    );
+  }
+  const capabilityReport = inspectLive2DModelCapabilities(manifest, await modelResponse.json());
   await loadCubismCore(resolveLocalModelUrl(manifest.core));
   const renderer = await createLive2DRenderer(
     host,
     resolveLocalModelUrl(manifest.model),
     manifest.parameters,
+    manifest.presentation,
   );
   const deskpet = window.deskpet;
   const controller = new Live2DPerformanceController(renderer.driver, manifest.controls);
@@ -122,6 +136,7 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
   return {
     name: manifest.name,
     availableActions: Object.keys(manifest.controls.actions),
+    capabilityReport,
     controller,
     dispose: () => {
       isDisposed = true;

@@ -12,6 +12,10 @@ import {
   type ConversationConfiguration,
   type StartConversationInput,
 } from '../shared/conversation-ipc';
+import type {
+  MediaCommandInput,
+  SetDesktopIntegrationSettingsInput,
+} from '../shared/desktop-integration-ipc';
 import { type DeskpetApi, IPC_CHANNELS } from '../shared/ipc';
 import type {
   ConfirmMemoryCandidateInput,
@@ -199,6 +203,18 @@ const deskpetApi: DeskpetApi = Object.freeze({
   setChatPanelExpanded: (input: SetChatPanelExpandedInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.setChatPanelExpanded, input) as ReturnType<
       DeskpetApi['setChatPanelExpanded']
+    >,
+  getDesktopIntegrationStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getDesktopIntegrationStatus) as ReturnType<
+      DeskpetApi['getDesktopIntegrationStatus']
+    >,
+  setDesktopIntegrationSettings: (input: SetDesktopIntegrationSettingsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setDesktopIntegrationSettings, input) as ReturnType<
+      DeskpetApi['setDesktopIntegrationSettings']
+    >,
+  sendMediaCommand: (input: MediaCommandInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.sendMediaCommand, input) as ReturnType<
+      DeskpetApi['sendMediaCommand']
     >,
 });
 

@@ -4,6 +4,7 @@ import { Application, extensions, Rectangle } from 'pixi.js';
 import type { Live2DModel } from 'untitled-pixi-live2d-engine/cubism';
 
 import type { Live2DDriver, MotionReference, TrackingPoint } from './contracts';
+import type { Live2DPresentation } from './model-manifest';
 import {
   applyCubismCoreCompatibility,
   applyNormalizedTracking,
@@ -156,6 +157,7 @@ export const createLive2DRenderer = async (
   host: HTMLElement,
   modelUrl: string,
   persistentParameters: Record<string, number> = {},
+  presentation: Live2DPresentation = { scale: 1, offsetX: 0, offsetY: 0 },
 ): Promise<CreatedLive2DRenderer> => {
   const { configureCubismSDK, Live2DModel, Live2DPlugin, MotionPriority } =
     await import('untitled-pixi-live2d-engine/cubism');
@@ -248,7 +250,7 @@ export const createLive2DRenderer = async (
       frameRefreshTimer = window.setTimeout(() => refreshVisibleFrame(), 80);
     };
     const layoutModel = (): void => {
-      const layout = fitModelToScreen(intrinsicSize, application.screen);
+      const layout = fitModelToScreen(intrinsicSize, application.screen, presentation);
       model.scale.set(layout.scale);
       model.position.set(layout.x, layout.y);
       if (model.parent) {

@@ -396,6 +396,38 @@ export const initializeChat = async ({
   const settingsStatus = document.createElement('p');
   settingsStatus.className = 'settings-status';
   settingsStatus.setAttribute('role', 'status');
+  const modelCapabilityStatus = document.createElement('p');
+  modelCapabilityStatus.className = 'settings-status';
+  const desktopIntegrationPanel = document.createElement('section');
+  desktopIntegrationPanel.className = 'character-search';
+  const desktopIntegrationTitle = document.createElement('strong');
+  desktopIntegrationTitle.textContent = '桌面快捷操作';
+  const globalShortcutInput = document.createElement('input');
+  globalShortcutInput.type = 'checkbox';
+  const globalShortcutField = document.createElement('label');
+  globalShortcutField.className = 'settings-field';
+  globalShortcutField.append(globalShortcutInput, ' 启用 Ctrl+Shift+Space 显示或隐藏桌宠');
+  const mediaControlInput = document.createElement('input');
+  mediaControlInput.type = 'checkbox';
+  const mediaControlField = document.createElement('label');
+  mediaControlField.className = 'settings-field';
+  mediaControlField.append(mediaControlInput, ' 启用系统媒体控制（适配器可用时）');
+  const desktopIntegrationStatus = document.createElement('p');
+  desktopIntegrationStatus.className = 'settings-status';
+  desktopIntegrationStatus.textContent = '两项默认关闭；快捷键只识别固定组合，不记录键盘内容。';
+  const mediaActions = document.createElement('div');
+  mediaActions.className = 'settings-actions';
+  const previousMediaButton = createButton('上一首', 'text-button');
+  const playPauseMediaButton = createButton('播放 / 暂停', 'text-button');
+  const nextMediaButton = createButton('下一首', 'text-button');
+  mediaActions.append(previousMediaButton, playPauseMediaButton, nextMediaButton);
+  desktopIntegrationPanel.append(
+    desktopIntegrationTitle,
+    globalShortcutField,
+    mediaControlField,
+    desktopIntegrationStatus,
+    mediaActions,
+  );
   const settingsActions = document.createElement('div');
   settingsActions.className = 'settings-actions';
   const testButton = createButton('测试连接', 'secondary-button');
@@ -425,7 +457,9 @@ export const initializeChat = async ({
     characterSearch,
     glossaryPanel,
     loreEditor,
+    desktopIntegrationPanel,
     settingsStatus,
+    modelCapabilityStatus,
     settingsActions,
   );
 
@@ -519,20 +553,43 @@ export const initializeChat = async ({
   const updateIdentity = (): void => {
     const name = characterDisplayName();
     replyAuthor.textContent = name;
+    modelCapabilityStatus.textContent =
+      getCharacter()?.capabilityReport.summary ?? 'Live2D 能力报告将在模型加载后显示。';
     input.placeholder = '说点什么吧......';
     setReplyStatus(replyStateLabel);
     renderHistory();
   };
 
-  const setPanelExpanded = (expanded: boolean): void => {
-    if (panelExpanded === expanded) return;
-    panelExpanded = expanded;
+  const displayPanelExpanded = (expanded: boolean): void => {
     shell.classList.toggle('chat-shell--expanded', expanded);
     root.classList.toggle('chat-expanded', expanded);
     launcherButton.setAttribute('aria-expanded', String(expanded));
-    void api?.setChatPanelExpanded({ expanded });
     if (expanded) requestAnimationFrame(() => input.focus());
     window.setTimeout(() => window.dispatchEvent(new Event('resize')), 240);
+  };
+
+  const setPanelExpanded = (expanded: boolean): void => {
+    if (panelExpanded === expanded) return;
+    panelExpanded = expanded;
+    if (!api) {
+      displayPanelExpanded(expanded);
+      return;
+    }
+
+    // Grow the native window before revealing the side panel; hide the panel
+    // before shrinking. This keeps the character stage at its stable width
+    // instead of exposing one distorted intermediate frame.
+    if (!expanded) displayPanelExpanded(false);
+    void api
+      .setChatPanelExpanded({ expanded })
+      .then(() => {
+        if (panelExpanded === expanded && expanded) displayPanelExpanded(true);
+      })
+      .catch(() => {
+        if (panelExpanded !== expanded) return;
+        panelExpanded = !expanded;
+        displayPanelExpanded(!expanded);
+      });
   };
 
   const updateProviderVisibility = (): void => {
@@ -967,12 +1024,7 @@ export const initializeChat = async ({
     if (!controller) {
       return;
     }
-    if (message?.emotion) {
-      await controller.emotion.set(message.emotion);
-    }
-    if (message?.action) {
-      void controller.action.enqueue(message.action);
-    }
+    if (message?.emotion) await controller.respond(message.emotion, message.action);
     await controller.state.set('idle');
   };
 
@@ -1312,13 +1364,19 @@ export const initializeChat = async ({
       settingsStatus.textContent = '桌面 API 不可用。';
       return;
     }
-    const [providerConfiguration, conversationConfiguration, storedProfile, windowScale] =
-      await Promise.all([
-        api.getProviderConfiguration(),
-        api.getConversationConfiguration(),
-        api.getCharacterProfile(),
-        api.getWindowScale(),
-      ]);
+    const [
+      providerConfiguration,
+      conversationConfiguration,
+      storedProfile,
+      windowScale,
+      desktopStatus,
+    ] = await Promise.all([
+      api.getProviderConfiguration(),
+      api.getConversationConfiguration(),
+      api.getCharacterProfile(),
+      api.getWindowScale(),
+      api.getDesktopIntegrationStatus(),
+    ]);
     profile = storedProfile;
     providerSelect.value = conversationConfiguration.selection?.providerId ?? 'anthropic';
     updateProviderVisibility();
@@ -1338,6 +1396,18 @@ export const initializeChat = async ({
       ? '正在使用已确认的联网角色资料；可以重新查找或手动修改。'
       : '可以联网查找公开资料；结果需要你确认后才会保存。';
     displayScale(windowScale);
+    globalShortcutInput.checked = desktopStatus.settings.globalShortcutsEnabled;
+    mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
+    previousMediaButton.disabled = !desktopStatus.media.supported;
+    playPauseMediaButton.disabled = !desktopStatus.media.supported;
+    nextMediaButton.disabled = !desktopStatus.media.supported;
+    desktopIntegrationStatus.textContent = desktopStatus.shortcutRegistered
+      ? desktopStatus.media.supported
+        ? '全局快捷键已启用，媒体控制适配器可用。'
+        : '全局快捷键已启用；当前没有可用的媒体控制适配器。'
+      : desktopStatus.settings.globalShortcutsEnabled
+        ? '快捷键注册失败，可能已被其他程序占用。'
+        : '两项默认关闭；快捷键只识别固定组合，不记录键盘内容。';
     updateIdentity();
     await updateSecretStatus();
   };
@@ -1362,6 +1432,17 @@ export const initializeChat = async ({
       lore: readLoreEditor(updatedName),
     };
     settingsStatus.textContent = '正在保存…';
+    try {
+      await api.setDesktopIntegrationSettings({
+        settings: {
+          globalShortcutsEnabled: globalShortcutInput.checked,
+          mediaControlEnabled: mediaControlInput.checked,
+        },
+      });
+    } catch {
+      settingsStatus.textContent = '桌面快捷操作设置保存失败，其他设置没有更改。';
+      return false;
+    }
     const operations = await Promise.all([
       providerId === 'openai-compatible'
         ? api.setProviderConfiguration({ openAICompatibleBaseUrl: baseUrlInput.value.trim() })
@@ -1419,6 +1500,21 @@ export const initializeChat = async ({
       else syncGlossaryButton.disabled = false;
     })();
   });
+  for (const [button, command] of [
+    [previousMediaButton, 'previous'],
+    [playPauseMediaButton, 'play-pause'],
+    [nextMediaButton, 'next'],
+  ] as const) {
+    button.addEventListener('click', () => {
+      void (async () => {
+        if (!api) return;
+        const handled = await api.sendMediaCommand({ command });
+        desktopIntegrationStatus.textContent = handled
+          ? '媒体指令已发送。'
+          : '当前媒体适配器不可用，未执行系统操作。';
+      })();
+    });
+  }
   cancelCharacterSearchButton.addEventListener('click', () => {
     if (!api || !activeCharacterResearchId) return;
     const requestId = activeCharacterResearchId;

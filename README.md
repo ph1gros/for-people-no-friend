@@ -54,8 +54,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：角色资料与情境对话增强；动态 WebP 伊雷娜进入 `gif-version` 支线
 - V1.2 / M6：双版本各自完成带来源角色生成、资料检索、隔离与安全回退
-- V1.3：双版本表现能力与真人目视验收，以及 `gif-version` 的 WebP 标签判定与调度规则
-- 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
+- V1.3：Live2D 深化 AIRI 式表现与运行时；GIF 深化 SillyTavern/RoleLLM 式角色扮演；两边补短期连续性
+- V1.4：版本化角色包、混合记忆、可选 Embedding/向量/关系索引，以及本地/远端模型透明协作
+- V1.5：受限快捷键、媒体播放控制、时间/空闲事件和声明式扩展接口
+- V1.6：本地/远端 ASR、TTS、VAD、打断、字幕与角色口型/说话动画
+- 后续：更多渲染路线、只读视觉与受控 Agent 能力
 
 ## 开发参考原则
 
@@ -100,6 +103,10 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 - [M6 双版本角色生成收尾](docs/M6_DUAL_VERSION_CHARACTER_GENERATION.md)
 - [V1.2 实现与自动验收](docs/V1_2_IMPLEMENTATION.md)
 - [V1.2 可选资料索引评估](docs/V1_2_OPTIONAL_INDEX_EVALUATION.md)
+- [V1.3 Live2D 表现标准](docs/V1_3_LIVE2D_PERFORMANCE_STANDARD.md)
+- [V1.3 AIRI / SillyTavern 成熟方案对照](docs/V1_3_AIRI_SILLYTAVERN_ADOPTION.md)
+- [V1.4 角色包与模型协作计划](docs/V1_4_CHARACTER_PACKAGE_AND_MODEL_ROUTING.md)
+- [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
@@ -111,8 +118,8 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 
 两个版本都保留“联网查找 → 生成本地角色草稿 → 用户检查并保存”的能力。生成的是可追溯的称呼、身份背景、关系、说话方式和情境示例；Live2D 与 WebP 的表现素材仍分别使用各自版本的清单与授权检查，不能把另一条分支的示例角色直接塞进来。
 
-- **WebP Version**：本地 LLM 优先，生成一张紧凑角色卡即可开始；关键词资料检索和失败回退保持简单，长期记忆可以使用，但不作为首次上手的门槛。
-- **Live2D Version**：大型 LLM 优先，沿着 `neuro-like` 的长期陪伴方向发展，重视稳定人格、可信长期记忆、持续情绪、关系连续性和 Live2D 表现联动；任一可选模块失败时仍须回到普通文字聊天和基础动作。
+- **WebP Version**：本地 LLM 优先，生成一张紧凑角色卡即可开始；上下文注入更短，但重要事情仍进入同一套可信长期记忆流程。
+- **Live2D Version**：大型 LLM 优先，沿着 `neuro-like` 的长期陪伴方向发展，同时升级短期上下文、可信长期记忆、持续情绪、关系连续性和 Live2D 表现联动；任一可选模块失败时仍须回到普通文字聊天和基础动作。
 
 不同缩放、拖动、长回复、启动表现与长时间桌面运行的真人目视发烟统一延期到 V1.3；V1.2 只声明已经通过的自动测试、构建与安全检查。
 

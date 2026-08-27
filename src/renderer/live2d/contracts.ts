@@ -12,6 +12,7 @@ export interface Live2DControlMap {
   states: Partial<Record<CharacterState, MotionReference>>;
   actions: Record<string, MotionReference>;
   emotions: Partial<Record<CharacterEmotion, string>>;
+  emotionActions?: Partial<Record<CharacterEmotion, string>>;
 }
 
 export interface TrackingPoint {

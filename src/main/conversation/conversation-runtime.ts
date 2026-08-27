@@ -1,4 +1,5 @@
 import { CharacterReplyStreamDecoder } from '../../core/character/character-reply';
+import { GraphemeStreamBuffer } from '../../core/conversation/grapheme-stream';
 import {
   adaptLegacyCharacterLore,
   createCharacterLoreRevision,
@@ -8,6 +9,7 @@ import {
 } from '../../core/character/character-knowledge';
 import type { CharacterProfile } from '../../core/conversation/character-profile';
 import { validateCharacterProfile } from '../../core/conversation/character-profile';
+import { resolveCompanionReplyEmotion } from '../../core/conversation/companion-signals';
 import {
   buildConversationSystemPrompt,
   selectRecentMessages,
@@ -133,6 +135,7 @@ export class ConversationRuntime {
   ): Promise<void> {
     let selectionProviderId = 'disabled';
     const decoder = new CharacterReplyStreamDecoder();
+    const graphemes = new GraphemeStreamBuffer();
     try {
       const [profile, existingHistory, configuration] = await Promise.all([
         this.profiles.get(),
@@ -174,6 +177,10 @@ export class ConversationRuntime {
           .map((message) => ({ role: message.role, content: message.content })),
         { role: 'user', content: input.message },
       ]);
+      const recentCompanionRecords = [...existingHistory, userMessage]
+        .filter((message) => message.status === 'complete')
+        .slice(-4)
+        .map(({ role, content }) => ({ role, content }));
       const [workGlossaryContext, characterKnowledgeContext] = await Promise.all([
         this.glossary
           ? this.glossary
@@ -201,10 +208,7 @@ export class ConversationRuntime {
             input.message,
             workGlossaryContext,
             characterKnowledgeContext,
-            [...existingHistory, userMessage]
-              .filter((message) => message.status === 'complete')
-              .slice(-4)
-              .map(({ role, content }) => ({ role, content })),
+            recentCompanionRecords,
           ),
           messages: context,
           temperature: 0.8,
@@ -216,7 +220,10 @@ export class ConversationRuntime {
         if (event.type === 'text-delta') {
           const visible = decoder.push(event.text);
           if (visible) {
-            emit({ requestId: input.requestId, type: 'text-delta', text: visible });
+            const completeGraphemes = graphemes.push(visible);
+            if (completeGraphemes) {
+              emit({ requestId: input.requestId, type: 'text-delta', text: completeGraphemes });
+            }
           }
         } else if (event.type === 'usage') {
           inputTokens = event.inputTokens;
@@ -225,8 +232,10 @@ export class ConversationRuntime {
       }
 
       const { reply, remainingText } = decoder.finish(input.availableActions);
-      if (remainingText) {
-        emit({ requestId: input.requestId, type: 'text-delta', text: remainingText });
+      const resolvedEmotion = resolveCompanionReplyEmotion(reply.emotion, recentCompanionRecords);
+      const finalText = `${remainingText ? graphemes.push(remainingText) : ''}${graphemes.finish()}`;
+      if (finalText) {
+        emit({ requestId: input.requestId, type: 'text-delta', text: finalText });
       }
       const assistantMessage: ConversationMessage = {
         id: `${input.requestId}-assistant`,
@@ -234,7 +243,7 @@ export class ConversationRuntime {
         content: reply.text,
         createdAt: Date.now(),
         status: 'complete',
-        emotion: reply.emotion,
+        emotion: resolvedEmotion,
         ...(reply.action ? { action: reply.action } : {}),
         providerId: selection.providerId,
         modelId: selection.modelId,
@@ -249,6 +258,10 @@ export class ConversationRuntime {
         assistantMessage,
       ]);
     } catch (error) {
+      const trailingText = graphemes.finish();
+      if (trailingText) {
+        emit({ requestId: input.requestId, type: 'text-delta', text: trailingText });
+      }
       const publicError = toPublicLlmError(error, selectionProviderId);
       if (publicError.code === 'cancelled') {
         const partialText = decoder.visibleText.trim();

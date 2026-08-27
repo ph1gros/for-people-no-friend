@@ -60,6 +60,16 @@ describe('Live2D runtime compatibility', () => {
     });
   });
 
+  it('layers model-specific presentation on top of normalized fitting', () => {
+    expect(
+      fitModelToScreen(
+        { width: 200, height: 400 },
+        { width: 360, height: 520 },
+        { scale: 0.8, offsetX: 0.25, offsetY: -0.5 },
+      ),
+    ).toEqual({ scale: 1.036, x: 225, y: 130 });
+  });
+
   it('finds the final rendered alpha bounds independently of model structure', () => {
     const pixels = new Uint8ClampedArray(4 * 4 * 4);
     for (const [x, y] of [

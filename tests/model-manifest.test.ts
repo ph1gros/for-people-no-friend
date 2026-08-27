@@ -12,10 +12,12 @@ const validManifest = {
   core: 'live2dcubismcore.min.js',
   model: 'Hiyori/Hiyori.model3.json',
   parameters: { ParamBodyVariant: 1 },
+  presentation: { scale: 0.85, offsetX: 0.1, offsetY: -0.2 },
   controls: {
     states: { idle: { group: 'Idle', index: 0 } },
     actions: { wave: { group: 'TapBody', index: 1 } },
     emotions: { neutral: 'neutral', happy: 'smile' },
+    emotionActions: { angry: 'wave' },
   },
 };
 
@@ -54,9 +56,36 @@ describe('local Live2D model manifest', () => {
     ).toBeUndefined();
   });
 
+  it('rejects an emotion fallback that points at an unknown action', () => {
+    expect(
+      parseLocalModelManifest({
+        ...validManifest,
+        controls: {
+          ...validManifest.controls,
+          emotionActions: { angry: 'missing-action' },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
   it('rejects non-finite persistent parameter values', () => {
     expect(
       parseLocalModelManifest({ ...validManifest, parameters: { ParamAngleX: Number.NaN } }),
+    ).toBeUndefined();
+  });
+
+  it('rejects unsafe presentation values instead of allowing an invisible model', () => {
+    expect(
+      parseLocalModelManifest({
+        ...validManifest,
+        presentation: { scale: 0, offsetX: 0, offsetY: 0 },
+      }),
+    ).toBeUndefined();
+    expect(
+      parseLocalModelManifest({
+        ...validManifest,
+        presentation: { scale: 1, offsetX: 3, offsetY: 0 },
+      }),
     ).toBeUndefined();
   });
 

@@ -113,10 +113,12 @@ describe('conversation runtime integration', () => {
     });
     await completed;
 
-    expect(events.filter((event) => event.type === 'text-delta')).toEqual([
-      { requestId: 'chat_1', type: 'text-delta', text: '流式' },
-      { requestId: 'chat_1', type: 'text-delta', text: '回复' },
-    ]);
+    expect(
+      events
+        .filter((event) => event.type === 'text-delta')
+        .map((event) => ('text' in event ? event.text : ''))
+        .join(''),
+    ).toBe('流式回复');
     expect(capturedRequest?.messages).toEqual([{ role: 'user', content: '你好' }]);
     expect(capturedRequest?.systemPrompt).toContain('wave');
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');
@@ -156,6 +158,44 @@ describe('conversation runtime integration', () => {
       type: 'error',
       error: { code: 'configuration' },
     });
+    history.close();
+  });
+
+  it('persists the current explicit mood when a model returns a conflicting emotion', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-conversation-test-'));
+    const selection: ModelSelection = { providerId: 'openai-compatible', modelId: 'fake-model' };
+    const models = {
+      getConversationConfiguration: async () => ({ selection }),
+      streamConversation: async function* (): AsyncIterable<ChatEvent> {
+        yield {
+          type: 'text-delta',
+          text: '{"text":"请注意措辞。","emotion":"neutral","action":null}',
+        };
+        yield { type: 'finish', reason: 'stop' };
+      },
+    } as unknown as ModelRuntime;
+    const history = new ConversationStore(directory);
+    const runtime = new ConversationRuntime(models, new CharacterProfileStore(directory), history);
+    let completedMessage:
+      Extract<ConversationEvent, { type: 'completed' }>['assistantMessage'] | undefined;
+
+    await new Promise<void>((resolve) => {
+      runtime.start(
+        { requestId: 'chat_mood', message: '你就是个大傻逼', availableActions: [] },
+        (event) => {
+          if (event.type === 'completed') {
+            completedMessage = event.assistantMessage;
+            resolve();
+          }
+          if (event.type === 'error') resolve();
+        },
+      );
+    });
+
+    expect(completedMessage).toMatchObject({ content: '请注意措辞。', emotion: 'angry' });
+    expect(await history.list(100, 'character-kaltsit')).toEqual(
+      expect.arrayContaining([expect.objectContaining({ role: 'assistant', emotion: 'angry' })]),
+    );
     history.close();
   });
 

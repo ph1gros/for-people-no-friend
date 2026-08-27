@@ -27,6 +27,8 @@ M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。`
 
 眨眼和呼吸由模型 `Groups`/参数与 runtime 自动驱动。循环待机 Motion 不会阻止自动眨眼。`states`、`actions`、`emotions` 只填写模型真实存在的映射；缺失动作会安全返回失败，缺失情绪会回退到 `neutral`。
 
+如果模型没有 Expression，但有能表达情绪的一次性 Motion，可以增加 `emotionActions`，把标准情绪映射到 `actions` 中已经声明的动作名。显式回复动作优先；没有显式动作时才使用情绪动作。凯尔希示例会把 `angry` 映射到 `annoyed`、`sad` 映射到 `sigh`。映射到不存在的动作会拒绝加载，文字聊天仍可安全回退。
+
 部分模型使用一个参数切换身体、服装或部件。例如模型要求 `ParamshentiZ` 始终为 `1`，可在清单顶层填写：
 
 ```json
@@ -36,3 +38,15 @@ M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。`
 ```
 
 这些值会在每帧动画更新后重新应用，适合模型的永久配置。不要用它制作会随时间变化的动作或表情；动态效果仍应放进 Motion、Expression 或四通道控制中。
+
+不同模型的画布留白和主体比例差异很大。可以用 `presentation` 在自动等比适配之后做角色专属微调，不必修改通用播放逻辑：
+
+```json
+"presentation": {
+  "scale": 0.85,
+  "offsetX": 0,
+  "offsetY": 0.1
+}
+```
+
+`scale` 允许 0.25 至 2；`offsetX`、`offsetY` 允许 -1 至 1，分别按窗口半宽、半高偏移。非法值会拒绝加载，避免角色缩成零、飞出窗口或留下空框。这里是模型自身的构图校正，用户在设置里调整的桌宠尺寸仍由窗口缩放控制，两层不会互相冒充。

@@ -14,7 +14,14 @@ export interface LocalModelManifest {
   core: string;
   model: string;
   parameters?: Record<string, number>;
+  presentation?: Live2DPresentation;
   controls: Live2DControlMap;
+}
+
+export interface Live2DPresentation {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
 }
 
 export class ModelManifestError extends Error {
@@ -106,6 +113,29 @@ const parseParameterMap = (value: unknown): Record<string, number> | undefined =
   return result;
 };
 
+const readBoundedNumber = (
+  record: Record<string, unknown>,
+  key: string,
+  fallback: number,
+  minimum: number,
+  maximum: number,
+): number | undefined => {
+  const value = record[key] ?? fallback;
+  return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum
+    ? value
+    : undefined;
+};
+
+const parsePresentation = (value: unknown): Live2DPresentation | undefined => {
+  if (!isObject(value)) return undefined;
+  const scale = readBoundedNumber(value, 'scale', 1, 0.25, 2);
+  const offsetX = readBoundedNumber(value, 'offsetX', 0, -1, 1);
+  const offsetY = readBoundedNumber(value, 'offsetY', 0, -1, 1);
+  return scale === undefined || offsetX === undefined || offsetY === undefined
+    ? undefined
+    : { scale, offsetX, offsetY };
+};
+
 const STATES = ['idle', 'thinking', 'talking'] as const satisfies readonly CharacterState[];
 const EMOTIONS = [
   'neutral',
@@ -135,9 +165,25 @@ export const parseLocalModelManifest = (value: unknown): LocalModelManifest | un
   const states = parseMotionMap<CharacterState>(value.controls.states, STATES);
   const actions = parseMotionMap<string>(value.controls.actions);
   const emotions = parseStringMap<CharacterEmotion>(value.controls.emotions, EMOTIONS);
+  const emotionActions =
+    value.controls.emotionActions === undefined
+      ? undefined
+      : parseStringMap<CharacterEmotion>(value.controls.emotionActions, EMOTIONS);
   const parameters =
     value.parameters === undefined ? undefined : parseParameterMap(value.parameters);
-  if (!states || !actions || !emotions || (value.parameters !== undefined && !parameters)) {
+  const presentation =
+    value.presentation === undefined ? undefined : parsePresentation(value.presentation);
+  if (
+    !states ||
+    !actions ||
+    !emotions ||
+    (value.controls.emotionActions !== undefined && !emotionActions) ||
+    (value.parameters !== undefined && !parameters) ||
+    (value.presentation !== undefined && !presentation)
+  ) {
+    return undefined;
+  }
+  if (emotionActions && Object.values(emotionActions).some((action) => !actions[action])) {
     return undefined;
   }
 
@@ -147,7 +193,13 @@ export const parseLocalModelManifest = (value: unknown): LocalModelManifest | un
     core: value.core,
     model: value.model,
     ...(parameters ? { parameters } : {}),
-    controls: { states, actions: actions as Record<string, MotionReference>, emotions },
+    ...(presentation ? { presentation } : {}),
+    controls: {
+      states,
+      actions: actions as Record<string, MotionReference>,
+      emotions,
+      ...(emotionActions ? { emotionActions } : {}),
+    },
   };
 };
 
