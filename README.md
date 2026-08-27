@@ -55,6 +55,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - V1.1a：可信长期记忆最小闭环
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：角色资料与情境对话增强；动态 WebP 伊雷娜进入 `gif-version` 支线
+- V1.2 / M6：双版本各自完成带来源角色生成、资料检索、隔离与安全回退
 - 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
@@ -86,6 +87,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 - [V1.1b 记忆整理实现](docs/V1_1B_IMPLEMENTATION.md)
 - [公开示例角色包](docs/EXAMPLE_CHARACTER_PACK.md)
 - [V1.2 角色资料库与检索边界](docs/V1_2_CHARACTER_KNOWLEDGE_DESIGN.md)
+- [M6 双版本角色生成收尾](docs/M6_DUAL_VERSION_CHARACTER_GENERATION.md)
 - [V1.2 实现与自动验收](docs/V1_2_IMPLEMENTATION.md)
 - [V1.2 可选资料索引评估](docs/V1_2_OPTIONAL_INDEX_EVALUATION.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
