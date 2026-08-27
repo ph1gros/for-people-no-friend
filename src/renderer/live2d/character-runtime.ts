@@ -172,9 +172,7 @@ export const loadCharacter = async (
     ),
     emotions: manifest.channels.emotions,
   };
-  const controller = new Live2DPerformanceController(renderer.driver, controls, {
-    transientEmotionMs: 4_000,
-  });
+  const controller = new Live2DPerformanceController(renderer.driver, controls);
   await controller.start();
   if ('enter' in manifest.channels.actions) {
     void controller.action.enqueue('enter');

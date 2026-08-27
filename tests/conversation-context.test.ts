@@ -38,7 +38,20 @@ describe('conversation context assembly', () => {
     expect(prompt).toContain(DEFAULT_CHARACTER_PROFILE.personaPrompt);
     expect(prompt).toContain('"emotion"');
     expect(prompt).toContain('wave');
-    expect(prompt).not.toContain('长期记忆');
+    expect(prompt).not.toContain('跨会话摘要');
+  });
+
+  it('adds temporary emotional guidance without turning it into relationship memory', () => {
+    const prompt = buildConversationSystemPrompt(
+      IRENA_CHARACTER_PROFILE,
+      ['angry'],
+      '',
+      '你就是个大傻逼',
+    );
+    expect(prompt).toContain('本轮回应策略');
+    expect(prompt).toContain('明确设限');
+    expect(prompt).toContain('不得因单轮情绪、辱骂或夸奖突然跳变');
+    expect(prompt).toContain('不写入长期人格、关系等级或用户画像');
   });
 
   it('uses locally entered character identity silently and only adds long lore when relevant', () => {

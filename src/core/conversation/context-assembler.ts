@@ -4,6 +4,8 @@ import {
   shouldIncludeCharacterLoreDetails,
 } from '../character/character-lore';
 import { DEFAULT_CHARACTER_PROFILE, type CharacterProfile } from './character-profile';
+import { formatCompanionSignals } from './companion-signals';
+import type { RecentCompanionRecord } from './companion-signals';
 
 // GIF Version targets smaller local models, so recent dialogue stays deliberately compact.
 const MAX_CONTEXT_MESSAGES = 12;
@@ -41,6 +43,7 @@ export const buildConversationSystemPrompt = (
   currentUserMessage = '',
   workGlossaryContext = '',
   characterKnowledgeContext = '',
+  recentCompanionRecords: readonly RecentCompanionRecord[] = [],
 ): string => {
   const characterLore =
     characterKnowledgeContext ||
@@ -73,6 +76,8 @@ export const buildConversationSystemPrompt = (
     includePersona ? profile.personaPrompt : undefined,
     memoryContext ? '' : undefined,
     memoryContext || undefined,
+    '',
+    formatCompanionSignals(currentUserMessage, recentCompanionRecords),
     workGlossaryContext ? '' : undefined,
     workGlossaryContext || undefined,
     '',
