@@ -222,8 +222,8 @@ export class DeskpetDatabase {
       (this.connection.prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version,
     );
-    if (version > 3) {
-      throw new Error(`The memory database schema version ${version} is not supported.`);
+    if (version > 5) {
+      throw new Error(`The deskpet database schema version ${version} is not supported.`);
     }
     if (version === 0) {
       this.connection.exec(`
@@ -293,6 +293,14 @@ export class DeskpetDatabase {
     }
     if (version === 2) {
       this.migrateCharacterConversationNamespaces();
+      version = 3;
+    }
+    if (version === 3) {
+      this.migrateCharacterKnowledge();
+      version = 4;
+    }
+    if (version === 4) {
+      this.migrateCharacterKnowledgeProfileRevision();
     }
   }
 
@@ -422,6 +430,83 @@ export class DeskpetDatabase {
           'automatic_memory_covered_until_message_id',
         );
       this.connection.exec('PRAGMA user_version = 3; COMMIT');
+    } catch (error) {
+      this.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private migrateCharacterKnowledge(): void {
+    this.connection.exec('BEGIN IMMEDIATE');
+    try {
+      this.connection.exec(`
+        CREATE TABLE character_knowledge_namespaces (
+          character_namespace TEXT PRIMARY KEY,
+          schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+          source_work TEXT NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        CREATE TABLE character_knowledge_sources (
+          character_namespace TEXT NOT NULL,
+          id TEXT NOT NULL,
+          title TEXT NOT NULL,
+          url TEXT NOT NULL,
+          site_name TEXT NOT NULL,
+          retrieved_at INTEGER NOT NULL,
+          PRIMARY KEY(character_namespace, id),
+          FOREIGN KEY(character_namespace)
+            REFERENCES character_knowledge_namespaces(character_namespace) ON DELETE CASCADE
+        );
+        CREATE TABLE character_knowledge_records (
+          character_namespace TEXT NOT NULL,
+          id TEXT NOT NULL,
+          schema_version INTEGER NOT NULL CHECK (schema_version = 1),
+          kind TEXT NOT NULL CHECK (
+            kind IN ('identity', 'trait', 'event', 'relationship', 'scenario',
+                     'speech-rule', 'example-line')
+          ),
+          title TEXT NOT NULL,
+          content TEXT NOT NULL,
+          keywords_json TEXT NOT NULL,
+          importance REAL NOT NULL CHECK (importance >= 0 AND importance <= 1),
+          PRIMARY KEY(character_namespace, id),
+          FOREIGN KEY(character_namespace)
+            REFERENCES character_knowledge_namespaces(character_namespace) ON DELETE CASCADE
+        );
+        CREATE INDEX character_knowledge_records_namespace_kind
+          ON character_knowledge_records(character_namespace, kind, importance DESC);
+        CREATE TABLE character_knowledge_evidence (
+          character_namespace TEXT NOT NULL,
+          record_id TEXT NOT NULL,
+          source_id TEXT NOT NULL,
+          field_path TEXT NOT NULL,
+          basis TEXT NOT NULL CHECK (basis IN ('direct', 'synthesized', 'legacy-aggregate')),
+          PRIMARY KEY(character_namespace, record_id, source_id, field_path),
+          FOREIGN KEY(character_namespace, record_id)
+            REFERENCES character_knowledge_records(character_namespace, id) ON DELETE CASCADE,
+          FOREIGN KEY(character_namespace, source_id)
+            REFERENCES character_knowledge_sources(character_namespace, id) ON DELETE CASCADE
+        );
+        CREATE INDEX character_knowledge_evidence_source
+          ON character_knowledge_evidence(character_namespace, source_id);
+        PRAGMA user_version = 4;
+        COMMIT;
+      `);
+    } catch (error) {
+      this.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private migrateCharacterKnowledgeProfileRevision(): void {
+    this.connection.exec('BEGIN IMMEDIATE');
+    try {
+      this.connection.exec(`
+        ALTER TABLE character_knowledge_namespaces
+          ADD COLUMN profile_revision TEXT NOT NULL DEFAULT '';
+        PRAGMA user_version = 5;
+        COMMIT;
+      `);
     } catch (error) {
       this.connection.exec('ROLLBACK');
       throw error;

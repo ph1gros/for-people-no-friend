@@ -106,7 +106,7 @@ describe('M5 SQLite storage and memory lifecycle', () => {
 
     database = new DeskpetDatabase(directory);
     const store = new MemoryStore(database);
-    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 3 });
+    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
     expect(store.list('default-character')).toEqual([
       expect.objectContaining({ id: 'manual-memory', content: '用户的猫叫团子', source: 'manual' }),
     ]);

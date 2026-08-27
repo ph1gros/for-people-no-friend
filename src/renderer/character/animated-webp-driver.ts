@@ -13,6 +13,7 @@ const wait = (durationMs: number): Promise<void> =>
 
 export class AnimatedWebpDriver implements Live2DDriver {
   private readonly assets = new Map<string, RuntimeAsset>();
+  private readonly idleAssetId: string;
   private readonly neutralAssetId: string;
   private stateAssetId: string;
   private emotionAssetId: string | undefined;
@@ -30,13 +31,14 @@ export class AnimatedWebpDriver implements Live2DDriver {
         durationMs: asset.durationMs,
       });
     }
+    this.idleAssetId = manifest.channels.states.idle;
     this.neutralAssetId = manifest.channels.emotions.neutral;
-    this.stateAssetId = manifest.channels.states.idle;
+    this.stateAssetId = this.idleAssetId;
   }
 
   public async playState(motion: MotionReference): Promise<boolean> {
     this.stateAssetId = motion.group;
-    return this.actionActive || this.emotionAssetId ? true : this.render(motion.group);
+    return this.actionActive ? true : this.renderDesired();
   }
 
   public async playAction(motion: MotionReference): Promise<boolean> {
@@ -47,14 +49,14 @@ export class AnimatedWebpDriver implements Live2DDriver {
     await wait(asset.durationMs);
     if (this.destroyed) return false;
     this.actionActive = false;
-    this.render(this.emotionAssetId ?? this.stateAssetId);
+    this.renderDesired();
     return true;
   }
 
   public async setExpression(expressionId?: string): Promise<boolean> {
     this.emotionAssetId =
       expressionId && expressionId !== this.neutralAssetId ? expressionId : undefined;
-    return this.actionActive ? true : this.render(this.emotionAssetId ?? this.stateAssetId);
+    return this.actionActive ? true : this.renderDesired();
   }
 
   public setTracking(): void {}
@@ -66,6 +68,16 @@ export class AnimatedWebpDriver implements Live2DDriver {
     this.currentAssetId = undefined;
     this.image.removeAttribute('src');
     this.image.remove();
+  }
+
+  private renderDesired(): boolean {
+    // One-shot action > active thinking/talking state > short emotion > idle.
+    // This prevents an old reply emotion from hiding the next thinking/talking animation.
+    const desired =
+      this.stateAssetId !== this.idleAssetId
+        ? this.stateAssetId
+        : (this.emotionAssetId ?? this.idleAssetId);
+    return this.render(desired);
   }
 
   private render(assetId: string, restart = false): boolean {

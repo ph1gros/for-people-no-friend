@@ -153,6 +153,47 @@ describe('versioned animated WebP character manifest', () => {
     expect(rendered.at(-1)).toContain('/happy.webp');
   });
 
+  it('lets thinking and talking override an older emotion, then restores it on idle', async () => {
+    const parsed = parseAnimatedWebpCharacterManifest({
+      ...validManifest,
+      assets: [
+        asset,
+        { ...asset, id: 'thinking', file: 'media/thinking.webp' },
+        { ...asset, id: 'talking', file: 'media/talking.webp' },
+        { ...asset, id: 'angry', file: 'media/angry.webp' },
+      ],
+      channels: {
+        ...validManifest.channels,
+        states: { idle: 'idle', thinking: 'thinking', talking: 'talking' },
+        emotions: { ...validManifest.channels.emotions, angry: 'angry' },
+      },
+    });
+    const rendered: string[] = [];
+    const fakeImage = {
+      offsetWidth: 500,
+      removeAttribute: () => undefined,
+      remove: () => undefined,
+      set src(value: string) {
+        rendered.push(value);
+      },
+    } as unknown as HTMLImageElement;
+    const driver = new AnimatedWebpDriver(fakeImage, parsed!);
+
+    await driver.playState({ group: 'idle' });
+    await driver.setExpression('angry');
+    await driver.playState({ group: 'thinking' });
+    await driver.playState({ group: 'talking' });
+    await driver.playState({ group: 'idle' });
+
+    expect(rendered.map((url) => url.split('/').at(-1))).toEqual([
+      'idle.webp',
+      'angry.webp',
+      'thinking.webp',
+      'talking.webp',
+      'angry.webp',
+    ]);
+  });
+
   it('does not clear the image when idle and neutral resolve to the same WebP', async () => {
     const parsed = parseAnimatedWebpCharacterManifest(validManifest);
     expect(parsed).toBeDefined();

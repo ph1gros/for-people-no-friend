@@ -9,11 +9,26 @@ export interface WorkGlossaryStatus {
   workName?: string;
   entryCount: number;
   lastSynced?: number;
+  cacheOrigin?: 'curated' | 'synced';
   sources: WorkGlossarySource[];
 }
 
+export interface WorkGlossarySyncReport {
+  checkedSources: number;
+  verifiedSources: number;
+  failedSourceTitles: string[];
+  handbookEntries: number;
+  handbookFailed: boolean;
+  cachedEntries: number;
+}
+
 export type WorkGlossarySyncResult =
-  { ok: true; status: WorkGlossaryStatus; message: string } | { ok: false; message: string };
+  | { ok: true; status: WorkGlossaryStatus; report: WorkGlossarySyncReport; message: string }
+  | {
+      ok: false;
+      report?: WorkGlossarySyncReport;
+      message: string;
+    };
 
 export const parseWorkGlossaryInput = (value: unknown): WorkGlossaryInput => {
   if (typeof value !== 'object' || value === null || !('sourceWork' in value)) {

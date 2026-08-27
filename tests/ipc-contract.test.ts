@@ -9,6 +9,15 @@ describe('IPC whitelist', () => {
     }
   });
 
+  it('keeps character generation but exposes no runtime character switch', () => {
+    const channels = Object.values(IPC_CHANNELS);
+    expect(channels).toContain('character:search');
+    expect(channels).toContain('character:buildDraft');
+    expect(channels).toContain('conversation:setCharacterProfile');
+    expect(channels).not.toContain('conversation:listCharacterProfiles');
+    expect(channels).not.toContain('conversation:activateCharacterProfile');
+  });
+
   it('contains only the expected M1 to V1.1c surface', () => {
     expect(Object.values(IPC_CHANNELS)).toEqual([
       'app:getVersion',
@@ -24,8 +33,6 @@ describe('IPC whitelist', () => {
       'conversation:getConfiguration',
       'conversation:setConfiguration',
       'conversation:getCharacterProfile',
-      'conversation:listCharacterProfiles',
-      'conversation:activateCharacterProfile',
       'conversation:setCharacterProfile',
       'conversation:getHistory',
       'conversation:clearHistory',

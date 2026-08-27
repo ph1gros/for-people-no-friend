@@ -23,8 +23,11 @@ conversations/
 screenshots/
 
 # Third-party and local Live2D assets
-assets/models/local/
+assets/models/local/*
+!assets/models/local/kaltsit-work/
+!assets/models/local/kaltsit-work/**
 *.moc3
+!assets/models/local/kaltsit-work/*.moc3
 *.cmo3
 
 # Editors and OS

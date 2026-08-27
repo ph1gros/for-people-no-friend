@@ -73,14 +73,13 @@ describe('M4 local conversation storage', () => {
     expect(shared.activeProfileId).toBe('default-character');
   });
 
-  it('does not expose or activate the Live2D profile in GIF Version', async () => {
+  it('does not accept a Live2D profile in GIF Version', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
     const store = new CharacterProfileStore(directory);
-    expect(await store.list()).toEqual([
-      expect.objectContaining({ id: 'irena', appearanceId: 'irena-webp-v1', active: true }),
-    ]);
-
-    await expect(store.activate('default-character')).rejects.toThrow('not found');
+    await expect(store.set(DEFAULT_CHARACTER_PROFILE)).rejects.toThrow(
+      'Only the active character profile can be updated',
+    );
+    expect(await store.get()).toMatchObject({ id: 'irena', live2dModelId: 'irena-webp-v1' });
   });
 
   it('serializes concurrent appends and can clear the session', async () => {

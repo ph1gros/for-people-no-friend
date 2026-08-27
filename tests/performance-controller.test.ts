@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type {
   Live2DControlMap,
@@ -60,6 +60,8 @@ const nextTurn = async (): Promise<void> => {
 };
 
 describe('Live2D performance channels', () => {
+  afterEach(() => vi.useRealTimers());
+
   it('queues actions FIFO and restores the latest state after the queue', async () => {
     const driver = new FakeDriver();
     const controller = new Live2DPerformanceController(driver, controls);
@@ -93,6 +95,21 @@ describe('Live2D performance channels', () => {
     const controller = new Live2DPerformanceController(driver, controls);
 
     await expect(controller.emotion.set('happy')).resolves.toBe(true);
+    expect(controller.emotion.value).toBe('neutral');
+    expect(driver.calls).toEqual(['emotion:smile', 'emotion:neutral']);
+  });
+
+  it('expires a WebP reply emotion after its short display window', async () => {
+    vi.useFakeTimers();
+    const driver = new FakeDriver();
+    const controller = new Live2DPerformanceController(driver, controls, {
+      transientEmotionMs: 4_000,
+    });
+
+    await controller.emotion.set('happy');
+    expect(controller.emotion.value).toBe('happy');
+    await vi.advanceTimersByTimeAsync(4_000);
+
     expect(controller.emotion.value).toBe('neutral');
     expect(driver.calls).toEqual(['emotion:smile', 'emotion:neutral']);
   });

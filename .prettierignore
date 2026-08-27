@@ -4,6 +4,9 @@ dist-electron/
 node_modules/
 pnpm-lock.yaml
 
+# Preserve authorized third-party character asset formatting.
+assets/models/local/kaltsit-work/
+
 # Preserve the approved planning documents verbatim.
 docs/PRODUCT_PLAN_V1.md
 docs/PROJECT_CONTEXT.md

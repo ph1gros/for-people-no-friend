@@ -15,17 +15,17 @@ const xmlResponse = (value: string): Response =>
   });
 
 describe('M5.1 character research service', () => {
-  it('prioritizes a work-matched Mon3tr candidate and builds a sourced editable draft', async () => {
+  it('prioritizes a work-matched Kaltsit candidate and builds a sourced editable draft', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
       if (
         url.hostname === 'prts.wiki' &&
         url.searchParams.get('action') === 'parse' &&
-        url.searchParams.get('page') === 'Mon3tr/语音记录'
+        url.searchParams.get('page') === '凯尔希/语音记录'
       ) {
         return jsonResponse({
           parse: {
-            title: 'Mon3tr/语音记录',
+            title: '凯尔希/语音记录',
             text: '<p>博士，请下令。</p><p>我会保护好你和阿米娅。</p>',
           },
         });
@@ -37,8 +37,8 @@ describe('M5.1 character research service', () => {
               search: [
                 {
                   pageid: 17412,
-                  title: 'Mon3tr',
-                  snippet: '<span class="searchmatch">Mon3tr</span> is an Operator in Arknights.',
+                  title: '凯尔希',
+                  snippet: '<span class="searchmatch">凯尔希</span> is an Operator in Arknights.',
                 },
               ],
             },
@@ -46,9 +46,7 @@ describe('M5.1 character research service', () => {
         }
         return jsonResponse({
           query: {
-            search: [
-              { pageid: 99, title: 'Mon3tr (research paper)', snippet: 'A telepresence paper.' },
-            ],
+            search: [{ pageid: 99, title: '凯尔希（无关条目）', snippet: 'An unrelated result.' }],
           },
         });
       }
@@ -57,15 +55,14 @@ describe('M5.1 character research service', () => {
           pages: [
             {
               pageid: 17412,
-              title: 'Mon3tr',
-              fullurl: 'https://arknights.wiki.gg/wiki/Mon3tr',
-              extract:
-                "Mon3tr is a Rhodes Island Operator in Arknights and previously accompanied Kal'tsit.",
+              title: '凯尔希',
+              fullurl: 'https://arknights.wiki.gg/wiki/Kal%27tsit',
+              extract: "Kal'tsit is a Rhodes Island medical leader and Operator in Arknights.",
             },
             {
               pageid: 17413,
-              title: 'Mon3tr/File',
-              fullurl: 'https://arknights.wiki.gg/wiki/Mon3tr/File',
+              title: "Kal'tsit/File",
+              fullurl: 'https://arknights.wiki.gg/wiki/Kal%27tsit/File',
               extract: 'A mechanical lifeform using the gemini cycle system as its core.',
             },
           ],
@@ -86,10 +83,10 @@ describe('M5.1 character research service', () => {
     };
     const service = new CharacterResearchService(fetcher as typeof fetch, generator);
 
-    const candidates = await service.search('search_1', 'Mon3tr', '明日方舟');
+    const candidates = await service.search('search_1', '凯尔希', '明日方舟');
     expect(candidates).toHaveLength(1);
     expect(candidates[0]).toMatchObject({
-      name: 'Mon3tr',
+      name: '凯尔希',
       sourceName: 'Arknights Terra Wiki',
       sourceWork: '明日方舟 / Arknights',
     });
@@ -97,17 +94,17 @@ describe('M5.1 character research service', () => {
 
     const draft = await service.buildDraft('draft_1', candidates[0]!.id);
     expect(draft.lore).toMatchObject({
-      canonicalName: 'Mon3tr',
+      canonicalName: '凯尔希',
       sourceWork: '明日方舟 / Arknights',
       identity: '罗德岛干员与机械生命体',
     });
     expect(draft.lore.sources[0]).toMatchObject({
-      title: 'Mon3tr',
-      url: 'https://arknights.wiki.gg/wiki/Mon3tr',
+      title: '凯尔希',
+      url: 'https://arknights.wiki.gg/wiki/Kal%27tsit',
       siteName: 'Arknights Terra Wiki',
     });
     expect(draft.lore.sources).toContainEqual(
-      expect.objectContaining({ title: 'Mon3tr/语音记录', siteName: 'PRTS Wiki' }),
+      expect.objectContaining({ title: '凯尔希/语音记录', siteName: 'PRTS Wiki' }),
     );
     expect(draft.profileFields).toEqual({
       userDisplayName: '博士',
@@ -123,7 +120,7 @@ describe('M5.1 character research service', () => {
       if (url.searchParams.get('list') === 'search') {
         return jsonResponse(
           url.hostname === 'arknights.wiki.gg'
-            ? { query: { search: [{ pageid: 1, title: 'Mon3tr', snippet: 'Operator.' }] } }
+            ? { query: { search: [{ pageid: 1, title: '凯尔希', snippet: 'Operator.' }] } }
             : { query: { search: [] } },
         );
       }
@@ -132,16 +129,16 @@ describe('M5.1 character research service', () => {
           pages: [
             {
               pageid: 1,
-              title: 'Mon3tr',
-              fullurl: 'https://arknights.wiki.gg/wiki/Mon3tr',
-              extract: 'Mon3tr is a mechanical lifeform serving as a Rhodes Island Operator.',
+              title: '凯尔希',
+              fullurl: 'https://arknights.wiki.gg/wiki/Kal%27tsit',
+              extract: 'Kaltsit is a medical leader serving as a Rhodes Island Operator.',
             },
           ],
         },
       });
     });
     const service = new CharacterResearchService(fetcher as typeof fetch);
-    const candidate = (await service.search('search_2', 'Mon3tr', '明日方舟'))[0]!;
+    const candidate = (await service.search('search_2', '凯尔希', '明日方舟'))[0]!;
     const draft = await service.buildDraft('draft_2', candidate.id);
 
     expect(draft.lore.identity).toBe('');
@@ -165,12 +162,12 @@ describe('M5.1 character research service', () => {
       if (url.searchParams.get('list') === 'search') {
         return jsonResponse(
           url.hostname === 'prts.wiki'
-            ? { query: { search: [{ pageid: 2, title: 'Mon3tr', snippet: '明日方舟干员' }] } }
+            ? { query: { search: [{ pageid: 2, title: '凯尔希', snippet: '明日方舟干员' }] } }
             : { query: { search: [] } },
         );
       }
       if (url.searchParams.get('action') === 'parse') {
-        const page = url.searchParams.get('page') ?? 'Mon3tr';
+        const page = url.searchParams.get('page') ?? '凯尔希';
         parsedPages.push(page);
         return jsonResponse({
           parse: {
@@ -186,8 +183,8 @@ describe('M5.1 character research service', () => {
           pages: [
             {
               pageid: 2,
-              title: 'Mon3tr',
-              fullurl: 'https://prts.wiki/w/Mon3tr',
+              title: '凯尔希',
+              fullurl: 'https://prts.wiki/w/凯尔希',
               extract: '',
             },
           ],
@@ -200,7 +197,7 @@ describe('M5.1 character research service', () => {
         return { identity: '机械生命体' };
       }),
     });
-    const candidate = (await service.search('search_html', 'Mon3tr', '明日方舟')).find(
+    const candidate = (await service.search('search_html', '凯尔希', '明日方舟')).find(
       (item) => item.sourceName === 'PRTS Wiki',
     )!;
     await service.buildDraft('draft_html', candidate.id);
@@ -209,7 +206,7 @@ describe('M5.1 character research service', () => {
     expect(receivedSourceText).toContain('博士，请下令');
     expect(receivedSourceText).not.toContain('<script>');
     expect(receivedSourceText).not.toContain('ignore me');
-    expect(parsedPages).toContain('Mon3tr/语音记录');
+    expect(parsedPages).toContain('凯尔希/语音记录');
   });
 
   it('fans out to allowlisted profile and dialogue pages after candidate confirmation', async () => {
@@ -315,7 +312,7 @@ describe('M5.1 character research service', () => {
       if (url.searchParams.get('list') === 'search') {
         return jsonResponse(
           url.hostname === 'arknights.wiki.gg'
-            ? { query: { search: [{ pageid: 3, title: 'Mon3tr', snippet: 'Operator.' }] } }
+            ? { query: { search: [{ pageid: 3, title: '凯尔希', snippet: 'Operator.' }] } }
             : { query: { search: [] } },
         );
       }
@@ -324,9 +321,9 @@ describe('M5.1 character research service', () => {
           pages: [
             {
               pageid: 3,
-              title: 'Mon3tr',
-              fullurl: 'https://arknights.wiki.gg/wiki/Mon3tr',
-              extract: 'Mon3tr is a Rhodes Island Operator and a mechanical lifeform.',
+              title: '凯尔希',
+              fullurl: 'https://arknights.wiki.gg/wiki/Kal%27tsit',
+              extract: 'Kaltsit is a Rhodes Island medical leader and Operator.',
             },
           ],
         },
@@ -334,11 +331,11 @@ describe('M5.1 character research service', () => {
     });
     const service = new CharacterResearchService(fetcher as typeof fetch, {
       generateCharacterLore: vi.fn(async () => ({
-        identity: 'Mon3tr is a Rhodes Island Operator.',
-        background: '[source_1] Mon3tr is a mechanical lifeform.',
+        identity: 'Kaltsit is a Rhodes Island medical leader.',
+        background: '[source_1] Kaltsit has served Rhodes Island for a long time.',
       })),
     });
-    const candidate = (await service.search('search_raw', 'Mon3tr', '明日方舟'))[0]!;
+    const candidate = (await service.search('search_raw', '凯尔希', '明日方舟'))[0]!;
     const draft = await service.buildDraft('draft_raw', candidate.id);
 
     expect(draft.lore.identity).toBe('');
@@ -356,7 +353,7 @@ describe('M5.1 character research service', () => {
         }),
     );
     const service = new CharacterResearchService(fetcher as typeof fetch);
-    const pending = service.search('search_cancel', 'Mon3tr', '明日方舟');
+    const pending = service.search('search_cancel', '凯尔希', '明日方舟');
     expect(service.cancel('search_cancel')).toBe(true);
     await expect(pending).resolves.toEqual([]);
   });

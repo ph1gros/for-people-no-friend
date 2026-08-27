@@ -12,7 +12,6 @@ import {
 } from '../../shared/character-research-ipc';
 import {
   parseCancelConversationInput,
-  parseCharacterProfileIdInput,
   parseCharacterProfileInput,
   parseConversationConfiguration,
   parseStartConversationInput,
@@ -181,21 +180,11 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return profiles.get();
   });
-  ipcMain.handle(IPC_CHANNELS.listCharacterProfiles, async (event) => {
-    requireTrustedSender(event, windows);
-    return profiles.list();
-  });
-  ipcMain.handle(IPC_CHANNELS.activateCharacterProfile, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
-    const { id } = parseCharacterProfileIdInput(input);
-    return runModelOperation(
-      () => conversations.activateCharacterProfile(id),
-      'The character could not be switched.',
-    );
-  });
   ipcMain.handle(IPC_CHANNELS.setCharacterProfile, (event, input: unknown) => {
     requireTrustedSender(event, windows);
-    return runModelOperation(() => profiles.set(parseCharacterProfileInput(input)));
+    return runModelOperation(() =>
+      conversations.setCharacterProfile(parseCharacterProfileInput(input)),
+    );
   });
   ipcMain.handle(IPC_CHANNELS.getConversationHistory, async (event) => {
     requireTrustedSender(event, windows);

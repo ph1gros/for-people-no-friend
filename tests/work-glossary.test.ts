@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -9,6 +9,7 @@ import {
   formatWorkGlossaryContext,
   resolveWorkGlossaryId,
   type WorkGlossaryEntry,
+  validateWorkGlossaryEntry,
 } from '../src/core/conversation/work-glossary';
 import type { CuratedWorkGlossary } from '../src/main/glossary/curated-work-glossaries';
 import { WorkGlossaryService } from '../src/main/glossary/work-glossary-service';
@@ -43,6 +44,30 @@ describe('work-specific community glossary', () => {
     expect(findRelevantGlossaryEntries('325是什么？', [entry])).toEqual([entry]);
     expect(findRelevantGlossaryEntries('今天完成325大学习', [entry])).toEqual([entry]);
     expect(findRelevantGlossaryEntries('1325是什么？', [entry])).toEqual([]);
+    expect(findRelevantGlossaryEntries('方舟社区那个低分梗是什么？', [entry])).toEqual([entry]);
+  });
+
+  it('rejects unsafe glossary sources and ignores a damaged cache', async () => {
+    expect(() =>
+      validateWorkGlossaryEntry({
+        ...entry,
+        sources: [{ title: '不安全', siteName: '测试', url: 'http://example.com/source' }],
+      }),
+    ).toThrow('invalid');
+
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-glossary-damaged-'));
+    const cacheDirectory = path.join(directory, 'work-glossaries');
+    await mkdir(cacheDirectory, { recursive: true });
+    await writeFile(
+      path.join(cacheDirectory, 'arknights.v1.json'),
+      JSON.stringify({ version: 1, workId: 'arknights', syncedAt: 1, entries: [{ bad: true }] }),
+      'utf8',
+    );
+    const catalog: CuratedWorkGlossary[] = [
+      { id: 'arknights', displayName: '明日方舟', entries: [{ ...entry, evidence: ['325'] }] },
+    ];
+    const service = new WorkGlossaryService(directory, fetch, catalog, '');
+    expect(await service.findMatches('明日方舟', '325是什么？')).toEqual([entry]);
   });
 
   it('formats matched entries as community context rather than canon', () => {
@@ -87,11 +112,53 @@ describe('work-specific community glossary', () => {
     const result = await service.sync('明日方舟');
     expect(result.ok).toBe(true);
     if (!result.ok) return;
+    expect(result.report).toMatchObject({
+      checkedSources: 2,
+      verifiedSources: 2,
+      cachedEntries: 1,
+    });
     expect(result.status.lastSynced).toBeTypeOf('number');
     expect(result.status.sources).toHaveLength(2);
     expect((await service.findMatches('明日方舟', '325是什么'))[0]).toMatchObject({
       term: '325',
       confidence: 0.93,
+    });
+  });
+
+  it('reports source failures and preserves the curated fallback without writing a cache', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-glossary-failure-'));
+    server = await startFakeHttpServer((_request, response) => {
+      response.statusCode = 503;
+      response.end('unavailable');
+    });
+    const catalog: CuratedWorkGlossary[] = [
+      {
+        id: 'arknights',
+        displayName: '明日方舟',
+        entries: [
+          {
+            ...entry,
+            sources: [{ title: '暂时失败的来源', siteName: '测试站点', url: server.baseUrl }],
+            evidence: ['325'],
+          },
+        ],
+      },
+    ];
+    const service = new WorkGlossaryService(directory, fetch, catalog, '');
+    const result = await service.sync('明日方舟');
+    expect(result).toMatchObject({
+      ok: false,
+      report: {
+        checkedSources: 1,
+        verifiedSources: 0,
+        failedSourceTitles: ['暂时失败的来源'],
+        cachedEntries: 0,
+      },
+    });
+    expect(result.message).toContain('原有本地词库保持不变');
+    expect(await service.getStatus('明日方舟')).toMatchObject({
+      cacheOrigin: 'curated',
+      entryCount: 1,
     });
   });
 

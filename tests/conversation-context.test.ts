@@ -15,8 +15,8 @@ describe('conversation context assembly', () => {
     }));
     const selected = selectRecentMessages(messages);
 
-    expect(selected).toHaveLength(20);
-    expect(selected[0]?.content).toBe('message-10');
+    expect(selected).toHaveLength(12);
+    expect(selected[0]?.content).toBe('message-18');
     expect(selected.at(-1)?.content).toBe('message-29');
   });
 

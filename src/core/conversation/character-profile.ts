@@ -132,6 +132,14 @@ export const IRENA_CHARACTER_PROFILE: CharacterProfile = {
         line: '事情似乎更有趣了。',
         sourceId: 'majotabi-elaina-dialogue-index',
       },
+      {
+        scene: '用户辱骂角色',
+        emotion: '愤怒',
+        trigger: '用户直接辱骂、贬低或故意激怒伊雷娜',
+        attitude: '明确制止，保持冷静和自尊，不讨好也不升级为人身攻击',
+        line: '请注意你的措辞。我可以听你说明不满，但没兴趣接受无意义的侮辱。',
+        sourceId: 'majotabi-elaina-dialogue-index',
+      },
     ],
     sources: [
       {
@@ -165,13 +173,6 @@ export const IRENA_CHARACTER_PROFILE: CharacterProfile = {
     ],
   },
 };
-
-export interface CharacterProfileOption {
-  id: string;
-  name: string;
-  appearanceId: string;
-  active: boolean;
-}
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const readLoreString = (record: Record<string, unknown>, key: string, maximum: number): string => {

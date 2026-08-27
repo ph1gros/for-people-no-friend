@@ -172,8 +172,13 @@ export const loadCharacter = async (
     ),
     emotions: manifest.channels.emotions,
   };
-  const controller = new Live2DPerformanceController(renderer.driver, controls);
+  const controller = new Live2DPerformanceController(renderer.driver, controls, {
+    transientEmotionMs: 4_000,
+  });
   await controller.start();
+  if ('enter' in manifest.channels.actions) {
+    void controller.action.enqueue('enter');
+  }
   if (!renderer.image.complete) {
     await new Promise<void>((resolve, reject) => {
       const timeout = window.setTimeout(

@@ -4,7 +4,6 @@ import path from 'node:path';
 import {
   IRENA_CHARACTER_PROFILE,
   type CharacterProfile,
-  type CharacterProfileOption,
   validateCharacterProfile,
 } from '../../core/conversation/character-profile';
 
@@ -33,24 +32,6 @@ export class CharacterProfileStore {
     const profile = collection.profiles.find(({ id }) => id === collection.activeProfileId);
     if (!profile) throw new Error('The active character profile is missing.');
     return { ...profile };
-  }
-
-  public async list(): Promise<CharacterProfileOption[]> {
-    const collection = await this.load();
-    return collection.profiles.map((profile) => ({
-      id: profile.id,
-      name: profile.name,
-      appearanceId: profile.live2dModelId,
-      active: profile.id === collection.activeProfileId,
-    }));
-  }
-
-  public async activate(id: string): Promise<void> {
-    const collection = await this.load();
-    if (!collection.profiles.some((profile) => profile.id === id)) {
-      throw new Error('Character profile not found.');
-    }
-    await this.saveCollection({ ...collection, activeProfileId: id });
   }
 
   public async set(profile: CharacterProfile): Promise<void> {

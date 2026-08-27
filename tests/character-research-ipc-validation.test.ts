@@ -11,10 +11,10 @@ describe('M5.1 character research IPC validation', () => {
     expect(
       parseSearchCharactersInput({
         requestId: 'character_search_123',
-        name: 'Mon3tr',
+        name: '凯尔希',
         sourceWork: '明日方舟',
       }),
-    ).toEqual({ requestId: 'character_search_123', name: 'Mon3tr', sourceWork: '明日方舟' });
+    ).toEqual({ requestId: 'character_search_123', name: '凯尔希', sourceWork: '明日方舟' });
     expect(
       parseBuildCharacterDraftInput({
         requestId: 'character_draft_123',
@@ -28,7 +28,7 @@ describe('M5.1 character research IPC validation', () => {
 
   it('rejects unbounded strings and candidate URLs', () => {
     expect(() =>
-      parseSearchCharactersInput({ requestId: '../bad', name: 'Mon3tr', sourceWork: '' }),
+      parseSearchCharactersInput({ requestId: '../bad', name: '凯尔希', sourceWork: '' }),
     ).toThrow();
     expect(() =>
       parseSearchCharactersInput({ requestId: 'search_1', name: 'x'.repeat(121), sourceWork: '' }),

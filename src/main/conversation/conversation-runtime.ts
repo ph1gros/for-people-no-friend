@@ -1,5 +1,14 @@
 import { CharacterReplyStreamDecoder } from '../../core/character/character-reply';
 import {
+  adaptLegacyCharacterLore,
+  createCharacterLoreRevision,
+  formatCharacterKnowledgeContext,
+  retrieveCharacterKnowledgeForPrompt,
+  type CharacterKnowledgeBase,
+} from '../../core/character/character-knowledge';
+import type { CharacterProfile } from '../../core/conversation/character-profile';
+import { validateCharacterProfile } from '../../core/conversation/character-profile';
+import {
   buildConversationSystemPrompt,
   selectRecentMessages,
 } from '../../core/conversation/context-assembler';
@@ -15,6 +24,7 @@ import type { ModelRuntime } from '../llm/model-runtime';
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
 import { formatMemoryContext, type MemoryService } from '../memory/memory-service';
 import type { CharacterProfileStore } from '../storage/character-profile-store';
+import type { CharacterKnowledgeStore } from '../storage/character-knowledge-store';
 import type { ConversationStore } from '../storage/conversation-store';
 
 type ConversationEventSink = (event: ConversationEvent) => void;
@@ -41,6 +51,7 @@ export class ConversationRuntime {
     private readonly history: ConversationStore,
     private readonly memories?: MemoryService,
     private readonly glossary?: WorkGlossaryService,
+    private readonly characterKnowledge?: CharacterKnowledgeStore,
   ) {}
 
   public async listHistory(): Promise<ConversationMessage[]> {
@@ -56,11 +67,27 @@ export class ConversationRuntime {
     return this.history.clear(profile.memoryNamespace);
   }
 
-  public async activateCharacterProfile(id: string): Promise<void> {
+  public async setCharacterProfile(profile: CharacterProfile): Promise<void> {
     if (this.active.size > 0) {
-      throw new Error('Character cannot be switched during a reply.');
+      throw new Error('Character cannot be updated during a reply.');
     }
-    await this.profiles.activate(id);
+    const validated = validateCharacterProfile(profile);
+    const current = await this.profiles.get();
+    const previousRevision = current.lore ? createCharacterLoreRevision(current.lore) : undefined;
+    const nextRevision = validated.lore ? createCharacterLoreRevision(validated.lore) : undefined;
+    await this.profiles.set(validated);
+    if (!this.characterKnowledge || previousRevision === nextRevision) return;
+    try {
+      if (validated.lore) {
+        this.characterKnowledge.replace(
+          adaptLegacyCharacterLore(validated.memoryNamespace, validated.lore),
+        );
+      } else {
+        this.characterKnowledge.clear(validated.memoryNamespace);
+      }
+    } catch {
+      // The prompt path checks the revision and safely falls back to the validated profile.
+    }
   }
 
   public start(
@@ -142,11 +169,15 @@ export class ConversationRuntime {
           .map((message) => ({ role: message.role, content: message.content })),
         { role: 'user', content: input.message },
       ]);
-      const workGlossaryContext = this.glossary
-        ? formatWorkGlossaryContext(
-            await this.glossary.findMatches(profile.lore?.sourceWork ?? '', input.message),
-          )
-        : '';
+      const [workGlossaryContext, characterKnowledgeContext] = await Promise.all([
+        this.glossary
+          ? this.glossary
+              .findMatches(profile.lore?.sourceWork ?? '', input.message)
+              .then(formatWorkGlossaryContext)
+              .catch(() => '')
+          : '',
+        this.buildCharacterKnowledgeContext(profile, input.message),
+      ]);
       let inputTokens = 0;
       let outputTokens = 0;
       for await (const event of this.models.streamConversation(
@@ -157,10 +188,11 @@ export class ConversationRuntime {
             memoryContext,
             input.message,
             workGlossaryContext,
+            characterKnowledgeContext,
           ),
           messages: context,
           temperature: 0.8,
-          maxOutputTokens: 1_024,
+          maxOutputTokens: 640,
         },
         selection,
         signal,
@@ -228,6 +260,52 @@ export class ConversationRuntime {
       } else {
         emit({ requestId: input.requestId, type: 'error', error: publicError });
       }
+    }
+  }
+
+  private async buildCharacterKnowledgeContext(
+    profile: CharacterProfile,
+    query: string,
+  ): Promise<string> {
+    let base: CharacterKnowledgeBase | undefined;
+    if (this.characterKnowledge) {
+      try {
+        const stored = this.characterKnowledge.get(profile.memoryNamespace);
+        if (
+          profile.lore &&
+          stored?.characterNamespace === profile.memoryNamespace &&
+          stored.profileRevision === createCharacterLoreRevision(profile.lore)
+        ) {
+          base = stored;
+        }
+      } catch {
+        base = undefined;
+      }
+    }
+    if (!base && profile.lore) {
+      try {
+        base = adaptLegacyCharacterLore(profile.memoryNamespace, profile.lore);
+      } catch {
+        return '';
+      }
+    }
+    if (!base) return '';
+    try {
+      return formatCharacterKnowledgeContext(
+        await retrieveCharacterKnowledgeForPrompt(
+          // Keep the WebP/local-model route useful without turning every turn into a lore dump.
+          // Identity and one speech rule remain stable; one contextual record may be added.
+          {
+            characterNamespace: profile.memoryNamespace,
+            query,
+            maximumRecords: 3,
+            maximumCharacters: 1_400,
+          },
+          base.records,
+        ),
+      );
+    } catch {
+      return '';
     }
   }
 }

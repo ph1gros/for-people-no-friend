@@ -98,10 +98,12 @@ export class ActionChannel {
 
 export class EmotionChannel {
   private current: CharacterEmotion = 'neutral';
+  private resetTimer: ReturnType<typeof setTimeout> | undefined;
 
   public constructor(
     private readonly driver: Live2DDriver,
     private readonly expressions: Live2DControlMap['emotions'],
+    private readonly transientDurationMs?: number,
   ) {}
 
   public get value(): CharacterEmotion {
@@ -109,6 +111,10 @@ export class EmotionChannel {
   }
 
   public async set(emotion: CharacterEmotion): Promise<boolean> {
+    if (this.resetTimer !== undefined) {
+      globalThis.clearTimeout(this.resetTimer);
+      this.resetTimer = undefined;
+    }
     this.current = emotion;
     const requested = this.expressions[emotion];
     if (!requested && emotion !== 'neutral') {
@@ -121,7 +127,18 @@ export class EmotionChannel {
       this.current = 'neutral';
       return this.driver.setExpression(this.expressions.neutral);
     }
+    if (applied && this.current !== 'neutral' && this.transientDurationMs) {
+      this.resetTimer = globalThis.setTimeout(() => {
+        this.resetTimer = undefined;
+        void this.set('neutral');
+      }, this.transientDurationMs);
+    }
     return applied;
+  }
+
+  public destroy(): void {
+    if (this.resetTimer !== undefined) globalThis.clearTimeout(this.resetTimer);
+    this.resetTimer = undefined;
   }
 }
 
@@ -164,11 +181,12 @@ export class Live2DPerformanceController {
   public constructor(
     private readonly driver: Live2DDriver,
     controls: Live2DControlMap,
+    options: { transientEmotionMs?: number } = {},
   ) {
     this.action = new ActionChannel(driver, controls.actions);
     this.state = new StateChannel(driver, controls.states, () => this.action.isActive);
     this.action.bindStateRestore(() => this.state.restore());
-    this.emotion = new EmotionChannel(driver, controls.emotions);
+    this.emotion = new EmotionChannel(driver, controls.emotions, options.transientEmotionMs);
     this.tracking = new TrackingChannel(driver);
   }
 
@@ -177,6 +195,7 @@ export class Live2DPerformanceController {
   }
 
   public destroy(): void {
+    this.emotion.destroy();
     this.driver.destroy();
   }
 }

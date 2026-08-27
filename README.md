@@ -54,6 +54,7 @@ A local-first Windows AI character companion for days when socializing feels lik
 - V1.1a：可信长期记忆最小闭环
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：GIF Version 分支、版本化 WebP 角色模板与伊雷娜资源包
+- V1.2 / M6：可追溯角色资料、轻量本地模型预算与 WebP 表现恢复闭环
 - 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
@@ -85,6 +86,8 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 - [V1.1b 记忆整理实现](docs/V1_1B_IMPLEMENTATION.md)
 - [V1.1c 版本化角色表现实现](docs/V1_1C_IMPLEMENTATION.md)
 - [公开示例角色包](docs/EXAMPLE_CHARACTER_PACK.md)
+- [M6 双版本角色生成收尾](docs/M6_DUAL_VERSION_CHARACTER_GENERATION.md)
+- [V1.2 / M6 GIF Version 实现](docs/V1_2_IMPLEMENTATION.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
@@ -92,7 +95,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 
 v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动起来”，不负责决定她是谁。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会被当成正式角色人格；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
 
-首个动态 WebP 角色包是 **伊雷娜**：53 个动态表情素材、作者和原始发布页均保存在版本化资源清单中；公开角色资料与《魔女之旅》词库也随分支提供。M3（Mon3tr）则是 `main` 的 Live2D 示例。两边的人格、对话历史、摘要、长期记忆和表现资源各走各的，不会出现伊雷娜突然继承 M3 记忆、然后双方都假装无事发生的情况。
+首个动态 WebP 角色包是 **伊雷娜**：53 个动态表情素材、作者和原始发布页均保存在版本化资源清单中；公开角色资料与《魔女之旅》词库也随分支提供。凯尔希则是 `main` 的完整 Live2D 示例。两边的人格、对话历史、摘要、长期记忆和表现资源各走各的，不会互相继承资料后假装无事发生。
 
 项目使用带版本的泛用角色模板管理动态 WebP/GIF 表现资源，并按待机、思考、说话、情绪和动作标签映射；缺失或加载失败时会安全回退，不影响文字聊天。细节见 [角色资源说明](assets/characters/README.md)。
 

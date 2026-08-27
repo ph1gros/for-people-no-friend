@@ -20,6 +20,16 @@
 
 `my-neuro` 不是单一模型，也不只是 Live2D 显示程序。它是一套把桌面角色、语音服务、LLM、记忆、视觉和插件连接起来的工作台。
 
+### 2026-08-27 neuro-like 方向复核
+
+本次重新阅读了 [my-neuro README](https://github.com/morettt/my-neuro) 与 [记忆系统说明](https://github.com/morettt/my-neuro/blob/main/%E8%AE%B0%E5%BF%86%E7%B3%BB%E7%BB%9F%E8%AF%B4%E6%98%8E.md)：
+
+- `my-neuro` 明确说明项目受 Neuro-sama 启发，目标是可定制人格、形象和声音的长期 AI 角色工作台；本项目用 `neuro-like` 表示这一体验方向。
+- 仓库文档描述的记忆层包括 MemOS、稳定核心记忆、用户画像候选、AI 日志和时间信息；专业模式还组合向量检索、BM25、关系图与精排。
+- 用户画像强调候选池和多次证据，临时情绪不应立即变成稳定画像。这与 For People No Friend 已完成的可信候选记忆方向一致。
+- README 将持续的长期情绪状态写为继续开发的核心目标。因此这里只把“持续情绪”作为方向和后续验收对象，不声称参考项目已经提供可以直接照搬的成熟实现。
+- For People No Friend 不复制其代码，也不引入其多进程部署、MemOS 后端、工具调用、视觉、语音或桌面控制；先保留 SQLite 基础路径和各可选模块的独立失败回退。
+
 典型运行链路：
 
 ```text
