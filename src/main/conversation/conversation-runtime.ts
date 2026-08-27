@@ -189,6 +189,10 @@ export class ConversationRuntime {
             input.message,
             workGlossaryContext,
             characterKnowledgeContext,
+            [...existingHistory, userMessage]
+              .filter((message) => message.status === 'complete')
+              .slice(-4)
+              .map(({ role, content }) => ({ role, content })),
           ),
           messages: context,
           temperature: 0.8,

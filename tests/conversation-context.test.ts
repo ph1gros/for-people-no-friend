@@ -51,7 +51,7 @@ describe('conversation context assembly', () => {
     expect(prompt).toContain('本轮回应策略');
     expect(prompt).toContain('明确设限');
     expect(prompt).toContain('不得因单轮情绪、辱骂或夸奖突然跳变');
-    expect(prompt).toContain('不写入长期人格或用户画像');
+    expect(prompt).toContain('不写入长期人格、关系等级或用户画像');
   });
 
   it('uses locally entered character identity silently and only adds long lore when relevant', () => {

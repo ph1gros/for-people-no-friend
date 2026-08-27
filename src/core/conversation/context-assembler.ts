@@ -5,6 +5,7 @@ import {
 } from '../character/character-lore';
 import { DEFAULT_CHARACTER_PROFILE, type CharacterProfile } from './character-profile';
 import { formatLive2DCompanionSignals } from './companion-signals';
+import type { RecentCompanionRecord } from './companion-signals';
 
 const MAX_CONTEXT_MESSAGES = 20;
 const MAX_CONTEXT_CHARACTERS = 24_000;
@@ -41,6 +42,7 @@ export const buildConversationSystemPrompt = (
   currentUserMessage = '',
   workGlossaryContext = '',
   characterKnowledgeContext = '',
+  recentCompanionRecords: readonly RecentCompanionRecord[] = [],
 ): string => {
   const characterLore =
     characterKnowledgeContext ||
@@ -74,7 +76,7 @@ export const buildConversationSystemPrompt = (
     memoryContext ? '' : undefined,
     memoryContext || undefined,
     '',
-    formatLive2DCompanionSignals(currentUserMessage),
+    formatLive2DCompanionSignals(currentUserMessage, recentCompanionRecords),
     workGlossaryContext ? '' : undefined,
     workGlossaryContext || undefined,
     '',

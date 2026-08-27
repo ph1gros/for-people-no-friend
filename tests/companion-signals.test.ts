@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   deriveCurrentEmotionalSignal,
+  deriveRecentMoodContinuity,
   formatLive2DCompanionSignals,
 } from '../src/core/conversation/companion-signals';
 
@@ -23,10 +24,46 @@ describe('Live2D companion emotion signals', () => {
   });
 
   it('keeps relationship continuity separate from temporary emotion', () => {
-    const context = formatLive2DCompanionSignals('你就是个大傻逼');
+    const context = formatLive2DCompanionSignals('你就是个大傻逼', [
+      { role: 'user', content: '你就是个大傻逼' },
+    ]);
     expect(context).toContain('只把已确认长期记忆当作稳定用户事实');
     expect(context).toContain('不得因单轮情绪、辱骂或夸奖突然跳变');
-    expect(context).toContain('只影响当前回复语气与表现');
+    expect(context).toContain('最近四条对话记录');
+    expect(context).toContain('本条明确触发');
     expect(context).toContain('明确设限');
+  });
+
+  it('carries a clear mood through the rolling four-record window', () => {
+    expect(
+      deriveRecentMoodContinuity([
+        { role: 'user', content: '你就是个大傻逼' },
+        { role: 'assistant', content: '请注意措辞。' },
+        { role: 'user', content: '那继续说刚才的事吧' },
+      ]),
+    ).toEqual({
+      emotion: 'angry',
+      mode: 'boundary',
+      source: 'carried',
+      contributingRecords: 1,
+    });
+  });
+
+  it('lets a newer explicit mood override an older one and expires old cues', () => {
+    expect(
+      deriveRecentMoodContinuity([
+        { role: 'user', content: '你就是个大傻逼' },
+        { role: 'assistant', content: '请注意措辞。' },
+        { role: 'user', content: '我终于完成了！' },
+      ]),
+    ).toMatchObject({ emotion: 'happy', source: 'current' });
+    expect(
+      deriveRecentMoodContinuity([
+        { role: 'assistant', content: '旧心情已经离开窗口。' },
+        { role: 'user', content: '继续吧' },
+        { role: 'assistant', content: '好。' },
+        { role: 'user', content: '下一步是什么？' },
+      ]),
+    ).toBeUndefined();
   });
 });
