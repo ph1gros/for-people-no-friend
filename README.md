@@ -8,7 +8,7 @@
 
 当前 `gif-version` 是 **GIF Version**，以伊雷娜作为完整动态 WebP 示例；凯尔希 Live2D 在 `main` 独立发展。
 
-WebP Version 侧重本地小模型和快速角色扮演，同时保留可信长期记忆；使用云端 API 时可以按需加入更丰富的相关资料。Live2D Version 进一步强化长期陪伴、情绪与关系连续性。两个版本都支持生成角色。
+WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。两个版本都支持生成角色。
 
 ## 1.0.0 已完成能力
 
@@ -55,15 +55,25 @@ WebP Version 侧重本地小模型和快速角色扮演，同时保留可信长�
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：GIF Version 分支、版本化 WebP 角色模板与伊雷娜资源包
 - V1.2 / M6：可追溯角色资料、轻量本地模型预算与 WebP 表现恢复闭环
+- V1.3：双版本表现能力验收，以及 `gif-version` 的 WebP 标签判定与调度规则
 - 后续：真实 UI 自动化、语音、高级记忆基础设施与受控 Agent 能力
 
 ## 开发参考原则
 
-吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[另一只 BongoCat](https://github.com/bongocat-pet/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
+吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V1.1b 完成可信长期记忆闭环；本 GIF Version 分支在同一套聊天能力上使用可复用动态 WebP 角色包和伊雷娜。Live2D 继续在 `main` 发展，两种表现层不在运行时互相切换。当前仓库不提供 Windows 安装包、签名或可执行发布产物。后续功能顺序与采用条件详见 [1.0 之后路线](docs/POST_V1_ROADMAP.md)。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成角色资料库、作品社区词库、安全检索与双版本生成闭环。动态 WebP 在 `gif-version` 独立发展，Live2D 在 `main` 独立发展。当前仓库不提供 Windows 安装包、签名或可执行发布产物。
+
+## 示例模型与素材来源
+
+| 角色   | 所在版本                          | 作者                                                   | 原始来源                                                                            | 收录说明                       |
+| ------ | --------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------ |
+| 凯尔希 | `main` · Live2D Version           | [什行在要](https://space.bilibili.com/2695839)         | [“工作凯尔希”Live2D](https://www.bilibili.com/video/BV1Le411976u/)                  | 已获许可，仅限非盈利收录与分发 |
+| 伊雷娜 | `gif-version` · 动态 WebP Version | [白之魔女-霜娜](https://space.bilibili.com/2125763952) | [伊雷娜动态 WebP 表情原始发布页](https://www.bilibili.com/opus/1209543497317613574) | 经用户确认，作者允许使用与分发 |
+
+模型和表情素材只负责角色外观与动作，角色资料、作品词库、用户记忆和私人对话分别保存。来源链接只用于署名与查阅，不会在运行时远程加载素材。
 
 ## 文档
 
@@ -91,11 +101,13 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 
 ## 角色与表现资源
 
-v1.0 里的 Live2D 示例只负责证明“这只东西确实能在桌面上动起来”，不负责决定她是谁。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会被当成正式角色人格；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
+GIF Version 默认使用伊雷娜资料卡、53 个动态 WebP 表情和《魔女之旅》作品词库。角色包格式、清单和素材校验见 [角色资源说明](assets/characters/README.md)。
 
-首个动态 WebP 角色包是 **伊雷娜**：53 个动态表情素材、作者和原始发布页均保存在版本化资源清单中；公开角色资料与《魔女之旅》词库也随分支提供。凯尔希则是 `main` 的完整 Live2D 示例。两边的人格、对话历史、摘要、长期记忆和表现资源各走各的，不会互相继承资料后假装无事发生。
+主线与支线共享角色资料学习、长期记忆和安全边界，但不是同一个程序里的两套皮肤，也不提供凯尔希与伊雷娜的运行时互切：`main` 专注 Live2D 的完整表现能力，`gif-version` 专注更轻量的动态 WebP 待机与表情动作。
 
-项目使用带版本的泛用角色模板管理动态 WebP/GIF 表现资源，并按待机、思考、说话、情绪和动作标签映射；缺失或加载失败时会安全回退，不影响文字聊天。细节见 [角色资源说明](assets/characters/README.md)。
+两个版本都保留“联网查找 → 生成本地角色草稿 → 用户检查并保存”的能力。生成的是可追溯的称呼、身份背景、关系、说话方式和情境示例；Live2D 与 WebP 的表现素材仍分别使用各自版本的清单与授权检查。
+
+项目使用带版本的泛用角色模板管理动态 WebP/GIF 表现资源，并按待机、思考、说话、情绪和动作标签映射；缺失或加载失败时会安全回退，不影响文字聊天。
 
 ## 安全约定
 

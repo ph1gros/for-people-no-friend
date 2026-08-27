@@ -58,4 +58,12 @@ export const validateChatRequest = (request: ChatRequest, providerId: string): v
   ) {
     throw new ConfigurationError('The output token limit is invalid.', providerId);
   }
+  if (
+    request.timeoutMs !== undefined &&
+    (!Number.isInteger(request.timeoutMs) ||
+      request.timeoutMs < 1_000 ||
+      request.timeoutMs > 300_000)
+  ) {
+    throw new ConfigurationError('The request timeout is invalid.', providerId);
+  }
 };

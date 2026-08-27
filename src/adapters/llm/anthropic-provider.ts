@@ -59,7 +59,7 @@ export class AnthropicProvider implements LlmProvider {
       throw new ConfigurationError('An Anthropic API key is required.', this.id);
     }
 
-    const timeoutMs = this.options.timeoutMs ?? 60_000;
+    const timeoutMs = request.timeoutMs ?? this.options.timeoutMs ?? 60_000;
     const timeoutSignal = AbortSignal.timeout(timeoutMs);
     const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
     const client = new Anthropic({

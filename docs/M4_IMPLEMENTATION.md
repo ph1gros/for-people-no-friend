@@ -103,13 +103,13 @@ M4 新增的每个请求都执行运行时校验：
 
 ## 开源项目参考与取舍
 
-| 项目                                                                                                                          | M4 相关实现                                                              | 本项目采用与拒绝                                                                                             |
-| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| [Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)                                                    | Persona、ConversationTurn、ReplyDraft、EmotionIntent、动作计划和失败降级 | 采用“文本、情绪、动作”统一结果和模型表现失败不阻断聊天；不引入 VAD、FACS Planner、TTS、Embedding 或主动事件  |
-| [EchoBot](https://github.com/KdaiP/EchoBot)                                                                                   | 会话历史归一化、流式任务状态、停止操作和人格切换                         | 采用历史与活动请求分离、显式停止和纯文本历史渲染；不引入 Agent、工具、图片、平台频道或语音                   |
-| [ZcChat2](https://github.com/Zao-chen/ZcChat2)                                                                                | Galgame 对话层、角色配置、历史窗口和按完整轮次保留最近上下文             | 采用最近完整消息和独立历史面板的体验；GPL-3.0 代码不复制，摘要压缩留到 M5                                    |
-| [my-neuro](https://github.com/morettt/my-neuro)                                                                               | 动态人格、情绪动作映射和主动对话                                         | 采用稳定人格与当前表现分层；不采用按轮次额外调用模型重写人格、心情定时器、主动对话或会记录私密正文的调试方式 |
-| [ayangweb/BongoCat](https://github.com/ayangweb/BongoCat) / [bongocat-pet/BongoCat](https://github.com/bongocat-pet/BongoCat) | 透明桌宠覆盖层、窗口交互与资源职责划分                                   | 保持聊天覆盖层与窗口/Live2D runtime 解耦；没有为 M4 引入键盘监听或桌面控制                                   |
+| 项目                                                                       | M4 相关实现                                                              | 本项目采用与拒绝                                                                                             |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| [Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk) | Persona、ConversationTurn、ReplyDraft、EmotionIntent、动作计划和失败降级 | 采用“文本、情绪、动作”统一结果和模型表现失败不阻断聊天；不引入 VAD、FACS Planner、TTS、Embedding 或主动事件  |
+| [EchoBot](https://github.com/KdaiP/EchoBot)                                | 会话历史归一化、流式任务状态、停止操作和人格切换                         | 采用历史与活动请求分离、显式停止和纯文本历史渲染；不引入 Agent、工具、图片、平台频道或语音                   |
+| [ZcChat2](https://github.com/Zao-chen/ZcChat2)                             | Galgame 对话层、角色配置、历史窗口和按完整轮次保留最近上下文             | 采用最近完整消息和独立历史面板的体验；GPL-3.0 代码不复制，摘要压缩留到 M5                                    |
+| [my-neuro](https://github.com/morettt/my-neuro)                            | 动态人格、情绪动作映射和主动对话                                         | 采用稳定人格与当前表现分层；不采用按轮次额外调用模型重写人格、心情定时器、主动对话或会记录私密正文的调试方式 |
+| [ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)                  | 透明桌宠覆盖层、窗口交互与资源职责划分                                   | 保持聊天覆盖层与窗口/Live2D runtime 解耦；没有为 M4 引入键盘监听或桌面控制                                   |
 
 以上仅记录架构影响并独立实现。my-neuro、EchoBot、Soullink 当前标明 MIT；ZcChat2 为 GPL-3.0。
 

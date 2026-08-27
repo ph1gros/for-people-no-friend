@@ -87,14 +87,14 @@ OpenAI 官方目前推荐新项目使用 Responses API，但仍明确记录 Chat
 
 ## 开源项目参考与取舍
 
-| 项目                                                                                                                           | M3 相关技术                                                                      | 本项目结论                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| [morettt/my-neuro](https://github.com/morettt/my-neuro)                                                                        | 统一 OpenAI Compatible 客户端、流式增量、兼容消息清理和运行时配置更新            | 采用统一 Provider、严格 SSE 分片和配置解耦；不采用会输出请求或完整响应的调试方式，不引入工具调用、视觉和插件            |
-| [EchoBot](https://github.com/KdaiP/EchoBot)                                                                                    | Provider 抽象、60 秒超时、OpenAI Compatible 流式接口、系统消息归并和额外参数配置 | 采用明确 60 秒超时和 Provider 端口；当前内部协议只有一个 systemPrompt，不需要归并；extra body、工具和附件留待对应里程碑 |
-| [Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)                                                     | 上游密钥只在可信服务端、接口注入、按服务设置超时、失败时保持角色本地表现         | 已采用 Main-only 密钥、依赖注入和模型失败不影响 Live2D；情绪 Planner、TTS、Embedding 不进入 M3                          |
-| [ZcChat2](https://github.com/Zao-chen/ZcChat2)                                                                                 | Provider 配置、连接测试、模型获取和流式交互的完整设置体验                        | 借鉴“配置、测试、选择”分步体验；模型列表和设置 UI 属于后续里程碑；项目为 GPL-3.0，不复制实现                            |
-| [ayangweb/BongoCat](https://github.com/ayangweb/BongoCat) 与 [bongocat-pet/BongoCat](https://github.com/bongocat-pet/BongoCat) | 桌宠输入、窗口、托盘、资源与运行时职责划分                                       | 继续保持窗口和模型 Provider 解耦；它们没有值得在 M3 引入的模型协议实现，不为凑功能改动窗口层                            |
-| [EchoBot](https://github.com/KdaiP/EchoBot) 的眼神跟随                                                                         | Web/Live2D 内局部鼠标跟随与开关                                                  | 不能直接解决 Electron Windows 跨窗口系统光标问题；不以 Web 局部方案替换现有全局链路                                     |
+| 项目                                                                       | M3 相关技术                                                                      | 本项目结论                                                                                                              |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| [morettt/my-neuro](https://github.com/morettt/my-neuro)                    | 统一 OpenAI Compatible 客户端、流式增量、兼容消息清理和运行时配置更新            | 采用统一 Provider、严格 SSE 分片和配置解耦；不采用会输出请求或完整响应的调试方式，不引入工具调用、视觉和插件            |
+| [EchoBot](https://github.com/KdaiP/EchoBot)                                | Provider 抽象、60 秒超时、OpenAI Compatible 流式接口、系统消息归并和额外参数配置 | 采用明确 60 秒超时和 Provider 端口；当前内部协议只有一个 systemPrompt，不需要归并；extra body、工具和附件留待对应里程碑 |
+| [Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk) | 上游密钥只在可信服务端、接口注入、按服务设置超时、失败时保持角色本地表现         | 已采用 Main-only 密钥、依赖注入和模型失败不影响 Live2D；情绪 Planner、TTS、Embedding 不进入 M3                          |
+| [ZcChat2](https://github.com/Zao-chen/ZcChat2)                             | Provider 配置、连接测试、模型获取和流式交互的完整设置体验                        | 借鉴“配置、测试、选择”分步体验；模型列表和设置 UI 属于后续里程碑；项目为 GPL-3.0，不复制实现                            |
+| [ayangweb/BongoCat](https://github.com/ayangweb/BongoCat)                  | 桌宠输入、窗口、托盘、资源与运行时职责划分                                       | 继续保持窗口和模型 Provider 解耦；它没有值得在 M3 引入的模型协议实现，不为凑功能改动窗口层                              |
+| [EchoBot](https://github.com/KdaiP/EchoBot) 的眼神跟随                     | Web/Live2D 内局部鼠标跟随与开关                                                  | 不能直接解决 Electron Windows 跨窗口系统光标问题；不以 Web 局部方案替换现有全局链路                                     |
 
 my-neuro、EchoBot 和 Soullink 当前仓库标明 MIT；ZcChat2 为 GPL-3.0。以上只记录独立分析和设计影响，没有复制参考项目源码。
 
