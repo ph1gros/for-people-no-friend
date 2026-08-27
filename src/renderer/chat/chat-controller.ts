@@ -21,6 +21,7 @@ import {
 import type { ConversationEvent, ConversationMessage } from '../../shared/conversation-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
+import { WindowScaleSync } from '../settings/window-scale-sync';
 
 interface ChatControllerOptions {
   root: HTMLElement;
@@ -502,11 +503,10 @@ export const initializeChat = async ({
     scaleInput.value = scale.toFixed(2);
     scaleOutput.textContent = `${Math.round(scale * 100)}%`;
   };
-
+  const windowScaleSync = api ? new WindowScaleSync(api, displayScale) : undefined;
   const loadWindowScale = async (): Promise<void> => {
-    if (api) displayScale(await api.getWindowScale());
+    await windowScaleSync?.load();
   };
-  const disposeWindowScaleListener = api?.onWindowScaleChanged(displayScale);
 
   const characterDisplayName = (): string =>
     resolveCharacterDisplayName(profile?.name, getCharacter()?.name);
@@ -1524,12 +1524,9 @@ export const initializeChat = async ({
     updateProviderVisibility();
     void updateSecretStatus();
   });
-  scaleInput.addEventListener('input', () => displayScale(Number(scaleInput.value)));
+  scaleInput.addEventListener('input', () => windowScaleSync?.preview(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {
-    if (!api) return;
-    void api
-      .setWindowScale({ scale: Number(scaleInput.value) })
-      .then((appliedScale) => displayScale(appliedScale));
+    void windowScaleSync?.commit(Number(scaleInput.value));
   });
   settingsPanel.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1653,7 +1650,7 @@ export const initializeChat = async ({
       void api.cancelCharacterResearch({ requestId: activeCharacterResearchId });
     }
     disposeConversationListener?.();
-    disposeWindowScaleListener?.();
+    windowScaleSync?.dispose();
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
     shell.remove();
