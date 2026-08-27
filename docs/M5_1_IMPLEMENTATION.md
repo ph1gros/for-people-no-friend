@@ -20,7 +20,7 @@ M5.1 在 M5 长期记忆之后增加结构化角色卡和由用户主动触发�
 - 中文维基百科；
 - English Wikipedia。
 
-作品提示 `明日方舟` 或 `Arknights` 会选择两个明日方舟社区 Wiki，并在站内只搜索角色名，避免中英文作品名干扰站内搜索。候选先由响应更稳定的 Arknights Terra Wiki 确认；生成草稿时会同时尝试读取 PRTS 的 `<角色名>/语音记录`，让中文原作台词优先进入扮演设定。PRTS 暂时不可达时仍可使用 Arknights Terra Wiki 的 File 与 Dialogue，不会阻断生成。`Mon3tr + 明日方舟` 是本版本的固定验收样例。
+作品提示 `明日方舟` 或 `Arknights` 会选择两个明日方舟社区 Wiki，并在站内只搜索角色名，避免中英文作品名干扰站内搜索。候选先由响应更稳定的 Arknights Terra Wiki 确认；生成草稿时会同时尝试读取 PRTS 的 `<角色名>/语音记录`，让中文原作台词优先进入扮演设定。PRTS 暂时不可达时仍可使用 Arknights Terra Wiki 的 File 与 Dialogue，不会阻断生成。`凯尔希 + 明日方舟` 是本版本的固定验收样例。
 
 资料源使用 MediaWiki Action API 的搜索、纯文本摘要和受限解析接口。解析后的 HTML 只在 Main 中转换成受长度限制的纯文本，不会进入 Renderer。
 
@@ -65,4 +65,4 @@ M5.1 在 M5 长期记忆之后增加结构化角色卡和由用户主动触发�
 
 自动验证覆盖 IPC 参数、来源相关性排序、HTML 摘要清理、详情草稿、无模型降级、取消操作、配置兼容、上下文注入和现有 M1～M5 回归。本地最终验证为 25 个测试文件、86 项测试全部通过，并通过 ESLint、Prettier、TypeScript、生产构建和 Electron Preload 安全冒烟。
 
-公开接口实网冒烟确认 Arknights Terra Wiki 能把 `Mon3tr + 明日方舟` 收敛为唯一候选，并能读取 `Mon3tr`、`Mon3tr/File` 和 `Mon3tr/Dialogue`。PRTS Action API 也通过系统网络单独确认能返回 Mon3tr 页面；首选站点不可达时再查询后备来源，避免正常路径等待所有站点。
+公开接口实网冒烟确认 Arknights Terra Wiki 能把 `凯尔希 + 明日方舟` 收敛为对应角色候选，并能读取角色主页、档案和语音页。PRTS Action API 也通过系统网络单独确认能返回凯尔希页面；首选站点不可达时再查询后备来源，避免正常路径等待所有站点。

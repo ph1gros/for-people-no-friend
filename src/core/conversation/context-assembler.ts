@@ -4,6 +4,7 @@ import {
   shouldIncludeCharacterLoreDetails,
 } from '../character/character-lore';
 import { DEFAULT_CHARACTER_PROFILE, type CharacterProfile } from './character-profile';
+import { formatLive2DCompanionSignals } from './companion-signals';
 
 const MAX_CONTEXT_MESSAGES = 20;
 const MAX_CONTEXT_CHARACTERS = 24_000;
@@ -39,18 +40,21 @@ export const buildConversationSystemPrompt = (
   memoryContext = '',
   currentUserMessage = '',
   workGlossaryContext = '',
+  characterKnowledgeContext = '',
 ): string => {
-  const characterLore = formatCharacterLore(
-    profile.lore,
-    profile.lore
-      ? shouldIncludeCharacterLoreDetails(
-          currentUserMessage,
-          profile.lore.canonicalName,
-          profile.lore.sourceWork,
-        )
-      : false,
-    currentUserMessage,
-  );
+  const characterLore =
+    characterKnowledgeContext ||
+    formatCharacterLore(
+      profile.lore,
+      profile.lore
+        ? shouldIncludeCharacterLoreDetails(
+            currentUserMessage,
+            profile.lore.canonicalName,
+            profile.lore.sourceWork,
+          )
+        : false,
+      currentUserMessage,
+    );
   const actionInstruction = allowedActions.length
     ? `action 必须是 null 或以下动作之一：${allowedActions.join(', ')}。`
     : '当前模型没有可用动作，action 必须是 null。';
@@ -69,6 +73,8 @@ export const buildConversationSystemPrompt = (
     includePersona ? profile.personaPrompt : undefined,
     memoryContext ? '' : undefined,
     memoryContext || undefined,
+    '',
+    formatLive2DCompanionSignals(currentUserMessage),
     workGlossaryContext ? '' : undefined,
     workGlossaryContext || undefined,
     '',

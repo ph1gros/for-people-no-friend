@@ -86,14 +86,6 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.getCharacterProfile) as ReturnType<
       DeskpetApi['getCharacterProfile']
     >,
-  listCharacterProfiles: () =>
-    ipcRenderer.invoke(IPC_CHANNELS.listCharacterProfiles) as ReturnType<
-      DeskpetApi['listCharacterProfiles']
-    >,
-  activateCharacterProfile: (input: { id: string }) =>
-    ipcRenderer.invoke(IPC_CHANNELS.activateCharacterProfile, input) as ReturnType<
-      DeskpetApi['activateCharacterProfile']
-    >,
   setCharacterProfile: (profile: CharacterProfile) =>
     ipcRenderer.invoke(IPC_CHANNELS.setCharacterProfile, profile) as ReturnType<
       DeskpetApi['setCharacterProfile']

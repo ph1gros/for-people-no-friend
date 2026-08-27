@@ -65,7 +65,6 @@ let disposeChat: (() => void) | undefined;
 void initializeChat({
   root: app,
   getCharacter: () => character,
-  reloadCharacter: startCharacter,
 }).then((dispose) => {
   disposeChat = dispose;
 });

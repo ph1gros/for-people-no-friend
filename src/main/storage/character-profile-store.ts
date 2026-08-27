@@ -2,9 +2,8 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
-  M3_CHARACTER_PROFILE,
+  KALTSIT_CHARACTER_PROFILE,
   type CharacterProfile,
-  type CharacterProfileOption,
   validateCharacterProfile,
 } from '../../core/conversation/character-profile';
 
@@ -16,6 +15,11 @@ interface Live2DCharacterProfilesFile {
 
 const isMissingFile = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
+
+const isObsoleteBundledProfile = (profile: CharacterProfile): boolean =>
+  profile.id === 'm3' &&
+  profile.memoryNamespace === 'character-m3' &&
+  profile.lore?.canonicalName.toLowerCase() === 'mon3tr';
 
 export class CharacterProfileStore {
   private readonly sharedProfilePath: string;
@@ -33,24 +37,6 @@ export class CharacterProfileStore {
     const profile = collection.profiles.find(({ id }) => id === collection.activeProfileId);
     if (!profile) throw new Error('The active Live2D character profile is missing.');
     return { ...profile };
-  }
-
-  public async list(): Promise<CharacterProfileOption[]> {
-    const collection = await this.load();
-    return collection.profiles.map((profile) => ({
-      id: profile.id,
-      name: profile.name,
-      appearanceId: profile.live2dModelId,
-      active: profile.id === collection.activeProfileId,
-    }));
-  }
-
-  public async activate(id: string): Promise<void> {
-    const collection = await this.load();
-    if (!collection.profiles.some((profile) => profile.id === id)) {
-      throw new Error('Live2D character profile not found.');
-    }
-    await this.saveCollection({ ...collection, activeProfileId: id });
   }
 
   public async set(profile: CharacterProfile): Promise<void> {
@@ -73,12 +59,24 @@ export class CharacterProfileStore {
 
   private async loadUncached(): Promise<Live2DCharacterProfilesFile> {
     try {
-      return this.validateCollection(JSON.parse(await readFile(this.filePath, 'utf8')) as unknown);
+      const loaded = this.validateCollection(
+        JSON.parse(await readFile(this.filePath, 'utf8')) as unknown,
+      );
+      if (isObsoleteBundledProfile(loaded.profiles[0]!)) {
+        const migrated = {
+          version: 1 as const,
+          activeProfileId: KALTSIT_CHARACTER_PROFILE.id,
+          profiles: [KALTSIT_CHARACTER_PROFILE],
+        };
+        await this.saveCollection(migrated);
+        return migrated;
+      }
+      return loaded;
     } catch (error) {
       if (!isMissingFile(error)) throw error;
     }
 
-    let profile = M3_CHARACTER_PROFILE;
+    let profile = KALTSIT_CHARACTER_PROFILE;
     try {
       const shared = JSON.parse(await readFile(this.sharedProfilePath, 'utf8')) as unknown;
       if (typeof shared === 'object' && shared !== null && 'profiles' in shared) {
@@ -91,7 +89,10 @@ export class CharacterProfileStore {
                 value.live2dModelId === 'local-model',
             )
           : undefined;
-        if (candidate) profile = validateCharacterProfile(candidate);
+        if (candidate) {
+          const validated = validateCharacterProfile(candidate);
+          profile = isObsoleteBundledProfile(validated) ? KALTSIT_CHARACTER_PROFILE : validated;
+        }
       }
     } catch (error) {
       if (!isMissingFile(error)) throw error;

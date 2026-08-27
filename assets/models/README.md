@@ -1,22 +1,22 @@
 # 本地 Live2D 兼容模型
 
-M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。`main` 自带 M3 的公开资料卡，但不会把任意本地模型自动认作 M3：角色资料负责“她是谁”，本目录只负责“画面怎么动”。这里也不保存 Live2D Cubism Core、官方示例或第三方模型本体。
+M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。`main` 的完整公开示例是凯尔希：角色资料负责“她是谁”，本目录负责“画面怎么动”，两者使用相同角色归属但继续分开存放。这里不保存 Live2D Cubism Core 或 Live2D 官方示例；已取得单独授权的第三方模型会明确标注作者、来源和使用边界。
 
 ## 放置步骤
 
 1. 阅读并接受 [Live2D Free Material License](https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html)、[Sample Data Terms](https://www.live2d.com/eula/live2d-sample-model-terms_en.html) 和模型下载页的单独条件。
 2. 从 [Live2D Cubism SDK for Web](https://www.live2d.com/en/sdk/download/web/) 下载当前 Cubism 5 SDK，将 `Core/live2dcubismcore.min.js` 复制到 `assets/models/local/`。
-3. 如需验证兼容性，可从 [Live2D Sample Data Collection](https://www.live2d.com/en/learn/sample/) 下载 Simple model 或 Hiyori，将完整模型目录复制到 `assets/models/local/`。它们是借来检查机器是否转得动的，不会自动获得正式角色编制。
-4. 将本目录的 `model.example.json` 复制为 `assets/models/local/model.json`，按模型实际的文件名、Motion Group 和 Expression Id 修改映射。
+3. 要直接使用仓库所带的“工作凯尔希”示例，将 `kaltsit-work.example.json` 复制为 `assets/models/local/model.json`；也可以从 [Live2D Sample Data Collection](https://www.live2d.com/en/learn/sample/) 自行下载 Simple model 或 Hiyori 做兼容性验证。
+4. 使用其他模型时，将本目录的 `model.example.json` 复制为 `assets/models/local/model.json`，按模型实际的文件名、Motion Group 和 Expression Id 修改映射。
 5. 运行 `pnpm dev`。如果模型或 Core 缺失，桌宠窗口会显示错误和“重新加载”按钮；补齐文件后无需重启即可重试。
 
-`assets/models/local/` 已整体加入 `.gitignore`。不要强制添加该目录，也不要在其中保存 API Key、密钥或其他隐私数据。
+`assets/models/local/` 中只有获准收录的 `kaltsit-work/` 示例会进入 Git；用户自己的模型、`model.json` 和 Cubism Core 仍保持忽略。不要在其中保存 API Key、密钥或其他隐私数据。
 
 ## 当前本机参考模型
 
-当前开发机使用的凯尔希 Live2D 参考模型来自 [什行在要发布的“工作凯尔希”模型](https://www.bilibili.com/video/BV1Le411976u/)，作者主页为 [什行在要](https://space.bilibili.com/2695839)。原发布页允许免费下载并注明不要用于盈利，同时标有“未经作者授权，禁止转载”。因此仓库只记录作者、来源和本机放置方式，不重新分发模型文件；取得作者另行许可后，才可以调整这一边界。
+仓库收录的凯尔希 Live2D 参考模型来自 [什行在要发布的“工作凯尔希”模型](https://www.bilibili.com/video/BV1Le411976u/)，作者主页为 [什行在要](https://space.bilibili.com/2695839)。项目维护者已确认取得作者许可，可以在本项目中收录和分发，但只能用于非盈利用途。完整边界见模型目录内的 `ATTRIBUTION.md`。
 
-这套外观是凯尔希，不会在归属信息中改名为 M3。主线默认 M3 资料卡只是角色资料示例；用户可以在本机替换为拥有合适授权的 M3 Live2D 外观。
+这套外观和主线默认资料卡都属于凯尔希，共同构成 Live2D Version 的完整参考例子。以后增加其他角色时，仍需使用各自的模型、资料与记忆命名空间，不能只改显示名称。
 
 ## 兼容说明
 

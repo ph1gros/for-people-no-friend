@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "name": "凯尔希（工作服）",
+  "core": "live2dcubismcore.min.js",
+  "model": "kaltsit-work/凯尔希直播版1.model3.json",
+  "parameters": {},
+  "controls": {
+    "states": {
+      "idle": { "group": "Idle", "index": 0 },
+      "thinking": { "group": "Idle", "index": 0 },
+      "talking": { "group": "Idle", "index": 0 }
+    },
+    "actions": {
+      "earWiggle": { "group": "EarWiggle", "index": 0 },
+      "annoyed": { "group": "Annoyed", "index": 0 },
+      "surprised": { "group": "Surprised", "index": 0 },
+      "sigh": { "group": "Sigh", "index": 0 },
+      "wish": { "group": "Wish", "index": 0 },
+      "question": { "group": "Question", "index": 0 },
+      "coldSweat": { "group": "ColdSweat", "index": 0 }
+    },
+    "emotions": {}
+  }
+}

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  parseCharacterProfileIdInput,
   parseConversationConfiguration,
   parseConversationEvent,
   parseStartConversationInput,
@@ -52,11 +51,5 @@ describe('conversation IPC validation', () => {
       type: 'text-delta',
       text: 'x',
     });
-  });
-
-  it('accepts only bounded character profile identifiers', () => {
-    expect(parseCharacterProfileIdInput({ id: 'irena' })).toEqual({ id: 'irena' });
-    expect(() => parseCharacterProfileIdInput({ id: '../irena' })).toThrow();
-    expect(() => parseCharacterProfileIdInput({ id: '伊雷娜' })).toThrow();
   });
 });

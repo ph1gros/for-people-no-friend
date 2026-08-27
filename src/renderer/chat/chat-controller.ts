@@ -25,7 +25,6 @@ import type { LoadedCharacter } from '../live2d/character-runtime';
 interface ChatControllerOptions {
   root: HTMLElement;
   getCharacter(): LoadedCharacter | undefined;
-  reloadCharacter(): Promise<boolean>;
 }
 
 const errorMessages: Record<PublicLlmError['code'], string> = {
@@ -82,7 +81,6 @@ const createRequestId = (prefix: string): string =>
 export const initializeChat = async ({
   root,
   getCharacter,
-  reloadCharacter,
 }: ChatControllerOptions): Promise<() => void> => {
   const api = window.deskpet;
   const shell = document.createElement('section');
@@ -257,25 +255,6 @@ export const initializeChat = async ({
   scaleLabel.textContent = '桌宠大小';
   scaleField.append(scaleLabel, scaleControl);
 
-  const characterProfileSelect = document.createElement('select');
-  characterProfileSelect.setAttribute('aria-label', '当前角色');
-  const switchCharacterButton = createButton('切换角色', 'secondary-button');
-  const characterProfileControl = document.createElement('div');
-  characterProfileControl.className = 'settings-inline-control';
-  characterProfileControl.append(characterProfileSelect, switchCharacterButton);
-  const characterProfileField = document.createElement('label');
-  characterProfileField.className = 'settings-field';
-  const characterProfileLabel = document.createElement('span');
-  characterProfileLabel.textContent = '当前角色';
-  const characterProfileHint = document.createElement('small');
-  characterProfileHint.className = 'settings-hint';
-  characterProfileHint.textContent = '角色卡、对话历史、摘要、长期记忆和表现资源彼此隔离。';
-  characterProfileField.append(
-    characterProfileLabel,
-    characterProfileControl,
-    characterProfileHint,
-  );
-
   const providerSelect = document.createElement('select');
   for (const [value, label] of [
     ['anthropic', 'Anthropic Claude'],
@@ -434,7 +413,6 @@ export const initializeChat = async ({
   settingsPanel.append(
     settingsHeader,
     scaleField,
-    characterProfileField,
     createField('提供商', providerSelect),
     createField('模型名称', modelInput),
     baseUrlField,
@@ -1266,8 +1244,8 @@ export const initializeChat = async ({
       return;
     }
     glossaryStatus.textContent = status.lastSynced
-      ? `${status.workName}社区词库已缓存，共 ${status.entryCount} 条；上次同步：${new Date(status.lastSynced).toLocaleString()}。`
-      : `${status.workName}社区词库包含 ${status.entryCount} 条本地校对词条；可主动联网同步来源状态。`;
+      ? `${status.workName}社区词库使用已同步缓存，共 ${status.entryCount} 条；上次同步：${new Date(status.lastSynced).toLocaleString()}。`
+      : `${status.workName}社区词库使用随程序提供的校对版本，共 ${status.entryCount} 条；可主动联网核对并生成缓存。`;
     const sourceLabels = status.sources.map((source) => `${source.siteName} · ${source.title}`);
     glossarySources.open = false;
     glossarySources.hidden = sourceLabels.length === 0;
@@ -1332,29 +1310,14 @@ export const initializeChat = async ({
       settingsStatus.textContent = '桌面 API 不可用。';
       return;
     }
-    const [
-      providerConfiguration,
-      conversationConfiguration,
-      storedProfile,
-      profileOptions,
-      windowScale,
-    ] = await Promise.all([
-      api.getProviderConfiguration(),
-      api.getConversationConfiguration(),
-      api.getCharacterProfile(),
-      api.listCharacterProfiles(),
-      api.getWindowScale(),
-    ]);
+    const [providerConfiguration, conversationConfiguration, storedProfile, windowScale] =
+      await Promise.all([
+        api.getProviderConfiguration(),
+        api.getConversationConfiguration(),
+        api.getCharacterProfile(),
+        api.getWindowScale(),
+      ]);
     profile = storedProfile;
-    characterProfileSelect.replaceChildren();
-    for (const optionValue of profileOptions) {
-      const option = document.createElement('option');
-      option.value = optionValue.id;
-      option.textContent = optionValue.name;
-      option.selected = optionValue.active;
-      characterProfileSelect.append(option);
-    }
-    characterProfileField.hidden = profileOptions.length <= 1;
     providerSelect.value = conversationConfiguration.selection?.providerId ?? 'anthropic';
     updateProviderVisibility();
     modelInput.value = conversationConfiguration.selection?.modelId ?? '';
@@ -1556,45 +1519,6 @@ export const initializeChat = async ({
   providerSelect.addEventListener('change', () => {
     updateProviderVisibility();
     void updateSecretStatus();
-  });
-  switchCharacterButton.addEventListener('click', () => {
-    void (async () => {
-      if (!api || !profile || characterProfileSelect.value === profile.id) return;
-      if (
-        !(await confirmAction({
-          title: '切换角色',
-          message: `切换到“${characterProfileSelect.selectedOptions[0]?.textContent ?? '所选角色'}”？`,
-          details: '当前表单里尚未保存的修改会丢失；不同角色不会共享历史、摘要或长期记忆。',
-          confirmLabel: '切换',
-        }))
-      ) {
-        characterProfileSelect.value = profile.id;
-        return;
-      }
-      switchCharacterButton.disabled = true;
-      settingsStatus.textContent = '正在切换角色…';
-      const result = await api.activateCharacterProfile({ id: characterProfileSelect.value });
-      if (!result.ok) {
-        switchCharacterButton.disabled = false;
-        characterProfileSelect.value = profile.id;
-        settingsStatus.textContent = result.error.message;
-        return;
-      }
-      const loaded = await reloadCharacter();
-      if (!loaded) {
-        switchCharacterButton.disabled = false;
-        settingsStatus.textContent = '角色已经切换，但表现资源加载失败；请使用画面中的重新加载。';
-        return;
-      }
-      messages = await api.getConversationHistory();
-      activeReply = '';
-      subtitle.textContent = '';
-      subtitle.hidden = true;
-      await loadSettings();
-      renderHistory();
-      switchCharacterButton.disabled = false;
-      settingsStatus.textContent = '角色已切换。';
-    })();
   });
   scaleInput.addEventListener('input', () => displayScale(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {

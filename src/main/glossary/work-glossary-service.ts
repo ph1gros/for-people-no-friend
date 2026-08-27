@@ -41,10 +41,14 @@ export class WorkGlossaryService {
   }
 
   public async findMatches(sourceWork: string, message: string): Promise<WorkGlossaryEntry[]> {
-    const glossary = this.resolve(sourceWork);
-    if (!glossary) return [];
-    const cached = await this.store.get(glossary.id);
-    return findRelevantGlossaryEntries(message, cached?.entries ?? glossary.entries);
+    try {
+      const glossary = this.resolve(sourceWork);
+      if (!glossary) return [];
+      const cached = await this.store.get(glossary.id);
+      return findRelevantGlossaryEntries(message, cached?.entries ?? glossary.entries);
+    } catch {
+      return [];
+    }
   }
 
   public async getStatus(sourceWork: string): Promise<WorkGlossaryStatus> {
@@ -56,6 +60,7 @@ export class WorkGlossaryService {
       supported: true,
       workName: glossary.displayName,
       entryCount: entries.length,
+      cacheOrigin: cached ? 'synced' : 'curated',
       ...(cached ? { lastSynced: cached.syncedAt } : {}),
       sources: uniqueSources(entries),
     };
@@ -64,17 +69,30 @@ export class WorkGlossaryService {
   public async sync(sourceWork: string): Promise<WorkGlossarySyncResult> {
     const glossary = this.resolve(sourceWork);
     if (!glossary) return { ok: false, message: '当前作品还没有可同步的社区词库。' };
-    const handbookEntries =
-      glossary.id === 'arknights' && this.handbookApiUrl
-        ? await this.crawlHandbook().catch(() => [])
-        : [];
+    let handbookEntries: WorkGlossaryEntry[] = [];
+    let handbookFailed = false;
+    if (glossary.id === 'arknights' && this.handbookApiUrl) {
+      try {
+        handbookEntries = await this.crawlHandbook();
+      } catch {
+        handbookFailed = true;
+      }
+    }
     const verifiedEntries: WorkGlossaryEntry[] = [];
+    let checkedSources = 0;
+    let verifiedSources = 0;
+    const failedSourceTitles: string[] = [];
     for (const entry of glossary.entries) {
       const checks = await Promise.all(
         entry.sources.map(async (source) => ({
           source,
           verified: await this.verifySource(source, entry.evidence),
         })),
+      );
+      checkedSources += checks.length;
+      verifiedSources += checks.filter((check) => check.verified).length;
+      failedSourceTitles.push(
+        ...checks.filter((check) => !check.verified).map((check) => check.source.title),
       );
       const sources = checks.filter((check) => check.verified).map((check) => check.source);
       if (sources.length === 0) continue;
@@ -91,8 +109,20 @@ export class WorkGlossaryService {
     const mergedEntries = new Map<string, WorkGlossaryEntry>();
     for (const entry of handbookEntries) mergedEntries.set(entry.term.normalize('NFKC'), entry);
     for (const entry of verifiedEntries) mergedEntries.set(entry.term.normalize('NFKC'), entry);
+    const report = {
+      checkedSources,
+      verifiedSources,
+      failedSourceTitles: [...new Set(failedSourceTitles)].slice(0, 20),
+      handbookEntries: handbookEntries.length,
+      handbookFailed,
+      cachedEntries: mergedEntries.size,
+    };
     if (mergedEntries.size === 0) {
-      return { ok: false, message: '联网来源暂时无法完成交叉验证，已保留原有本地词库。' };
+      return {
+        ok: false,
+        report,
+        message: `同步未写入缓存：检查 ${checkedSources} 个来源，确认 ${verifiedSources} 个${handbookFailed ? '；社区手册接口也暂时不可用' : ''}。原有本地词库保持不变。`,
+      };
     }
     await this.store.set(glossary.id, [...mergedEntries.values()]);
     const status = await this.getStatus(sourceWork);
@@ -100,9 +130,8 @@ export class WorkGlossaryService {
     return {
       ok: true,
       status,
-      message: hasLowConfidence
-        ? `已遍历并缓存 ${handbookEntries.length} 个粥批手册条目；单一来源词条会按低置信度处理。`
-        : '作品社区词库已通过多来源核对并缓存到本地。',
+      report,
+      message: `同步完成：检查 ${checkedSources} 个来源，确认 ${verifiedSources} 个，社区手册收录 ${handbookEntries.length} 条，共缓存 ${mergedEntries.size} 条${hasLowConfidence ? '；单一来源条目按低置信度处理' : ''}${handbookFailed ? '；社区手册本次失败，已使用其他已确认来源' : ''}。`,
     };
   }
 

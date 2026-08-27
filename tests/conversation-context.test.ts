@@ -5,7 +5,7 @@ import {
   selectRecentMessages,
 } from '../src/core/conversation/context-assembler';
 import { DEFAULT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
-import { M3_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
+import { KALTSIT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
 
 describe('conversation context assembly', () => {
   it('keeps only the newest bounded messages in chronological order', () => {
@@ -38,7 +38,20 @@ describe('conversation context assembly', () => {
     expect(prompt).toContain(DEFAULT_CHARACTER_PROFILE.personaPrompt);
     expect(prompt).toContain('"emotion"');
     expect(prompt).toContain('wave');
-    expect(prompt).not.toContain('长期记忆');
+    expect(prompt).not.toContain('跨会话摘要');
+  });
+
+  it('adds temporary emotional guidance without turning it into relationship memory', () => {
+    const prompt = buildConversationSystemPrompt(
+      KALTSIT_CHARACTER_PROFILE,
+      ['angry'],
+      '',
+      '你就是个大傻逼',
+    );
+    expect(prompt).toContain('本轮回应策略');
+    expect(prompt).toContain('明确设限');
+    expect(prompt).toContain('不得因单轮情绪、辱骂或夸奖突然跳变');
+    expect(prompt).toContain('不写入长期人格或用户画像');
   });
 
   it('uses locally entered character identity silently and only adds long lore when relevant', () => {
@@ -81,12 +94,12 @@ describe('conversation context assembly', () => {
     const prompt = buildConversationSystemPrompt(
       {
         ...DEFAULT_CHARACTER_PROFILE,
-        name: 'Mon3tr',
+        name: '测试角色',
         bio: '凯尔希的重要同伴。',
         personaPrompt: '称呼用户为博士。',
         lore: {
-          canonicalName: 'Mon3tr',
-          aliases: ['M3'],
+          canonicalName: '测试角色',
+          aliases: ['测试别名'],
           sourceWork: '明日方舟',
           identity: '由凯尔希召唤的神秘存在',
           personality: '警觉而克制',
@@ -108,10 +121,10 @@ describe('conversation context assembly', () => {
     const prompt = buildConversationSystemPrompt(
       {
         ...DEFAULT_CHARACTER_PROFILE,
-        name: 'Mon3tr',
+        name: '测试角色',
         bio: sharedIntroduction,
         lore: {
-          canonicalName: 'Mon3tr',
+          canonicalName: '测试角色',
           aliases: [],
           sourceWork: '明日方舟',
           identity: sharedIntroduction,
@@ -131,7 +144,7 @@ describe('conversation context assembly', () => {
 
   it('selects a few situation-matched roleplay examples instead of injecting the whole card', () => {
     const prompt = buildConversationSystemPrompt(
-      M3_CHARACTER_PROFILE,
+      KALTSIT_CHARACTER_PROFILE,
       [],
       '',
       '我今天失败了，有点难过，能陪我聊聊吗？',
@@ -139,7 +152,7 @@ describe('conversation context assembly', () => {
 
     expect(prompt).toContain('当前对话可参考的角色反应');
     expect(prompt).toContain('用户情绪低落');
-    expect(prompt).toContain('我不会催你振作');
+    expect(prompt).toContain('你不必现在证明什么');
     expect(prompt).not.toContain('可以做，但风险不值得忽略');
     expect(prompt.match(/^- 场景：/gmu)).toHaveLength(4);
   });

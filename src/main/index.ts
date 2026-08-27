@@ -8,6 +8,7 @@ import { ModelRuntime } from './llm/model-runtime';
 import { MemoryService } from './memory/memory-service';
 import { SecretStore } from './security/secret-store';
 import { CharacterProfileStore } from './storage/character-profile-store';
+import { CharacterKnowledgeStore } from './storage/character-knowledge-store';
 import { ConversationStore } from './storage/conversation-store';
 import { DeskpetDatabase } from './storage/deskpet-database';
 import { ProviderConfigStore } from './storage/provider-config-store';
@@ -54,6 +55,7 @@ if (!hasSingleInstanceLock) {
       new ConversationStore(database),
       memoryService,
       workGlossary,
+      new CharacterKnowledgeStore(database),
     );
     registerIpcHandlers(
       windowManager,

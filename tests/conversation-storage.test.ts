@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   DEFAULT_CHARACTER_PROFILE,
-  M3_CHARACTER_PROFILE,
+  KALTSIT_CHARACTER_PROFILE,
 } from '../src/core/conversation/character-profile';
 import { CharacterProfileStore } from '../src/main/storage/character-profile-store';
 import { ConversationStore } from '../src/main/storage/conversation-store';
@@ -24,10 +24,10 @@ describe('M4 local conversation storage', () => {
   it('loads the default profile and persists validated edits', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-test-'));
     const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toEqual(M3_CHARACTER_PROFILE);
+    expect(await store.get()).toEqual(KALTSIT_CHARACTER_PROFILE);
 
     await store.set({
-      ...M3_CHARACTER_PROFILE,
+      ...KALTSIT_CHARACTER_PROFILE,
       name: '测试角色',
       personaPrompt: '保持冷静。',
       lore: {
@@ -49,6 +49,41 @@ describe('M4 local conversation storage', () => {
     });
   });
 
+  it('migrates the obsolete bundled profile to the complete Kaltsit example', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-obsolete-migration-'));
+    await writeFile(
+      path.join(directory, 'character-profiles.live2d.v1.json'),
+      JSON.stringify({
+        version: 1,
+        activeProfileId: 'm3',
+        profiles: [
+          {
+            ...DEFAULT_CHARACTER_PROFILE,
+            id: 'm3',
+            name: '旧角色',
+            memoryNamespace: 'character-m3',
+            lore: {
+              canonicalName: 'Mon3tr',
+              aliases: [],
+              sourceWork: '旧资料',
+              identity: '待迁移',
+              personality: '',
+              background: '',
+              relationships: [],
+              speechStyle: '',
+              sources: [],
+            },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const store = new CharacterProfileStore(directory);
+
+    expect(await store.get()).toEqual(KALTSIT_CHARACTER_PROFILE);
+  });
+
   it('keeps the Live2D profile separate from the GIF Version profile file', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-separated-'));
     await writeFile(
@@ -58,7 +93,7 @@ describe('M4 local conversation storage', () => {
         activeProfileId: 'irena',
         profiles: [
           { ...DEFAULT_CHARACTER_PROFILE, name: 'Live2D 角色' },
-          { ...M3_CHARACTER_PROFILE, id: 'irena', live2dModelId: 'irena-webp-v1' },
+          { ...KALTSIT_CHARACTER_PROFILE, id: 'irena', live2dModelId: 'irena-webp-v1' },
         ],
       }),
       'utf8',
@@ -73,12 +108,12 @@ describe('M4 local conversation storage', () => {
     expect(shared.activeProfileId).toBe('irena');
   });
 
-  it('does not expose or activate the GIF Version profile on main', async () => {
+  it('has no profile switching surface on main', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
     const store = new CharacterProfileStore(directory);
-    expect(await store.list()).toEqual([expect.objectContaining({ id: 'm3', active: true })]);
-
-    await expect(store.activate('irena')).rejects.toThrow('not found');
+    expect(await store.get()).toMatchObject({ id: 'kaltsit', live2dModelId: 'local-model' });
+    expect('list' in store).toBe(false);
+    expect('activate' in store).toBe(false);
   });
 
   it('serializes concurrent appends and can clear the session', async () => {

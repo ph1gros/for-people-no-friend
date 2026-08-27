@@ -1,7 +1,4 @@
-import type {
-  CharacterProfile,
-  CharacterProfileOption,
-} from '../core/conversation/character-profile';
+import type { CharacterProfile } from '../core/conversation/character-profile';
 import type {
   BuildCharacterDraftInput,
   CancelCharacterResearchInput,
@@ -62,8 +59,6 @@ export const IPC_CHANNELS = {
   getConversationConfiguration: 'conversation:getConfiguration',
   setConversationConfiguration: 'conversation:setConfiguration',
   getCharacterProfile: 'conversation:getCharacterProfile',
-  listCharacterProfiles: 'conversation:listCharacterProfiles',
-  activateCharacterProfile: 'conversation:activateCharacterProfile',
   setCharacterProfile: 'conversation:setCharacterProfile',
   getConversationHistory: 'conversation:getHistory',
   clearConversationHistory: 'conversation:clearHistory',
@@ -115,8 +110,6 @@ export interface DeskpetApi {
     configuration: ConversationConfiguration,
   ): Promise<ModelOperationResult>;
   getCharacterProfile(): Promise<CharacterProfile>;
-  listCharacterProfiles(): Promise<CharacterProfileOption[]>;
-  activateCharacterProfile(input: { id: string }): Promise<ModelOperationResult>;
   setCharacterProfile(profile: CharacterProfile): Promise<ModelOperationResult>;
   getConversationHistory(): Promise<ConversationMessage[]>;
   clearConversationHistory(): Promise<ModelOperationResult>;

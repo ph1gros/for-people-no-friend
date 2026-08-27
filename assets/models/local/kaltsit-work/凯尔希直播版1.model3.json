@@ -1,0 +1,28 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "凯尔希直播版1.moc3",
+    "Textures": ["凯尔希直播版1.4096/texture_00.png"],
+    "Physics": "凯尔希直播版1.physics3.json",
+    "DisplayInfo": "凯尔希直播版1.cdi3.json",
+    "Motions": {
+      "Idle": [{ "File": "idle.motion3.json" }],
+      "EarWiggle": [{ "File": "待机动耳朵.motion3.json" }],
+      "Annoyed": [{ "File": "烦躁.motion3.json" }],
+      "MinuteHand": [{ "File": "分针旋转.motion3.json" }],
+      "Surprised": [{ "File": "惊讶.motion3.json" }],
+      "Sigh": [{ "File": "叹气.motion3.json" }],
+      "Wish": [{ "File": "我的愿望.motion3.json" }],
+      "Question": [{ "File": "疑问.motion3.json" }],
+      "ColdSweat": [{ "File": "lenghan.motion3.json" }]
+    }
+  },
+  "Groups": [
+    { "Target": "Parameter", "Name": "LipSync", "Ids": [] },
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": ["ParamEyeLOpen", "ParamEyeROpen"]
+    }
+  ]
+}

@@ -8,7 +8,9 @@
 
 A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
 
-当前 `main` 是 **Live2D Version**：M3（Mon3tr）作为公开示例角色，附带来源可查的角色资料、情境表达参考和《明日方舟》作品社区词库。项目继续支持 Live2D、文字对话、安全的模型提供商配置、可信长期记忆、侧拉对话 HUD 与作品社区词库；动态 WebP 伊雷娜则在独立的 `gif-version` 分支发展。
+当前 `main` 是 **Live2D Version**：凯尔希作为完整公开示例，模型、角色资料、情境表达参考和《明日方舟》作品社区词库保持同一角色归属。项目继续支持 Live2D、文字对话、安全的模型提供商配置、可信长期记忆、侧拉对话 HUD 与作品社区词库；动态 WebP 伊雷娜则作为另一套完整示例，在独立的 `gif-version` 分支发展。
+
+两条路线的产品重心并不相同：WebP Version 面向本地小模型和快速角色扮演，尽量用较短的角色卡、较小的上下文预算和少量步骤完成一个角色；Live2D Version 面向能力更强的大模型与长期陪伴，更重视可信记忆、关系连续性、情绪理解，以及回复和表情动作的一致。二者都能生成角色，但不会为了“功能看起来一样多”而背上同一套运行成本。
 
 ## 1.0.0 已完成能力
 
@@ -83,19 +85,27 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1a～V
 - [V1.1a 可信长期记忆实现](docs/V1_1A_IMPLEMENTATION.md)
 - [V1.1b 记忆整理实现](docs/V1_1B_IMPLEMENTATION.md)
 - [公开示例角色包](docs/EXAMPLE_CHARACTER_PACK.md)
+- [V1.2 角色资料库与检索边界](docs/V1_2_CHARACTER_KNOWLEDGE_DESIGN.md)
+- [V1.2 实现与自动验收](docs/V1_2_IMPLEMENTATION.md)
+- [V1.2 可选资料索引评估](docs/V1_2_OPTIONAL_INDEX_EVALUATION.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
 ## 角色与表现资源
 
-主线新安装默认使用 M3 的公开资料卡；Live2D 外观仍由用户在本机放置，角色资料和模型文件不是一回事。Simple model、Hiyori 或其他本地模型都只是兼容性测试材料，不会因为文件名被当成 M3；放置和许可说明见 [本地 Live2D 兼容模型](assets/models/README.md)。
+主线新安装默认使用凯尔希资料卡，并提供已获作者非盈利授权的“工作凯尔希”Live2D 运行素材。它们共同组成主线完整示例；角色资料和模型文件仍保持独立命名空间，方便以后替换或增加角色。启用方法、作者来源和许可边界见 [本地 Live2D 兼容模型](assets/models/README.md)。
 
-主线与支线共享角色资料学习、长期记忆和安全边界，但不在运行时互相切换：`main` 专注 Live2D 的完整表现能力，`gif-version` 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
+主线与支线共享角色资料学习、长期记忆和安全边界，但不是同一个程序里的两套皮肤，也不提供凯尔希与伊蕾娜的运行时互切：`main` 专注 Live2D 的完整表现能力，`gif-version` 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
+
+两个版本都保留“联网查找 → 生成本地角色草稿 → 用户检查并保存”的能力。生成的是可追溯的称呼、身份背景、关系、说话方式和情境示例；Live2D 与 WebP 的表现素材仍分别使用各自版本的清单与授权检查，不能把另一条分支的示例角色直接塞进来。
+
+- **WebP Version**：本地 LLM 优先，生成一张紧凑角色卡即可开始；关键词资料检索和失败回退保持简单，长期记忆可以使用，但不作为首次上手的门槛。
+- **Live2D Version**：大型 LLM 优先，沿着 `neuro-like` 的长期陪伴方向发展，重视稳定人格、可信长期记忆、持续情绪、关系连续性和 Live2D 表现联动；任一可选模块失败时仍须回到普通文字聊天和基础动作。
 
 ## 安全约定
 
 - 私钥、密码、API Key、访问令牌和 `.env` 不提交到 Git。
-- Live2D 第三方模型文件默认不提交。
+- Live2D 第三方模型文件默认不提交；明确取得再分发许可的示例须附作者、来源和使用边界。
 - 对话数据默认只保存在本机。
 - 示例角色包只包含公开资料、来源和公开作品词库，不包含用户对话、长期记忆、摘要或本机模型配置。
 - 第一版不请求截图、全局键盘监听、桌面控制或代码执行权限。
