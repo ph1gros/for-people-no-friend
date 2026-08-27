@@ -6,9 +6,9 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-A local-first Windows AI character companion for days when socializing feels like a side quest. It lives on your desktop, chats, reacts, and keeps its long-term memory local.
+当前 `gif-version` 是 **GIF Version**，以伊雷娜作为完整动态 WebP 示例；凯尔希 Live2D 在 `main` 独立发展。
 
-当前分支是 **GIF Version**：伊雷娜作为公开示例角色，随仓库提供经授权的动态 WebP 表情目录、来源可查的角色资料和《魔女之旅》作品词库。它与 Live2D 主线共享可信长期记忆、文字对话、安全模型配置和侧拉 HUD，但两种表现层不在界面中互相切换。当前不提供安装包、签名或可执行发布产物。
+WebP Version 侧重本地小模型和快速角色扮演，同时保留可信长期记忆；使用云端 API 时可以按需加入更丰富的相关资料。Live2D Version 进一步强化长期陪伴、情绪与关系连续性。两个版本都支持生成角色。
 
 ## 1.0.0 已完成能力
 
@@ -60,8 +60,6 @@ A local-first Windows AI character companion for days when socializing feels lik
 ## 开发参考原则
 
 吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[另一只 BongoCat](https://github.com/bongocat-pet/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
-
-能带走的是思路、经验和测试方法，不能顺手打包带走的是许可证不兼容的源码。看懂以后再核对官方文档和本项目的安全边界，用自己的代码重新实现并测试；也不因为别人家功能多，就把语音、Agent、MCP 和桌面控制一锅端进来。
 
 ## 当前开发状态
 
