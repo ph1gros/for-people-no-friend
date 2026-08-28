@@ -60,17 +60,31 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - V1.6：本地/远端 ASR、TTS、VAD、打断、字幕与角色口型/说话动画
 - 后续：更多渲染路线、只读视觉与受控 Agent 能力
 
-## 开发参考原则
+## 开发参考
 
-吸收前人精华，顺便绕开前人踩过的坑。每个里程碑动手前，先看看 [my-neuro](https://github.com/morettt/my-neuro)、[Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)、[BongoCat](https://github.com/ayangweb/BongoCat)、[ZcChat2](https://github.com/Zao-chen/ZcChat2) 和 [EchoBot](https://github.com/KdaiP/EchoBot) 已经试过什么、哪里好用、哪里会炸。
+这些项目主要用于参考已经验证过的产品思路、模块边界和交互方式；For People No Friend 仍按自己的 Electron 安全边界和数据结构实现，不代表直接使用了对方代码。
+
+| 项目                                                                        | 参考的思路与用途                                             |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| [AIRI](https://github.com/moeru-ai/airi)                                    | 上下文组织、生成生命周期、角色包、Live2D 表现与模型能力分层  |
+| [my-neuro](https://github.com/morettt/my-neuro)                             | 长期陪伴、核心记忆、画像候选、时间感、混合检索与主动对话     |
+| [SillyTavern](https://github.com/SillyTavern/SillyTavern)                   | Character Card、World Info、示例对话、摘要与上下文预算       |
+| [RoleLLM](https://aclanthology.org/2024.findings-acl.878/)                  | 角色资料、情境知识、表达风格分层与固定角色评测               |
+| [Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)  | 连续情绪、动作分层、模型校准与表现失败回退                   |
+| [BongoCat](https://github.com/ayangweb/BongoCat)                            | 透明桌宠交互、输入事件到动作的映射、自定义模型与离线运行     |
+| [EchoBot](https://github.com/KdaiP/EchoBot)                                 | Roleplay、Decision、Agent 分层、会话管理、模型接入与语音边界 |
+| [ZcChat2](https://github.com/Zao-chen/ZcChat2)                              | 表情、动作和粒子组合、角色资产组织、流式文本与语音演出       |
+| [Live2D Cubism Web Framework](https://github.com/Live2D/CubismWebFramework) | Cubism 模型加载、Motion、Expression、参数语义与资源生命周期  |
+
+更具体的采用与拒绝范围见 [开发路线中的开发参考](docs/POST_V1_ROADMAP.md#开发参考)。
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环。V1.3 继续完善 Live2D 表现和短期情绪连续性，加入 DeepSeek，并修正角色搜索与主动记忆更新。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环；V1.3 完成 Live2D 表现、短期情绪连续性和模型提供商增强；V1.4 完成角色包、角色库、上下文角色扮演、混合记忆、可选外部索引和本地/远端模型协作。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[V1.3.0 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.3.0) 提供 Windows x64 免安装包。[V1.2.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.2.0) 仍保留双版本旧包；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.4.0 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4.0) 提供 Windows x64 免安装包。[V1.3.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.3.0) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
