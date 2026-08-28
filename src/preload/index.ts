@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import type { CharacterProfile } from '../core/conversation/character-profile';
 import type {
+  CharacterIdInput,
+  ConfirmCharacterPackageImportInput,
+} from '../shared/character-package-ipc';
+import type {
   BuildCharacterDraftInput,
   CancelCharacterResearchInput,
   SearchCharactersInput,
@@ -131,6 +135,32 @@ const deskpetApi: DeskpetApi = Object.freeze({
   cancelCharacterResearch: (input: CancelCharacterResearchInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.cancelCharacterResearch, input) as ReturnType<
       DeskpetApi['cancelCharacterResearch']
+    >,
+  listCharacters: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.listCharacters) as ReturnType<DeskpetApi['listCharacters']>,
+  previewCharacterPackage: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewCharacterPackage) as ReturnType<
+      DeskpetApi['previewCharacterPackage']
+    >,
+  confirmCharacterPackageImport: (input: ConfirmCharacterPackageImportInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.confirmCharacterPackageImport, input) as ReturnType<
+      DeskpetApi['confirmCharacterPackageImport']
+    >,
+  exportActiveCharacterPackage: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.exportActiveCharacterPackage) as ReturnType<
+      DeskpetApi['exportActiveCharacterPackage']
+    >,
+  activateCharacter: (input: CharacterIdInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.activateCharacter, input) as ReturnType<
+      DeskpetApi['activateCharacter']
+    >,
+  removeCharacter: (input: CharacterIdInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.removeCharacter, input) as ReturnType<
+      DeskpetApi['removeCharacter']
+    >,
+  getActiveCharacterModelManifest: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getActiveCharacterModelManifest) as ReturnType<
+      DeskpetApi['getActiveCharacterModelManifest']
     >,
   getWorkGlossaryStatus: (input: WorkGlossaryInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.getWorkGlossaryStatus, input) as ReturnType<

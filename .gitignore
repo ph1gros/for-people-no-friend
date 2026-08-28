@@ -22,6 +22,7 @@ logs/
 data/
 conversations/
 screenshots/
+*.fpnf-character.zip
 
 # Third-party and local Live2D assets
 assets/models/local/*

@@ -137,12 +137,12 @@ describe('M4 local conversation storage', () => {
     expect(shared.activeProfileId).toBe('irena');
   });
 
-  it('has no profile switching surface on main', async () => {
+  it('exposes the V1.4 profile library surface on main', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-switch-'));
     const store = new CharacterProfileStore(directory);
     expect(await store.get()).toMatchObject({ id: 'kaltsit', live2dModelId: 'local-model' });
-    expect('list' in store).toBe(false);
-    expect('activate' in store).toBe(false);
+    expect('list' in store).toBe(true);
+    expect('activate' in store).toBe(true);
   });
 
   it('serializes concurrent appends and can clear the session', async () => {

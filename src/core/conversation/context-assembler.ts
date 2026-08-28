@@ -3,6 +3,7 @@ import {
   formatCharacterLore,
   shouldIncludeCharacterLoreDetails,
 } from '../character/character-lore';
+import type { CharacterRoleplayExample } from '../character/character-lore';
 import { DEFAULT_CHARACTER_PROFILE, type CharacterProfile } from './character-profile';
 import { formatLive2DCompanionSignals } from './companion-signals';
 import type { RecentCompanionRecord } from './companion-signals';
@@ -44,8 +45,9 @@ export const buildConversationSystemPrompt = (
   workGlossaryContext = '',
   characterKnowledgeContext = '',
   recentCompanionRecords: readonly RecentCompanionRecord[] = [],
+  selectedRoleplayExamples?: readonly CharacterRoleplayExample[],
 ): string => {
-  const characterLore =
+  const baseCharacterLore =
     characterKnowledgeContext ||
     formatCharacterLore(
       profile.lore,
@@ -57,7 +59,18 @@ export const buildConversationSystemPrompt = (
           )
         : false,
       currentUserMessage,
+      selectedRoleplayExamples ? [] : undefined,
     );
+  const contextualExamples = selectedRoleplayExamples?.length
+    ? [
+        '当前情境命中的角色反应示例（结合最近上下文选择；学习行为与语气，不要逐字复读）：',
+        ...selectedRoleplayExamples.map(
+          (example) =>
+            `- 场景：${example.scene}；情绪：${example.emotion}；触发：${example.trigger}；态度：${example.attitude}；示例：${example.line}`,
+        ),
+      ].join('\n')
+    : '';
+  const characterLore = [baseCharacterLore, contextualExamples].filter(Boolean).join('\n\n');
   const actionInstruction = allowedActions.length
     ? `action 必须是 null 或以下动作之一：${allowedActions.join(', ')}。`
     : '当前模型没有可用动作，action 必须是 null。';

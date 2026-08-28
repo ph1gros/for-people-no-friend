@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  DEFAULT_VISIBILITY_SHORTCUT,
   parseDesktopIntegrationSettings,
   type DesktopIntegrationSettings,
 } from '../../shared/desktop-integration-ipc';
@@ -9,6 +10,7 @@ import {
 const DEFAULT_SETTINGS: DesktopIntegrationSettings = {
   globalShortcutsEnabled: false,
   mediaControlEnabled: false,
+  visibilityShortcut: DEFAULT_VISIBILITY_SHORTCUT,
 };
 
 export class DesktopIntegrationStore {
@@ -25,11 +27,19 @@ export class DesktopIntegrationStore {
         !value ||
         typeof value !== 'object' ||
         Array.isArray(value) ||
-        (value as Record<string, unknown>).version !== 1
+        ((value as Record<string, unknown>).version !== 1 &&
+          (value as Record<string, unknown>).version !== 2)
       ) {
         throw new Error('The desktop integration file is invalid.');
       }
-      return parseDesktopIntegrationSettings((value as Record<string, unknown>).settings);
+      const record = value as Record<string, unknown>;
+      if (record.version === 1) {
+        return parseDesktopIntegrationSettings({
+          ...(record.settings as Record<string, unknown>),
+          visibilityShortcut: DEFAULT_VISIBILITY_SHORTCUT,
+        });
+      }
+      return parseDesktopIntegrationSettings(record.settings);
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
         return { ...DEFAULT_SETTINGS };
@@ -42,7 +52,7 @@ export class DesktopIntegrationStore {
     const validated = parseDesktopIntegrationSettings(settings);
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.tmp`;
-    await writeFile(temporaryPath, JSON.stringify({ version: 1, settings: validated }, null, 2), {
+    await writeFile(temporaryPath, JSON.stringify({ version: 2, settings: validated }, null, 2), {
       encoding: 'utf8',
       mode: 0o600,
     });

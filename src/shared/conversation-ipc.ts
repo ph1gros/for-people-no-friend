@@ -27,6 +27,15 @@ export interface StartConversationInput {
   availableActions: string[];
 }
 
+export interface ConversationContextDebug {
+  providerId: string;
+  modelId: string;
+  recentMessageCount: number;
+  sources: Array<{ name: string; characters: number; reason: string }>;
+  roleplayExamples: Array<{ scene: string; line: string; score: number; reasons: string[] }>;
+  fallbacks: string[];
+}
+
 export interface CancelConversationInput {
   requestId: string;
 }
@@ -35,6 +44,7 @@ export type StartConversationResult = { ok: true } | { ok: false; error: PublicL
 
 export type ConversationEvent =
   | { requestId: string; type: 'started'; userMessage: ConversationMessage }
+  | { requestId: string; type: 'context-debug'; debug: ConversationContextDebug }
   | { requestId: string; type: 'text-delta'; text: string }
   | { requestId: string; type: 'completed'; assistantMessage: ConversationMessage }
   | { requestId: string; type: 'cancelled'; assistantMessage?: ConversationMessage }
@@ -138,6 +148,74 @@ const isConversationMessage = (value: unknown): value is ConversationMessage =>
     value.emotion === undefined ||
     (typeof value.emotion === 'string' && emotionSet.has(value.emotion)));
 
+const parseContextDebug = (value: unknown): ConversationContextDebug | undefined => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.providerId !== 'string' ||
+    record.providerId.length > 100 ||
+    typeof record.modelId !== 'string' ||
+    record.modelId.length > 256 ||
+    typeof record.recentMessageCount !== 'number' ||
+    !Number.isInteger(record.recentMessageCount) ||
+    record.recentMessageCount < 0 ||
+    !Array.isArray(record.sources) ||
+    record.sources.length > 12 ||
+    !Array.isArray(record.roleplayExamples) ||
+    record.roleplayExamples.length > 4 ||
+    !Array.isArray(record.fallbacks) ||
+    !record.fallbacks.every((item) => typeof item === 'string' && item.length <= 300)
+  ) {
+    return undefined;
+  }
+  const sources = record.sources.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error();
+    const source = item as Record<string, unknown>;
+    if (
+      typeof source.name !== 'string' ||
+      source.name.length > 100 ||
+      typeof source.characters !== 'number' ||
+      !Number.isInteger(source.characters) ||
+      source.characters < 0 ||
+      typeof source.reason !== 'string' ||
+      source.reason.length > 300
+    ) {
+      throw new Error();
+    }
+    return { name: source.name, characters: source.characters, reason: source.reason };
+  });
+  const roleplayExamples = record.roleplayExamples.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new Error();
+    const example = item as Record<string, unknown>;
+    if (
+      typeof example.scene !== 'string' ||
+      example.scene.length > 80 ||
+      typeof example.line !== 'string' ||
+      example.line.length > 60 ||
+      typeof example.score !== 'number' ||
+      !Number.isFinite(example.score) ||
+      !Array.isArray(example.reasons) ||
+      !example.reasons.every((reason) => typeof reason === 'string' && reason.length <= 200)
+    ) {
+      throw new Error();
+    }
+    return {
+      scene: example.scene,
+      line: example.line,
+      score: example.score,
+      reasons: example.reasons as string[],
+    };
+  });
+  return {
+    providerId: record.providerId,
+    modelId: record.modelId,
+    recentMessageCount: record.recentMessageCount,
+    sources,
+    roleplayExamples,
+    fallbacks: record.fallbacks as string[],
+  };
+};
+
 export const parseConversationEvent = (value: unknown): ConversationEvent | undefined => {
   if (
     typeof value !== 'object' ||
@@ -149,6 +227,10 @@ export const parseConversationEvent = (value: unknown): ConversationEvent | unde
   }
   try {
     const requestId = parseRequestId(value.requestId);
+    if (value.type === 'context-debug' && 'debug' in value) {
+      const debug = parseContextDebug(value.debug);
+      return debug ? { requestId, type: 'context-debug', debug } : undefined;
+    }
     if (value.type === 'text-delta' && 'text' in value && typeof value.text === 'string') {
       return { requestId, type: 'text-delta', text: value.text.slice(0, 32_768) };
     }

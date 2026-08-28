@@ -4,14 +4,23 @@ import { resolveWindowAssetPaths } from './window-assets';
 import {
   DEFAULT_WINDOW_SIZE,
   EXPANDED_WINDOW_SIZE,
+  SETTINGS_WINDOW_SIZE,
   MAX_WINDOW_SCALE,
   MIN_WINDOW_SCALE,
   type PersistedWindowState,
   stateToBounds,
 } from './window-state';
 
-export const configureMainWindowLayout = (window: BrowserWindow, expanded: boolean): void => {
-  const size = expanded ? EXPANDED_WINDOW_SIZE : DEFAULT_WINDOW_SIZE;
+export const configureMainWindowLayout = (
+  window: BrowserWindow,
+  expanded: boolean,
+  settings = false,
+): void => {
+  const size = settings
+    ? SETTINGS_WINDOW_SIZE
+    : expanded
+      ? EXPANDED_WINDOW_SIZE
+      : DEFAULT_WINDOW_SIZE;
   window.setAspectRatio(0);
   window.setMinimumSize(
     Math.round(size.width * MIN_WINDOW_SCALE),

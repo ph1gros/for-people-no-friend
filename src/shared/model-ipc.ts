@@ -1,4 +1,6 @@
 import type { ConnectionResult, ProviderCapability } from '../core/llm/contracts';
+import type { ModelProviderCapabilities } from '../core/llm/provider-capabilities';
+import type { ModelSelection } from '../core/llm/contracts';
 
 export type ConfigurableProviderId = 'anthropic' | 'deepseek' | 'openai-compatible';
 
@@ -6,10 +8,13 @@ export interface ProviderSummary {
   id: string;
   displayName: string;
   capabilities: ProviderCapability[];
+  capabilityProfile: ModelProviderCapabilities;
 }
 
 export interface ProviderConfiguration {
   openAICompatibleBaseUrl: string;
+  allowRemoteComplexTasks: boolean;
+  remoteSelection?: ModelSelection;
 }
 
 export interface ProviderSecretStatus {
@@ -87,10 +92,43 @@ export const parseProviderConfiguration = (value: unknown): ProviderConfiguratio
     throw new Error('The provider configuration is invalid.');
   }
   const baseUrl = 'openAICompatibleBaseUrl' in value ? value.openAICompatibleBaseUrl : undefined;
-  if (typeof baseUrl !== 'string' || baseUrl.trim().length === 0 || baseUrl.length > 2_048) {
+  const allowRemoteComplexTasks =
+    'allowRemoteComplexTasks' in value ? value.allowRemoteComplexTasks : undefined;
+  const remoteSelection = 'remoteSelection' in value ? value.remoteSelection : undefined;
+  if (
+    typeof baseUrl !== 'string' ||
+    baseUrl.trim().length === 0 ||
+    baseUrl.length > 2_048 ||
+    typeof allowRemoteComplexTasks !== 'boolean'
+  ) {
     throw new Error('The OpenAI-compatible base URL is invalid.');
   }
-  return { openAICompatibleBaseUrl: baseUrl.trim() };
+  let parsedRemote: ModelSelection | undefined;
+  if (remoteSelection !== undefined && remoteSelection !== null) {
+    if (!remoteSelection || typeof remoteSelection !== 'object' || Array.isArray(remoteSelection)) {
+      throw new Error('The remote model selection is invalid.');
+    }
+    const record = remoteSelection as Record<string, unknown>;
+    if (
+      typeof record.modelId !== 'string' ||
+      !record.modelId.trim() ||
+      record.modelId.length > 256
+    ) {
+      throw new Error('The remote model selection is invalid.');
+    }
+    parsedRemote = {
+      providerId: parseProviderId(record.providerId),
+      modelId: record.modelId.trim(),
+    };
+  }
+  if (allowRemoteComplexTasks && !parsedRemote) {
+    throw new Error('A remote model is required when remote collaboration is enabled.');
+  }
+  return {
+    openAICompatibleBaseUrl: baseUrl.trim(),
+    allowRemoteComplexTasks,
+    ...(parsedRemote ? { remoteSelection: parsedRemote } : {}),
+  };
 };
 
 export const parseTestProviderConnectionInput = (value: unknown): TestProviderConnectionInput => {

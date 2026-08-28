@@ -263,6 +263,38 @@ select {
   pointer-events: auto;
 }
 
+.chat-tools-menu {
+  position: relative;
+}
+
+.chat-tools-menu > summary {
+  list-style: none;
+}
+
+.chat-tools-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-tools-menu__items {
+  position: absolute;
+  z-index: 6;
+  right: 0;
+  bottom: calc(100% + 7px);
+  display: grid;
+  gap: 5px;
+  min-width: 82px;
+  padding: 7px;
+  border: 1px solid rgb(225 211 255 / 28%);
+  border-radius: 15px;
+  background: rgb(27 24 42 / 94%);
+  box-shadow: 0 10px 24px rgb(0 0 0 / 28%);
+  backdrop-filter: blur(14px);
+}
+
+.chat-tools-menu__items .chat-toolbar__button {
+  width: 100%;
+}
+
 .chat-toolbar__button,
 .text-button {
   padding: 6px 10px;
@@ -415,6 +447,19 @@ select {
   margin: -2px 0 12px;
 }
 
+.connection-status:not(:empty) {
+  margin: -6px 0 12px;
+  padding: 7px 9px;
+  color: rgb(246 240 255 / 92%);
+  border: 1px solid rgb(190 158 241 / 24%);
+  border-radius: 10px;
+  background: rgb(111 76 166 / 14%);
+}
+
+.connection-status:empty {
+  display: none;
+}
+
 .history-message {
   width: 86%;
   margin: 0 0 10px;
@@ -444,6 +489,12 @@ select {
 
 .settings-panel {
   overflow-y: auto;
+}
+
+.settings-panel button {
+  font-size: 11px;
+  line-height: 1.3;
+  border-radius: 8px;
 }
 
 .settings-field {
@@ -524,6 +575,49 @@ select {
   justify-content: flex-end;
   gap: 8px;
   padding-bottom: 2px;
+}
+
+.character-library__list {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0;
+}
+
+.character-library__entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid rgb(255 255 255 / 9%);
+  border-radius: 8px;
+  background: rgb(255 255 255 / 3%);
+}
+
+.character-library__entry .settings-actions {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.character-library > .settings-actions button {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 7px 8px;
+  white-space: nowrap;
+}
+
+.context-debug__content {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.context-debug__content p {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 7px;
+  background: rgb(255 255 255 / 4%);
 }
 
 .secondary-button {

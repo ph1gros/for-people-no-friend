@@ -1,5 +1,11 @@
 import type { CharacterProfile } from '../core/conversation/character-profile';
 import type {
+  CharacterIdInput,
+  CharacterLibraryEntry,
+  CharacterPackageFileResult,
+  ConfirmCharacterPackageImportInput,
+} from './character-package-ipc';
+import type {
   BuildCharacterDraftInput,
   CancelCharacterResearchInput,
   CharacterDraftResult,
@@ -73,6 +79,13 @@ export const IPC_CHANNELS = {
   searchCharacters: 'character:search',
   buildCharacterDraft: 'character:buildDraft',
   cancelCharacterResearch: 'character:cancelResearch',
+  listCharacters: 'character:list',
+  previewCharacterPackage: 'character:previewPackage',
+  confirmCharacterPackageImport: 'character:confirmPackageImport',
+  exportActiveCharacterPackage: 'character:exportActivePackage',
+  activateCharacter: 'character:activate',
+  removeCharacter: 'character:remove',
+  getActiveCharacterModelManifest: 'character:getActiveModelManifest',
   getWorkGlossaryStatus: 'glossary:getStatus',
   syncWorkGlossary: 'glossary:sync',
   getMemorySettings: 'memory:getSettings',
@@ -127,6 +140,15 @@ export interface DeskpetApi {
   searchCharacters(input: SearchCharactersInput): Promise<CharacterSearchResult>;
   buildCharacterDraft(input: BuildCharacterDraftInput): Promise<CharacterDraftResult>;
   cancelCharacterResearch(input: CancelCharacterResearchInput): Promise<boolean>;
+  listCharacters(): Promise<CharacterLibraryEntry[]>;
+  previewCharacterPackage(): Promise<CharacterPackageFileResult>;
+  confirmCharacterPackageImport(
+    input: ConfirmCharacterPackageImportInput,
+  ): Promise<CharacterPackageFileResult>;
+  exportActiveCharacterPackage(): Promise<CharacterPackageFileResult>;
+  activateCharacter(input: CharacterIdInput): Promise<ModelOperationResult>;
+  removeCharacter(input: CharacterIdInput): Promise<ModelOperationResult>;
+  getActiveCharacterModelManifest(): Promise<string | undefined>;
   getWorkGlossaryStatus(input: WorkGlossaryInput): Promise<WorkGlossaryStatus>;
   syncWorkGlossary(input: WorkGlossaryInput): Promise<WorkGlossarySyncResult>;
   getMemorySettings(): Promise<MemorySettings>;

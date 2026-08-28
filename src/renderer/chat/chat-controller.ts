@@ -18,7 +18,12 @@ import {
   AUTOMATIC_MEMORY_MIN_CONFIDENCE,
   AUTOMATIC_MEMORY_MIN_IMPORTANCE,
 } from '../../core/memory/memory-policy';
-import type { ConversationEvent, ConversationMessage } from '../../shared/conversation-ipc';
+import type {
+  ConversationContextDebug,
+  ConversationEvent,
+  ConversationMessage,
+} from '../../shared/conversation-ipc';
+import type { DesktopIntegrationStatus } from '../../shared/desktop-integration-ipc';
 import type { ConfigurableProviderId } from '../../shared/model-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
@@ -114,10 +119,21 @@ export const initializeChat = async ({
 
   const toolbar = document.createElement('div');
   toolbar.className = 'chat-toolbar';
+  const recordsMenu = document.createElement('details');
+  recordsMenu.className = 'chat-tools-menu';
+  const recordsMenuButton = document.createElement('summary');
+  recordsMenuButton.className = 'chat-toolbar__button';
+  recordsMenuButton.textContent = '资料';
+  recordsMenuButton.setAttribute('aria-label', '打开历史、记忆和上下文');
+  const recordsMenuItems = document.createElement('div');
+  recordsMenuItems.className = 'chat-tools-menu__items';
   const historyButton = createButton('历史', 'chat-toolbar__button');
   const memoryButton = createButton('记忆', 'chat-toolbar__button');
+  const debugButton = createButton('上下文', 'chat-toolbar__button');
   const settingsButton = createButton('设置', 'chat-toolbar__button');
-  toolbar.append(historyButton, memoryButton, settingsButton);
+  recordsMenuItems.append(historyButton, memoryButton, debugButton);
+  recordsMenu.append(recordsMenuButton, recordsMenuItems);
+  toolbar.append(recordsMenu, settingsButton);
 
   const subtitle = document.createElement('div');
   subtitle.className = 'subtitle-bubble';
@@ -207,6 +223,69 @@ export const initializeChat = async ({
     automaticPolicyRules.append(item);
   }
   automaticPolicy.append(automaticPolicyTitle, automaticPolicyIntro, automaticPolicyRules);
+  const memoryIndexSettings = document.createElement('details');
+  memoryIndexSettings.className = 'memory-policy';
+  const memoryIndexSummary = document.createElement('summary');
+  memoryIndexSummary.textContent = '混合记忆索引（可选）';
+  const semanticIndexSelect = document.createElement('select');
+  for (const [value, label] of [
+    ['local', '本机向量（默认）'],
+    ['qdrant', 'Qdrant'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    semanticIndexSelect.append(option);
+  }
+  const relationshipIndexSelect = document.createElement('select');
+  for (const [value, label] of [
+    ['local', '本机关系（默认）'],
+    ['neo4j', 'Neo4j'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    relationshipIndexSelect.append(option);
+  }
+  const qdrantUrlInput = document.createElement('input');
+  qdrantUrlInput.type = 'url';
+  qdrantUrlInput.maxLength = 2_048;
+  const qdrantCollectionInput = document.createElement('input');
+  qdrantCollectionInput.maxLength = 64;
+  const qdrantApiKeyInput = document.createElement('input');
+  qdrantApiKeyInput.type = 'password';
+  qdrantApiKeyInput.maxLength = 32_768;
+  qdrantApiKeyInput.placeholder = '留空保留已保存密钥';
+  const neo4jUrlInput = document.createElement('input');
+  neo4jUrlInput.type = 'url';
+  neo4jUrlInput.maxLength = 2_048;
+  const neo4jDatabaseInput = document.createElement('input');
+  neo4jDatabaseInput.maxLength = 64;
+  const neo4jUsernameInput = document.createElement('input');
+  neo4jUsernameInput.maxLength = 128;
+  const neo4jPasswordInput = document.createElement('input');
+  neo4jPasswordInput.type = 'password';
+  neo4jPasswordInput.maxLength = 32_768;
+  neo4jPasswordInput.placeholder = '留空保留已保存密码';
+  const saveMemoryIndexesButton = createButton('保存索引设置', 'secondary-button');
+  const memoryIndexHint = document.createElement('p');
+  memoryIndexHint.className = 'settings-status';
+  memoryIndexHint.textContent =
+    '外部索引默认关闭。启用时会发送向量或关系词与随机记忆 ID，不把外部服务当作唯一正文；断线会自动回退关键词。只允许 HTTPS 或本机 HTTP。';
+  memoryIndexSettings.append(
+    memoryIndexSummary,
+    memoryIndexHint,
+    createField('语义索引', semanticIndexSelect),
+    createField('Qdrant 地址', qdrantUrlInput),
+    createField('Qdrant 集合', qdrantCollectionInput),
+    createField('Qdrant API Key', qdrantApiKeyInput),
+    createField('关系索引', relationshipIndexSelect),
+    createField('Neo4j HTTP 地址', neo4jUrlInput),
+    createField('Neo4j 数据库', neo4jDatabaseInput),
+    createField('Neo4j 用户名', neo4jUsernameInput),
+    createField('Neo4j 密码', neo4jPasswordInput),
+    saveMemoryIndexesButton,
+  );
   const candidateTitle = document.createElement('strong');
   candidateTitle.className = 'memory-section-title';
   candidateTitle.textContent = '待你确认';
@@ -222,11 +301,25 @@ export const initializeChat = async ({
     memoryControls,
     memoryStatus,
     automaticPolicy,
+    memoryIndexSettings,
     candidateTitle,
     candidateList,
     confirmedMemoryTitle,
     memoryList,
   );
+
+  const debugPanel = document.createElement('section');
+  debugPanel.className = 'chat-drawer context-debug-panel';
+  debugPanel.hidden = true;
+  const debugHeader = document.createElement('header');
+  debugHeader.className = 'chat-drawer__header';
+  const debugTitle = document.createElement('strong');
+  debugTitle.textContent = '本轮上下文说明';
+  const closeDebugButton = createButton('关闭', 'text-button');
+  debugHeader.append(debugTitle, closeDebugButton);
+  const debugContent = document.createElement('div');
+  debugContent.className = 'context-debug__content';
+  debugPanel.append(debugHeader, debugContent);
 
   const settingsPanel = document.createElement('form');
   settingsPanel.className = 'chat-drawer settings-panel';
@@ -242,8 +335,8 @@ export const initializeChat = async ({
   scaleInput.type = 'range';
   scaleInput.min = String(MIN_WINDOW_SCALE);
   scaleInput.max = String(MAX_WINDOW_SCALE);
-  scaleInput.step = '0.05';
-  scaleInput.value = '1';
+  scaleInput.step = '0.01';
+  scaleInput.value = '0.85';
   scaleInput.setAttribute('aria-label', '桌宠大小');
   const scaleOutput = document.createElement('output');
   scaleOutput.className = 'scale-output';
@@ -275,6 +368,51 @@ export const initializeChat = async ({
   baseUrlInput.type = 'url';
   baseUrlInput.maxLength = 2_048;
   baseUrlInput.placeholder = '例如：http://127.0.0.1:11434/v1';
+  const modelCollaborationPanel = document.createElement('section');
+  modelCollaborationPanel.className = 'character-search';
+  const modelCollaborationTitle = document.createElement('strong');
+  modelCollaborationTitle.textContent = '本地 / 远端模型协作';
+  const allowRemoteComplexTasksInput = document.createElement('input');
+  allowRemoteComplexTasksInput.type = 'checkbox';
+  const allowRemoteComplexTasksField = document.createElement('label');
+  allowRemoteComplexTasksField.className = 'settings-field';
+  allowRemoteComplexTasksField.append(
+    allowRemoteComplexTasksInput,
+    ' 允许复杂整理使用指定远端模型',
+  );
+  const remoteProviderSelect = document.createElement('select');
+  for (const [value, label] of [
+    ['anthropic', 'Anthropic Claude'],
+    ['deepseek', 'DeepSeek'],
+  ]) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    remoteProviderSelect.append(option);
+  }
+  const remoteModelInput = document.createElement('input');
+  remoteModelInput.maxLength = 256;
+  remoteModelInput.placeholder = '远端模型 ID';
+  const remoteApiKeyInput = document.createElement('input');
+  remoteApiKeyInput.type = 'password';
+  remoteApiKeyInput.maxLength = 32_768;
+  remoteApiKeyInput.autocomplete = 'off';
+  remoteApiKeyInput.placeholder = '留空则保留远端提供商已有密钥';
+  const remoteSecretStatus = document.createElement('p');
+  remoteSecretStatus.className = 'settings-status';
+  const modelCollaborationStatus = document.createElement('p');
+  modelCollaborationStatus.className = 'settings-status';
+  modelCollaborationStatus.textContent =
+    '默认关闭。开启后只有角色资料整理、摘要和记忆候选会发送给指定远端模型；普通聊天仍使用当前模型。失败会回退当前模型。';
+  modelCollaborationPanel.append(
+    modelCollaborationTitle,
+    allowRemoteComplexTasksField,
+    createField('远端提供商', remoteProviderSelect),
+    createField('远端模型', remoteModelInput),
+    createField('远端 API Key', remoteApiKeyInput),
+    remoteSecretStatus,
+    modelCollaborationStatus,
+  );
   const apiKeyInput = document.createElement('input');
   apiKeyInput.type = 'password';
   apiKeyInput.maxLength = 32_768;
@@ -283,6 +421,27 @@ export const initializeChat = async ({
   const characterNameInput = document.createElement('input');
   characterNameInput.maxLength = 80;
   characterNameInput.autocomplete = 'off';
+  const characterLibrary = document.createElement('section');
+  characterLibrary.className = 'character-search character-library';
+  const characterLibraryTitle = document.createElement('strong');
+  characterLibraryTitle.textContent = '角色库与角色包';
+  const characterLibraryStatus = document.createElement('p');
+  characterLibraryStatus.className = 'settings-status';
+  characterLibraryStatus.setAttribute('role', 'status');
+  characterLibraryStatus.textContent = '角色之间的对话、记忆和模型资源彼此隔离。';
+  const characterLibraryList = document.createElement('div');
+  characterLibraryList.className = 'character-library__list';
+  const characterLibraryActions = document.createElement('div');
+  characterLibraryActions.className = 'settings-actions';
+  const importCharacterButton = createButton('预览并导入', 'secondary-button');
+  const exportCharacterButton = createButton('导出当前角色', 'text-button');
+  characterLibraryActions.append(importCharacterButton, exportCharacterButton);
+  characterLibrary.append(
+    characterLibraryTitle,
+    characterLibraryStatus,
+    characterLibraryList,
+    characterLibraryActions,
+  );
   const loreSourceWorkInput = document.createElement('input');
   loreSourceWorkInput.maxLength = 300;
   loreSourceWorkInput.placeholder = '例如：明日方舟（填写后搜索更准确）';
@@ -398,6 +557,10 @@ export const initializeChat = async ({
   const settingsStatus = document.createElement('p');
   settingsStatus.className = 'settings-status';
   settingsStatus.setAttribute('role', 'status');
+  const connectionStatus = document.createElement('p');
+  connectionStatus.className = 'settings-status connection-status';
+  connectionStatus.setAttribute('role', 'status');
+  connectionStatus.setAttribute('aria-live', 'polite');
   const modelCapabilityStatus = document.createElement('p');
   modelCapabilityStatus.className = 'settings-status';
   const desktopIntegrationPanel = document.createElement('section');
@@ -408,24 +571,37 @@ export const initializeChat = async ({
   globalShortcutInput.type = 'checkbox';
   const globalShortcutField = document.createElement('label');
   globalShortcutField.className = 'settings-field';
-  globalShortcutField.append(globalShortcutInput, ' 启用 Ctrl+Shift+Space 显示或隐藏桌宠');
+  globalShortcutField.append(globalShortcutInput, ' 仅在桌宠窗口被选中时启用隐藏快捷键');
+  const visibilityShortcutInput = document.createElement('input');
+  visibilityShortcutInput.maxLength = 64;
+  visibilityShortcutInput.autocomplete = 'off';
+  visibilityShortcutInput.spellcheck = false;
+  const visibilityShortcutField = createField('切换快捷键', visibilityShortcutInput);
+  const visibilityShortcutHint = document.createElement('small');
+  visibilityShortcutHint.className = 'settings-hint';
+  visibilityShortcutHint.textContent =
+    '默认是 、 键（系统记作 \\）；切到其他程序后不会占用。隐藏后请点击托盘图标重新显示。';
+  visibilityShortcutField.append(visibilityShortcutHint);
   const mediaControlInput = document.createElement('input');
   mediaControlInput.type = 'checkbox';
   const mediaControlField = document.createElement('label');
   mediaControlField.className = 'settings-field';
-  mediaControlField.append(mediaControlInput, ' 启用系统媒体控制（适配器可用时）');
+  mediaControlField.append(mediaControlInput, ' 启用系统媒体控制');
   const desktopIntegrationStatus = document.createElement('p');
   desktopIntegrationStatus.className = 'settings-status';
-  desktopIntegrationStatus.textContent = '两项默认关闭；快捷键只识别固定组合，不记录键盘内容。';
+  desktopIntegrationStatus.textContent = '窗口快捷键和系统媒体控制默认关闭。';
   const mediaActions = document.createElement('div');
   mediaActions.className = 'settings-actions';
   const previousMediaButton = createButton('上一首', 'text-button');
   const playPauseMediaButton = createButton('播放 / 暂停', 'text-button');
   const nextMediaButton = createButton('下一首', 'text-button');
   mediaActions.append(previousMediaButton, playPauseMediaButton, nextMediaButton);
+  let mediaCommandInFlight = false;
+  let mediaControlsAvailable = false;
   desktopIntegrationPanel.append(
     desktopIntegrationTitle,
     globalShortcutField,
+    visibilityShortcutField,
     mediaControlField,
     desktopIntegrationStatus,
     mediaActions,
@@ -454,6 +630,9 @@ export const initializeChat = async ({
     createField('API Key', apiKeyInput),
     secretRow,
     connectionActions,
+    connectionStatus,
+    modelCollaborationPanel,
+    characterLibrary,
     createField('角色名称', characterNameInput),
     createField('来源作品或游戏', loreSourceWorkInput),
     characterSearch,
@@ -496,7 +675,16 @@ export const initializeChat = async ({
   );
   actionDialog.append(actionDialogForm);
 
-  panel.append(panelHeader, subtitle, composer, toolbar, historyPanel, memoryPanel, settingsPanel);
+  panel.append(
+    panelHeader,
+    subtitle,
+    composer,
+    toolbar,
+    historyPanel,
+    memoryPanel,
+    debugPanel,
+    settingsPanel,
+  );
   shell.append(launcherButton, panel);
   root.append(shell, actionDialog);
 
@@ -510,7 +698,10 @@ export const initializeChat = async ({
   let activeRequestId: string | undefined;
   let activeReply = '';
   let panelExpanded = false;
+  let panelView: 'chat' | 'settings' = 'chat';
+  let openingLineShown = false;
   let replyStateLabel = '随时可以开始聊天';
+  let latestContextDebug: ConversationContextDebug | undefined;
 
   const confirmAction = (options: {
     title: string;
@@ -562,6 +753,89 @@ export const initializeChat = async ({
     renderHistory();
   };
 
+  const showOpeningLineIfReady = (): void => {
+    if (openingLineShown || !profile || !getCharacter()) return;
+    const openingLine =
+      profile.lore?.sampleLines?.find((line) => line.trim().length > 0)?.trim() ||
+      `${profile.userDisplayName || '你'}，我在。`;
+    openingLineShown = true;
+    subtitle.hidden = false;
+    subtitle.textContent = openingLine;
+    setReplyStatus('先和你说了一句');
+  };
+
+  const reloadActiveCharacter = (): void => {
+    window.dispatchEvent(new Event('deskpet:reload-character'));
+  };
+
+  const loadCharacterLibrary = async (): Promise<void> => {
+    if (!api) return;
+    const entries = await api.listCharacters();
+    characterLibraryList.replaceChildren();
+    for (const entry of entries) {
+      const row = document.createElement('div');
+      row.className = 'character-library__entry';
+      const description = document.createElement('span');
+      description.textContent = `${entry.profile.name}${entry.active ? '（当前）' : ''}`;
+      const actions = document.createElement('div');
+      actions.className = 'settings-actions';
+      if (!entry.active) {
+        const activate = createButton('切换', 'text-button');
+        activate.addEventListener('click', () => {
+          void (async () => {
+            const confirmed = await confirmAction({
+              title: '切换角色',
+              message: `切换到“${entry.profile.name}”？`,
+              details:
+                '当前未保存的设置不会带到新角色。对话历史、长期记忆和作品词库会切换到该角色自己的命名空间。',
+              confirmLabel: '切换',
+            });
+            if (!confirmed) return;
+            const result = await api.activateCharacter({ characterId: entry.profile.id });
+            if (!result.ok) {
+              characterLibraryStatus.textContent = result.error.message;
+              return;
+            }
+            messages = await api.getConversationHistory();
+            await loadSettings();
+            reloadActiveCharacter();
+            characterLibraryStatus.textContent = `已切换到“${entry.profile.name}”。`;
+            renderHistory();
+          })();
+        });
+        actions.append(activate);
+      }
+      if (entry.imported) {
+        const remove = createButton('删除', 'text-button danger-button');
+        remove.addEventListener('click', () => {
+          void (async () => {
+            const confirmed = await confirmAction({
+              title: '删除角色包',
+              message: `删除“${entry.profile.name}”的角色资料和模型素材？`,
+              details:
+                '该角色的对话和长期记忆不会随角色包删除，但在重新导入同一角色前不会显示。此操作无法撤销。',
+              confirmLabel: '删除',
+            });
+            if (!confirmed) return;
+            const result = await api.removeCharacter({ characterId: entry.profile.id });
+            if (!result.ok) {
+              characterLibraryStatus.textContent = result.error.message;
+              return;
+            }
+            messages = await api.getConversationHistory();
+            await loadSettings();
+            reloadActiveCharacter();
+            characterLibraryStatus.textContent = '角色包已删除。';
+            renderHistory();
+          })();
+        });
+        actions.append(remove);
+      }
+      row.append(description, actions);
+      characterLibraryList.append(row);
+    }
+  };
+
   const displayPanelExpanded = (expanded: boolean): void => {
     shell.classList.toggle('chat-shell--expanded', expanded);
     root.classList.toggle('chat-expanded', expanded);
@@ -570,9 +844,10 @@ export const initializeChat = async ({
     window.setTimeout(() => window.dispatchEvent(new Event('resize')), 240);
   };
 
-  const setPanelExpanded = (expanded: boolean): void => {
-    if (panelExpanded === expanded) return;
+  const setPanelExpanded = (expanded: boolean, view: 'chat' | 'settings' = 'chat'): void => {
+    if (panelExpanded === expanded && (!expanded || panelView === view)) return;
     panelExpanded = expanded;
+    panelView = expanded ? view : 'chat';
     if (!api) {
       displayPanelExpanded(expanded);
       return;
@@ -583,7 +858,7 @@ export const initializeChat = async ({
     // instead of exposing one distorted intermediate frame.
     if (!expanded) displayPanelExpanded(false);
     void api
-      .setChatPanelExpanded({ expanded })
+      .setChatPanelExpanded({ expanded, ...(expanded ? { view } : {}) })
       .then(() => {
         if (panelExpanded === expanded && expanded) displayPanelExpanded(true);
       })
@@ -604,6 +879,17 @@ export const initializeChat = async ({
           : '例如：OpenAI 或本地模型 ID';
   };
 
+  const updateCollaborationVisibility = (): void => {
+    const enabled = allowRemoteComplexTasksInput.checked;
+    const sharesProvider = remoteProviderSelect.value === providerSelect.value;
+    remoteProviderSelect.disabled = !enabled;
+    remoteModelInput.disabled = !enabled;
+    remoteApiKeyInput.disabled = !enabled || sharesProvider;
+    remoteApiKeyInput.placeholder = sharesProvider
+      ? '与上方当前提供商共用密钥'
+      : '留空则保留远端提供商已有密钥';
+  };
+
   const updateSecretStatus = async (): Promise<void> => {
     if (!api) {
       return;
@@ -616,12 +902,54 @@ export const initializeChat = async ({
       : selected === 'openai-compatible'
         ? '未保存密钥；本地 Ollama 可保持为空。'
         : '尚未保存密钥。';
+    const remoteSelected = remoteProviderSelect.value as ConfigurableProviderId;
+    const sharesProvider = remoteSelected === selected;
+    remoteSecretStatus.textContent = sharesProvider
+      ? '远端模型与上方使用同一提供商，将共用该提供商的密钥。'
+      : secrets[remoteSelected]
+        ? '远端提供商的密钥已安全保存；留空不会覆盖。'
+        : '远端提供商尚未保存密钥。';
+    updateCollaborationVisibility();
   };
 
   const closeDrawers = (): void => {
+    const wasSettingsOpen = !settingsPanel.hidden;
+    recordsMenu.open = false;
     historyPanel.hidden = true;
     memoryPanel.hidden = true;
+    debugPanel.hidden = true;
     settingsPanel.hidden = true;
+    if (wasSettingsOpen && panelExpanded) setPanelExpanded(true, 'chat');
+  };
+
+  const renderContextDebug = (): void => {
+    debugContent.replaceChildren();
+    if (!latestContextDebug) {
+      const empty = document.createElement('p');
+      empty.className = 'history-empty';
+      empty.textContent = '发送一条消息后，这里会显示实际使用的资料、命中原因和回退。';
+      debugContent.append(empty);
+      return;
+    }
+    const summary = document.createElement('p');
+    summary.textContent = `模型：${latestContextDebug.providerId} / ${latestContextDebug.modelId}；最近消息 ${latestContextDebug.recentMessageCount} 条。`;
+    debugContent.append(summary);
+    for (const source of latestContextDebug.sources) {
+      const item = document.createElement('p');
+      item.textContent = `${source.name} · ${source.characters} 字符：${source.reason}`;
+      debugContent.append(item);
+    }
+    for (const example of latestContextDebug.roleplayExamples) {
+      const item = document.createElement('p');
+      item.textContent = `情境“${example.scene}”（${example.score} 分）：${example.reasons.join('；')}。示例只供学习语气：“${example.line}”`;
+      debugContent.append(item);
+    }
+    for (const fallback of latestContextDebug.fallbacks) {
+      const item = document.createElement('p');
+      item.className = 'settings-status';
+      item.textContent = `回退：${fallback}`;
+      debugContent.append(item);
+    }
   };
 
   const renderHistory = (): void => {
@@ -1016,6 +1344,17 @@ export const initializeChat = async ({
       api.listMemoryCandidates(),
     ]);
     automaticMemoryInput.checked = settings.automaticMemoryEnabled;
+    semanticIndexSelect.value = settings.semanticIndex;
+    relationshipIndexSelect.value = settings.relationshipIndex;
+    qdrantUrlInput.value = settings.qdrantUrl;
+    qdrantCollectionInput.value = settings.qdrantCollection;
+    qdrantApiKeyInput.placeholder = settings.qdrantApiKeySaved ? '已安全保存；留空保留' : '可留空';
+    neo4jUrlInput.value = settings.neo4jUrl;
+    neo4jDatabaseInput.value = settings.neo4jDatabase;
+    neo4jUsernameInput.value = settings.neo4jUsername;
+    neo4jPasswordInput.placeholder = settings.neo4jPasswordSaved
+      ? '已安全保存；留空保留'
+      : '可留空';
     memoryRecords = records;
     memoryCandidates = candidates;
     renderMemories();
@@ -1044,6 +1383,11 @@ export const initializeChat = async ({
       messages.push(event.userMessage);
       renderHistory();
       setReplyStatus('正在思考…');
+      return;
+    }
+    if (event.type === 'context-debug') {
+      latestContextDebug = event.debug;
+      renderContextDebug();
       return;
     }
     if (event.type === 'text-delta') {
@@ -1367,6 +1711,28 @@ export const initializeChat = async ({
     }
   };
 
+  const displayDesktopIntegrationStatus = (desktopStatus: DesktopIntegrationStatus): void => {
+    globalShortcutInput.checked = desktopStatus.settings.globalShortcutsEnabled;
+    mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
+    visibilityShortcutInput.value = desktopStatus.settings.visibilityShortcut;
+    mediaControlsAvailable =
+      desktopStatus.settings.mediaControlEnabled && desktopStatus.media.supported;
+    previousMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
+    playPauseMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
+    nextMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
+    const shortcutMessage = desktopStatus.settings.globalShortcutsEnabled
+      ? desktopStatus.shortcutRegistered
+        ? `${desktopStatus.settings.visibilityShortcut} 窗口隐藏快捷键已启用`
+        : '快捷键注册失败，可能已被其他程序占用'
+      : '窗口隐藏快捷键未启用';
+    const mediaMessage = desktopStatus.settings.mediaControlEnabled
+      ? desktopStatus.media.supported
+        ? '系统媒体控制已启用'
+        : '当前系统不支持媒体控制'
+      : '系统媒体控制未启用';
+    desktopIntegrationStatus.textContent = `${shortcutMessage}；${mediaMessage}。`;
+  };
+
   const loadSettings = async (): Promise<void> => {
     if (!api) {
       settingsStatus.textContent = '桌面 API 不可用。';
@@ -1390,6 +1756,10 @@ export const initializeChat = async ({
     updateProviderVisibility();
     modelInput.value = conversationConfiguration.selection?.modelId ?? '';
     baseUrlInput.value = providerConfiguration.openAICompatibleBaseUrl;
+    allowRemoteComplexTasksInput.checked = providerConfiguration.allowRemoteComplexTasks;
+    remoteProviderSelect.value = providerConfiguration.remoteSelection?.providerId ?? 'anthropic';
+    remoteModelInput.value = providerConfiguration.remoteSelection?.modelId ?? '';
+    updateCollaborationVisibility();
     characterNameInput.value = storedProfile.name;
     fillLoreEditor(storedProfile.lore);
     await loadGlossaryStatus(storedProfile.lore?.sourceWork ?? '');
@@ -1404,30 +1774,20 @@ export const initializeChat = async ({
       ? '正在使用已确认的联网角色资料；可以重新查找或手动修改。'
       : '可以联网查找公开资料；结果需要你确认后才会保存。';
     displayScale(windowScale);
-    globalShortcutInput.checked = desktopStatus.settings.globalShortcutsEnabled;
-    mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
-    previousMediaButton.disabled = !desktopStatus.media.supported;
-    playPauseMediaButton.disabled = !desktopStatus.media.supported;
-    nextMediaButton.disabled = !desktopStatus.media.supported;
-    desktopIntegrationStatus.textContent = desktopStatus.shortcutRegistered
-      ? desktopStatus.media.supported
-        ? '全局快捷键已启用，媒体控制适配器可用。'
-        : '全局快捷键已启用；当前没有可用的媒体控制适配器。'
-      : desktopStatus.settings.globalShortcutsEnabled
-        ? '快捷键注册失败，可能已被其他程序占用。'
-        : '两项默认关闭；快捷键只识别固定组合，不记录键盘内容。';
+    displayDesktopIntegrationStatus(desktopStatus);
     updateIdentity();
+    await loadCharacterLibrary();
     await updateSecretStatus();
   };
 
-  const saveSettings = async (): Promise<boolean> => {
+  const saveSettings = async (statusTarget = settingsStatus): Promise<boolean> => {
     if (!api || !profile) {
       return false;
     }
     const providerId = providerSelect.value as ConfigurableProviderId;
     const modelId = modelInput.value.trim();
     if (!modelId) {
-      settingsStatus.textContent = '请填写模型名称。';
+      statusTarget.textContent = '请填写模型名称。';
       return false;
     }
     const updatedName = characterNameInput.value.trim();
@@ -1439,41 +1799,77 @@ export const initializeChat = async ({
       personaPrompt: personaInput.value.trim(),
       lore: readLoreEditor(updatedName),
     };
-    settingsStatus.textContent = '正在保存…';
-    try {
-      await api.setDesktopIntegrationSettings({
-        settings: {
-          globalShortcutsEnabled: globalShortcutInput.checked,
-          mediaControlEnabled: mediaControlInput.checked,
-        },
-      });
-    } catch {
-      settingsStatus.textContent = '桌面快捷操作设置保存失败，其他设置没有更改。';
-      return false;
-    }
+    statusTarget.textContent = '正在保存…';
     const operations = await Promise.all([
-      providerId === 'openai-compatible'
-        ? api.setProviderConfiguration({ openAICompatibleBaseUrl: baseUrlInput.value.trim() })
-        : Promise.resolve({ ok: true } as const),
+      api.setProviderConfiguration({
+        openAICompatibleBaseUrl: baseUrlInput.value.trim(),
+        allowRemoteComplexTasks: allowRemoteComplexTasksInput.checked,
+        ...(allowRemoteComplexTasksInput.checked
+          ? {
+              remoteSelection: {
+                providerId: remoteProviderSelect.value,
+                modelId: remoteModelInput.value.trim(),
+              },
+            }
+          : {}),
+      }),
       api.setConversationConfiguration({ selection: { providerId, modelId } }),
       api.setCharacterProfile(updatedProfile),
       apiKeyInput.value.trim()
         ? api.setProviderSecret({ providerId, apiKey: apiKeyInput.value })
         : Promise.resolve({ ok: true } as const),
+      allowRemoteComplexTasksInput.checked &&
+      remoteProviderSelect.value !== providerId &&
+      remoteApiKeyInput.value.trim()
+        ? api.setProviderSecret({
+            providerId: remoteProviderSelect.value as ConfigurableProviderId,
+            apiKey: remoteApiKeyInput.value,
+          })
+        : Promise.resolve({ ok: true } as const),
     ]);
     const failed = operations.find((result) => !result.ok);
     if (failed && !failed.ok) {
-      settingsStatus.textContent = failed.error.message;
+      statusTarget.textContent = failed.error.message;
       return false;
     }
     profile = updatedProfile;
     updateIdentity();
     apiKeyInput.value = '';
-    settingsStatus.textContent = '已保存。';
+    remoteApiKeyInput.value = '';
+    statusTarget.textContent = '已保存。';
     await loadSettings();
     messages = await api.getConversationHistory();
     renderHistory();
     return true;
+  };
+
+  const saveDesktopIntegrationSettings = async (): Promise<void> => {
+    if (!api) return;
+    const requestedSettings = {
+      globalShortcutsEnabled: globalShortcutInput.checked,
+      mediaControlEnabled: mediaControlInput.checked,
+      visibilityShortcut: visibilityShortcutInput.value.trim(),
+    };
+    globalShortcutInput.disabled = true;
+    mediaControlInput.disabled = true;
+    visibilityShortcutInput.disabled = true;
+    desktopIntegrationStatus.textContent = '正在应用桌面快捷操作设置…';
+    try {
+      await api.setDesktopIntegrationSettings({ settings: requestedSettings });
+      displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
+    } catch {
+      const failureMessage = '桌面快捷操作设置保存失败，请重试。';
+      try {
+        displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
+        desktopIntegrationStatus.textContent = `${failureMessage}${desktopIntegrationStatus.textContent}`;
+      } catch {
+        desktopIntegrationStatus.textContent = failureMessage;
+      }
+    } finally {
+      globalShortcutInput.disabled = false;
+      mediaControlInput.disabled = false;
+      visibilityShortcutInput.disabled = false;
+    }
   };
 
   clearLoreButton.addEventListener('click', () => {
@@ -1515,14 +1911,37 @@ export const initializeChat = async ({
   ] as const) {
     button.addEventListener('click', () => {
       void (async () => {
-        if (!api) return;
-        const handled = await api.sendMediaCommand({ command });
-        desktopIntegrationStatus.textContent = handled
-          ? '媒体指令已发送。'
-          : '当前媒体适配器不可用，未执行系统操作。';
+        if (!api || mediaCommandInFlight) return;
+        mediaCommandInFlight = true;
+        previousMediaButton.disabled = true;
+        playPauseMediaButton.disabled = true;
+        nextMediaButton.disabled = true;
+        desktopIntegrationStatus.textContent = '正在控制当前媒体会话…';
+        try {
+          const handled = await api.sendMediaCommand({ command });
+          desktopIntegrationStatus.textContent = handled
+            ? '媒体指令已发送到当前活动会话。'
+            : '当前没有可控制的活动媒体会话，未执行操作。';
+        } catch {
+          desktopIntegrationStatus.textContent = '媒体控制失败，桌宠和聊天仍可继续。';
+        } finally {
+          mediaCommandInFlight = false;
+          previousMediaButton.disabled = !mediaControlsAvailable;
+          playPauseMediaButton.disabled = !mediaControlsAvailable;
+          nextMediaButton.disabled = !mediaControlsAvailable;
+        }
       })();
     });
   }
+  globalShortcutInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
+  mediaControlInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
+  visibilityShortcutInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
   cancelCharacterSearchButton.addEventListener('click', () => {
     if (!api || !activeCharacterResearchId) return;
     const requestId = activeCharacterResearchId;
@@ -1541,7 +1960,7 @@ export const initializeChat = async ({
   });
 
   memoryButton.addEventListener('click', () => {
-    setPanelExpanded(true);
+    setPanelExpanded(true, 'chat');
     const willOpen = memoryPanel.hidden;
     closeDrawers();
     memoryPanel.hidden = !willOpen;
@@ -1558,7 +1977,7 @@ export const initializeChat = async ({
     }
   });
   historyButton.addEventListener('click', () => {
-    setPanelExpanded(true);
+    setPanelExpanded(true, 'chat');
     const willOpen = historyPanel.hidden;
     closeDrawers();
     historyPanel.hidden = !willOpen;
@@ -1566,17 +1985,28 @@ export const initializeChat = async ({
       renderHistory();
     }
   });
+  debugButton.addEventListener('click', () => {
+    setPanelExpanded(true, 'chat');
+    const willOpen = debugPanel.hidden;
+    closeDrawers();
+    debugPanel.hidden = !willOpen;
+    if (willOpen) renderContextDebug();
+  });
   settingsButton.addEventListener('click', () => {
-    setPanelExpanded(true);
     const willOpen = settingsPanel.hidden;
     closeDrawers();
     settingsPanel.hidden = !willOpen;
+    setPanelExpanded(true, willOpen ? 'settings' : 'chat');
     if (willOpen) void loadWindowScale();
   });
   closeHistoryButton.addEventListener('click', closeDrawers);
   closeMemoryButton.addEventListener('click', closeDrawers);
+  closeDebugButton.addEventListener('click', closeDrawers);
   closeSettingsButton.addEventListener('click', closeDrawers);
-  launcherButton.addEventListener('click', () => setPanelExpanded(true));
+  launcherButton.addEventListener('click', () => {
+    showOpeningLineIfReady();
+    setPanelExpanded(true, 'chat');
+  });
   collapseButton.addEventListener('click', () => {
     closeDrawers();
     setPanelExpanded(false);
@@ -1585,7 +2015,16 @@ export const initializeChat = async ({
   automaticMemoryInput.addEventListener('change', () => {
     if (!api) return;
     void api
-      .setMemorySettings({ automaticMemoryEnabled: automaticMemoryInput.checked })
+      .setMemorySettings({
+        automaticMemoryEnabled: automaticMemoryInput.checked,
+        semanticIndex: semanticIndexSelect.value as 'local' | 'qdrant',
+        relationshipIndex: relationshipIndexSelect.value as 'local' | 'neo4j',
+        qdrantUrl: qdrantUrlInput.value,
+        qdrantCollection: qdrantCollectionInput.value,
+        neo4jUrl: neo4jUrlInput.value,
+        neo4jDatabase: neo4jDatabaseInput.value,
+        neo4jUsername: neo4jUsernameInput.value,
+      })
       .then((result) => {
         memoryStatus.textContent = result.ok
           ? automaticMemoryInput.checked
@@ -1593,6 +2032,32 @@ export const initializeChat = async ({
             : '自动提取已关闭；主动“记住”仍然有效。'
           : result.message;
       });
+  });
+  saveMemoryIndexesButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api) return;
+      memoryStatus.textContent = '正在保存混合记忆索引设置…';
+      const result = await api.setMemorySettings({
+        automaticMemoryEnabled: automaticMemoryInput.checked,
+        semanticIndex: semanticIndexSelect.value as 'local' | 'qdrant',
+        relationshipIndex: relationshipIndexSelect.value as 'local' | 'neo4j',
+        qdrantUrl: qdrantUrlInput.value.trim(),
+        qdrantCollection: qdrantCollectionInput.value.trim(),
+        ...(qdrantApiKeyInput.value ? { qdrantApiKey: qdrantApiKeyInput.value } : {}),
+        neo4jUrl: neo4jUrlInput.value.trim(),
+        neo4jDatabase: neo4jDatabaseInput.value.trim(),
+        neo4jUsername: neo4jUsernameInput.value.trim(),
+        ...(neo4jPasswordInput.value ? { neo4jPassword: neo4jPasswordInput.value } : {}),
+      });
+      memoryStatus.textContent = result.ok
+        ? '混合记忆索引设置已保存；连接失败时会自动回退关键词。'
+        : result.message;
+      if (result.ok) {
+        qdrantApiKeyInput.value = '';
+        neo4jPasswordInput.value = '';
+        await loadMemories();
+      }
+    })();
   });
   exportMemoryButton.addEventListener('click', () => {
     if (!api) return;
@@ -1624,9 +2089,89 @@ export const initializeChat = async ({
       if (result.ok) await loadMemories();
     })();
   });
+  importCharacterButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api) return;
+      characterLibraryStatus.textContent = '正在检查角色包…';
+      const result = await api.previewCharacterPackage();
+      if (!result.ok) {
+        characterLibraryStatus.textContent = result.message;
+        return;
+      }
+      if (result.canceled || !result.preview) {
+        characterLibraryStatus.textContent = '已取消导入。';
+        return;
+      }
+      const preview = result.preview;
+      if (preview.conflict === 'blocked') {
+        characterLibraryStatus.textContent =
+          '角色 ID、包 ID 或记忆命名空间与其他角色冲突，不能导入。';
+        return;
+      }
+      const attribution = preview.attribution.length
+        ? preview.attribution
+            .map((item) => `${item.title}：${item.licenseNote || '未提供额外许可说明'}`)
+            .join('\n')
+        : '未附署名；请确认你有权使用和分发其中的角色及模型素材。';
+      const confirmed = await confirmAction({
+        title: preview.conflict === 'replace' ? '替换已有角色包' : '导入角色包',
+        message: `角色：${preview.characterName}${preview.sourceWork ? `（${preview.sourceWork}）` : ''}\n素材：${preview.assetCount} 项，约 ${Math.ceil(preview.uncompressedBytes / 1024)} KiB${preview.hasLive2DModel ? '，含 Live2D 模型' : ''}`,
+        details: `${attribution}\n\n角色包不会导入聊天、长期记忆或 API Key。`,
+        confirmLabel: preview.conflict === 'replace' ? '确认替换' : '确认导入',
+      });
+      if (!confirmed) {
+        characterLibraryStatus.textContent = '已取消导入。';
+        return;
+      }
+      const imported = await api.confirmCharacterPackageImport({
+        previewId: preview.previewId,
+        replaceExisting: preview.conflict === 'replace',
+      });
+      if (!imported.ok) {
+        characterLibraryStatus.textContent = imported.message;
+        return;
+      }
+      messages = await api.getConversationHistory();
+      await loadSettings();
+      reloadActiveCharacter();
+      characterLibraryStatus.textContent = `“${preview.characterName}”已导入并切换。`;
+      renderHistory();
+    })();
+  });
+  exportCharacterButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api) return;
+      characterLibraryStatus.textContent = '正在生成不含私人数据的角色包…';
+      const result = await api.exportActiveCharacterPackage();
+      characterLibraryStatus.textContent = result.ok
+        ? result.canceled
+          ? '已取消导出。'
+          : '角色包已导出；聊天、记忆和 API Key 未写入。'
+        : result.message;
+    })();
+  });
   providerSelect.addEventListener('change', () => {
     updateProviderVisibility();
+    remoteApiKeyInput.value = '';
+    connectionStatus.textContent = '';
     void updateSecretStatus();
+  });
+  allowRemoteComplexTasksInput.addEventListener('change', () => {
+    updateCollaborationVisibility();
+    void updateSecretStatus();
+  });
+  remoteProviderSelect.addEventListener('change', () => {
+    remoteApiKeyInput.value = '';
+    void updateSecretStatus();
+  });
+  modelInput.addEventListener('input', () => {
+    connectionStatus.textContent = '';
+  });
+  baseUrlInput.addEventListener('input', () => {
+    connectionStatus.textContent = '';
+  });
+  apiKeyInput.addEventListener('input', () => {
+    connectionStatus.textContent = '';
   });
   scaleInput.addEventListener('input', () => windowScaleSync?.preview(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {
@@ -1638,19 +2183,26 @@ export const initializeChat = async ({
   });
   testButton.addEventListener('click', () => {
     void (async () => {
-      if (!api || !(await saveSettings())) {
+      if (!api || !(await saveSettings(connectionStatus))) {
         return;
       }
-      settingsStatus.textContent = '正在测试连接…';
+      connectionStatus.textContent = '正在测试连接…';
+      testButton.disabled = true;
       const requestId = createRequestId('test');
-      const result = await api.testProviderConnection({
-        requestId,
-        providerId: providerSelect.value as ConfigurableProviderId,
-        modelId: modelInput.value.trim(),
-      });
-      settingsStatus.textContent = result.ok
-        ? `连接成功，约 ${result.latencyMs} ms。`
-        : errorMessages[result.error.code];
+      try {
+        const result = await api.testProviderConnection({
+          requestId,
+          providerId: providerSelect.value as ConfigurableProviderId,
+          modelId: modelInput.value.trim(),
+        });
+        connectionStatus.textContent = result.ok
+          ? `连接成功，约 ${result.latencyMs} ms。`
+          : errorMessages[result.error.code];
+      } catch {
+        connectionStatus.textContent = '连接测试失败，请检查配置后重试。';
+      } finally {
+        testButton.disabled = false;
+      }
     })();
   });
   deleteSecretButton.addEventListener('click', () => {
@@ -1746,7 +2298,10 @@ export const initializeChat = async ({
     input.placeholder = '请在 Electron 桌面应用中使用对话。';
   }
 
-  const handleCharacterLoaded = (): void => updateIdentity();
+  const handleCharacterLoaded = (): void => {
+    updateIdentity();
+    if (panelExpanded && panelView === 'chat') showOpeningLineIfReady();
+  };
   window.addEventListener('deskpet:character-loaded', handleCharacterLoaded);
 
   return () => {

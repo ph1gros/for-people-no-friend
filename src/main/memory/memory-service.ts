@@ -11,6 +11,7 @@ import type {
   MemoryConflictResolution,
   MemoryRecord,
 } from '../../core/memory/contracts';
+import { retrieveHybridMemories, type HybridMemoryMatch } from '../../core/memory/hybrid-retrieval';
 import {
   AUTOMATIC_MEMORY_BATCH_MESSAGES,
   deriveMemoryKey,
@@ -20,8 +21,13 @@ import {
   sanitizeMemoryCandidate,
 } from '../../core/memory/memory-policy';
 import type { ConversationMessage } from '../../shared/conversation-ipc';
+import type { MemorySettings, SetMemorySettingsInput } from '../../shared/memory-ipc';
+import type { SecretStore } from '../security/secret-store';
 import type { DeskpetDatabase } from '../storage/deskpet-database';
+import type { MemoryIndexConfigStore } from '../storage/memory-index-config-store';
 import { MemoryStore } from '../storage/memory-store';
+import { Neo4jRelationshipMemoryIndex, QdrantMemoryIndex } from './external-memory-indexes';
+import { LocalEmbeddingMemoryIndex, LocalRelationshipMemoryIndex } from './local-memory-indexes';
 
 const RECENT_MESSAGES_OUTSIDE_SUMMARY = 20;
 const INITIAL_SUMMARY_MESSAGES = 10;
@@ -42,6 +48,7 @@ interface MemoryModelRuntime {
 export interface ConversationMemoryContext {
   summary?: string;
   memories: MemoryRecord[];
+  matches?: HybridMemoryMatch[];
 }
 
 export interface ExplicitMemoryResult {
@@ -103,7 +110,11 @@ export const formatMemoryContext = (context: ConversationMemoryContext): string 
   if (context.memories.length > 0) {
     parts.push(
       '与当前消息相关的长期记忆（可能过时；若与用户当前说法冲突，以当前说法为准）：',
-      ...context.memories.map((memory) => `- [${memory.type}] ${memory.content}`),
+      ...context.memories.map((memory) => {
+        const match = context.matches?.find(({ record }) => record.id === memory.id);
+        const reasons = match?.reasons.length ? `；命中：${match.reasons.join('/')}` : '';
+        return `- [${memory.type}${reasons}] ${memory.content}`;
+      }),
     );
   }
   return parts.join('\n').slice(0, 6_000);
@@ -135,6 +146,9 @@ export class MemoryService {
   public constructor(
     private readonly database: DeskpetDatabase,
     private readonly models: MemoryModelRuntime,
+    private readonly indexConfiguration?: MemoryIndexConfigStore,
+    private readonly secrets?: SecretStore,
+    private readonly fetcher: typeof fetch = fetch,
   ) {
     this.store = new MemoryStore(database);
   }
@@ -145,6 +159,39 @@ export class MemoryService {
 
   public setAutomaticMemoryEnabled(enabled: boolean): void {
     this.database.setMetadata(AUTOMATIC_MEMORY_SETTING, String(enabled));
+  }
+
+  public async getSettings(): Promise<MemorySettings> {
+    const configuration = await this.indexConfiguration?.get();
+    return {
+      automaticMemoryEnabled: this.isAutomaticMemoryEnabled(),
+      semanticIndex: configuration?.semanticIndex ?? 'local',
+      relationshipIndex: configuration?.relationshipIndex ?? 'local',
+      qdrantUrl: configuration?.qdrantUrl ?? 'http://127.0.0.1:6333',
+      qdrantCollection: configuration?.qdrantCollection ?? 'deskpet_memories',
+      qdrantApiKeySaved: (await this.secrets?.has('qdrant-api-key')) ?? false,
+      neo4jUrl: configuration?.neo4jUrl ?? 'http://127.0.0.1:7474',
+      neo4jDatabase: configuration?.neo4jDatabase ?? 'neo4j',
+      neo4jUsername: configuration?.neo4jUsername ?? 'neo4j',
+      neo4jPasswordSaved: (await this.secrets?.has('neo4j-password')) ?? false,
+    };
+  }
+
+  public async setSettings(settings: SetMemorySettingsInput): Promise<void> {
+    this.setAutomaticMemoryEnabled(settings.automaticMemoryEnabled);
+    if (this.indexConfiguration) {
+      await this.indexConfiguration.set({
+        semanticIndex: settings.semanticIndex ?? 'local',
+        relationshipIndex: settings.relationshipIndex ?? 'local',
+        qdrantUrl: settings.qdrantUrl ?? 'http://127.0.0.1:6333',
+        qdrantCollection: settings.qdrantCollection ?? 'deskpet_memories',
+        neo4jUrl: settings.neo4jUrl ?? 'http://127.0.0.1:7474',
+        neo4jDatabase: settings.neo4jDatabase ?? 'neo4j',
+        neo4jUsername: settings.neo4jUsername ?? 'neo4j',
+      });
+    }
+    if (settings.qdrantApiKey) await this.secrets?.set('qdrant-api-key', settings.qdrantApiKey);
+    if (settings.neo4jPassword) await this.secrets?.set('neo4j-password', settings.neo4jPassword);
   }
 
   public list(namespace: string): MemoryRecord[] {
@@ -253,11 +300,52 @@ export class MemoryService {
     };
   }
 
-  public getConversationContext(namespace: string, query: string): ConversationMemoryContext {
+  public async getConversationContext(
+    namespace: string,
+    query: string,
+  ): Promise<ConversationMemoryContext> {
     const summary = this.database.getSummary(namespace)?.summary;
+    const records = this.store.list(namespace, undefined, 300);
+    const keywordMatches = this.store.retrieve(namespace, query, 8);
+    const configuration = await this.indexConfiguration?.get();
+    const semanticIndex =
+      configuration?.semanticIndex === 'qdrant'
+        ? new QdrantMemoryIndex(
+            configuration.qdrantUrl,
+            configuration.qdrantCollection,
+            this.fetcher,
+            () => this.secrets?.get('qdrant-api-key') ?? Promise.resolve(undefined),
+          )
+        : new LocalEmbeddingMemoryIndex(records);
+    const relationshipIndex =
+      configuration?.relationshipIndex === 'neo4j'
+        ? new Neo4jRelationshipMemoryIndex(
+            configuration.neo4jUrl,
+            configuration.neo4jDatabase,
+            configuration.neo4jUsername,
+            this.fetcher,
+            () => this.secrets?.get('neo4j-password') ?? Promise.resolve(undefined),
+          )
+        : new LocalRelationshipMemoryIndex(records);
+    if (semanticIndex instanceof QdrantMemoryIndex) {
+      await semanticIndex.sync(namespace, records).catch(() => undefined);
+    }
+    if (relationshipIndex instanceof Neo4jRelationshipMemoryIndex) {
+      await relationshipIndex.sync(namespace, records).catch(() => undefined);
+    }
+    const matches = await retrieveHybridMemories({
+      namespace,
+      query,
+      keywordMatches,
+      candidateRecords: records,
+      semanticIndex,
+      relationshipIndex,
+      limit: 5,
+    });
     return {
       ...(summary ? { summary } : {}),
-      memories: this.store.retrieve(namespace, query, 5),
+      memories: matches.map(({ record }) => record),
+      matches,
     };
   }
 

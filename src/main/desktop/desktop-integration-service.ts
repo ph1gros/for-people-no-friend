@@ -10,8 +10,6 @@ export interface GlobalShortcutAdapter {
   unregister(accelerator: string): void;
 }
 
-const TOGGLE_SHORTCUT = 'CommandOrControl+Shift+Space';
-
 const unsupportedMedia: MediaController = {
   getState: async () => ({ supported: false }),
   send: async () => false,
@@ -21,8 +19,12 @@ export class DesktopIntegrationService {
   private settings: DesktopIntegrationSettings = {
     globalShortcutsEnabled: false,
     mediaControlEnabled: false,
+    visibilityShortcut: '\\',
   };
   private shortcutRegistered = false;
+  private registeredVisibilityShortcut: string | undefined;
+  private shortcutWindowFocused = false;
+  private mediaCommandInFlight = false;
 
   public constructor(
     private readonly store: DesktopIntegrationStore,
@@ -52,22 +54,50 @@ export class DesktopIntegrationService {
     this.applyShortcut();
   }
 
+  public setShortcutWindowFocused(focused: boolean): void {
+    if (this.shortcutWindowFocused === focused) return;
+    this.shortcutWindowFocused = focused;
+    this.applyShortcut();
+  }
+
   public async sendMediaCommand(command: 'play-pause' | 'next' | 'previous'): Promise<boolean> {
-    return this.settings.mediaControlEnabled ? this.media.send(command).catch(() => false) : false;
+    if (!this.settings.mediaControlEnabled || this.mediaCommandInFlight) return false;
+    this.mediaCommandInFlight = true;
+    try {
+      return await this.media.send(command).catch(() => false);
+    } finally {
+      this.mediaCommandInFlight = false;
+    }
   }
 
   public dispose(): void {
-    if (this.shortcutRegistered) this.shortcuts.unregister(TOGGLE_SHORTCUT);
+    this.unregisterVisibilityShortcut();
     this.shortcutRegistered = false;
   }
 
   private applyShortcut(): void {
-    if (this.shortcutRegistered) {
-      this.shortcuts.unregister(TOGGLE_SHORTCUT);
-      this.shortcutRegistered = false;
+    this.unregisterVisibilityShortcut();
+    this.shortcutRegistered = false;
+    if (this.settings.globalShortcutsEnabled && this.shortcutWindowFocused) {
+      try {
+        this.shortcutRegistered = this.shortcuts.register(
+          this.settings.visibilityShortcut,
+          this.toggleVisibility,
+        );
+        if (this.shortcutRegistered) {
+          this.registeredVisibilityShortcut = this.settings.visibilityShortcut;
+        }
+      } catch {
+        this.unregisterVisibilityShortcut();
+        this.shortcutRegistered = false;
+      }
     }
-    if (this.settings.globalShortcutsEnabled) {
-      this.shortcutRegistered = this.shortcuts.register(TOGGLE_SHORTCUT, this.toggleVisibility);
+  }
+
+  private unregisterVisibilityShortcut(): void {
+    if (this.registeredVisibilityShortcut) {
+      this.shortcuts.unregister(this.registeredVisibilityShortcut);
+      this.registeredVisibilityShortcut = undefined;
     }
   }
 }

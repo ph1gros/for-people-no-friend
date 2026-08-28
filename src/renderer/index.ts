@@ -77,3 +77,4 @@ window.addEventListener(
   { once: true },
 );
 void startCharacter();
+window.addEventListener('deskpet:reload-character', () => void startCharacter());

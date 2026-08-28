@@ -7,6 +7,7 @@ export interface SetWindowScaleInput {
 
 export interface SetChatPanelExpandedInput {
   expanded: boolean;
+  view?: 'chat' | 'settings';
 }
 
 export const parseSetWindowScaleInput = (value: unknown): SetWindowScaleInput => {
@@ -33,5 +34,9 @@ export const parseSetChatPanelExpandedInput = (value: unknown): SetChatPanelExpa
   ) {
     throw new Error('The chat panel state is invalid.');
   }
-  return { expanded: value.expanded };
+  const view = 'view' in value ? value.view : undefined;
+  if (view !== undefined && view !== 'chat' && view !== 'settings') {
+    throw new Error('The chat panel state is invalid.');
+  }
+  return { expanded: value.expanded, ...(view ? { view } : {}) };
 };

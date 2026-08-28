@@ -76,7 +76,9 @@ export const renderCharacterError = (
 
 export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter> => {
   const manifest = await loadLocalModelManifest();
-  const modelResponse = await fetch(resolveLocalModelUrl(manifest.model), { cache: 'no-store' });
+  const modelResponse = await fetch(resolveLocalModelUrl(manifest.model, manifest.assetRoot), {
+    cache: 'no-store',
+  });
   if (!modelResponse.ok) {
     throw new ModelManifestError(
       `模型文件读取失败（HTTP ${modelResponse.status}）。`,
@@ -84,10 +86,10 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
     );
   }
   const capabilityReport = inspectLive2DModelCapabilities(manifest, await modelResponse.json());
-  await loadCubismCore(resolveLocalModelUrl(manifest.core));
+  await loadCubismCore(manifest.coreUrl ?? resolveLocalModelUrl(manifest.core, manifest.assetRoot));
   const renderer = await createLive2DRenderer(
     host,
-    resolveLocalModelUrl(manifest.model),
+    resolveLocalModelUrl(manifest.model, manifest.assetRoot),
     manifest.parameters,
     manifest.presentation,
   );

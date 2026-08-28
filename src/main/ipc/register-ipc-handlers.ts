@@ -1,8 +1,13 @@
-import { writeFile } from 'node:fs/promises';
+import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import { app, dialog, ipcMain, screen, type BrowserWindow } from 'electron';
 
+import {
+  parseCharacterIdInput,
+  parseConfirmCharacterPackageImportInput,
+  type CharacterPackageFileResult,
+} from '../../shared/character-package-ipc';
 import {
   parseBuildCharacterDraftInput,
   parseCancelCharacterResearchInput,
@@ -45,6 +50,8 @@ import { parseWorkGlossaryInput } from '../../shared/work-glossary-ipc';
 import type { CharacterResearchService } from '../character/character-research-service';
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
 import type { ConversationRuntime } from '../conversation/conversation-runtime';
+import type { CharacterPackageService } from '../character/character-package-service';
+import { MAX_CHARACTER_PACKAGE_BYTES } from '../character/character-package-archive';
 import type { DesktopIntegrationService } from '../desktop/desktop-integration-service';
 import type { ModelRuntime } from '../llm/model-runtime';
 import type { MemoryService } from '../memory/memory-service';
@@ -56,7 +63,7 @@ export interface IpcWindowController {
   getWindow(): BrowserWindow | undefined;
   getScale(): number;
   setScale(scale: number): number;
-  setChatPanelExpanded(expanded: boolean): void;
+  setChatPanelExpanded(expanded: boolean, settingsExpanded?: boolean): void;
 }
 
 const requireTrustedSender = (
@@ -106,6 +113,14 @@ const showSaveDialog = (
   return window ? dialog.showSaveDialog(window, options) : dialog.showSaveDialog(options);
 };
 
+const showOpenDialog = (
+  windows: IpcWindowController,
+  options: Electron.OpenDialogOptions,
+): Promise<Electron.OpenDialogReturnValue> => {
+  const window = windows.getWindow();
+  return window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options);
+};
+
 export const registerIpcHandlers = (
   windows: IpcWindowController,
   models: ModelRuntime,
@@ -115,6 +130,7 @@ export const registerIpcHandlers = (
   characterResearch: CharacterResearchService,
   workGlossary: WorkGlossaryService,
   desktopIntegrations?: DesktopIntegrationService,
+  characterPackages?: CharacterPackageService,
 ): void => {
   ipcMain.handle(IPC_CHANNELS.getAppVersion, (event) => {
     requireTrustedSender(event, windows);
@@ -259,6 +275,108 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return characterResearch.cancel(parseCancelCharacterResearchInput(input).requestId);
   });
+  ipcMain.handle(IPC_CHANNELS.listCharacters, (event) => {
+    requireTrustedSender(event, windows);
+    return characterPackages?.list() ?? [];
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.previewCharacterPackage,
+    async (event): Promise<CharacterPackageFileResult> => {
+      requireTrustedSender(event, windows);
+      if (!characterPackages) {
+        return { ok: false, canceled: false, message: '角色包服务不可用。' };
+      }
+      const selection = await showOpenDialog(windows, {
+        title: '预览角色包',
+        properties: ['openFile'],
+        filters: [{ name: 'For People No Friend 角色包', extensions: ['zip'] }],
+      });
+      if (selection.canceled || !selection.filePaths[0]) return { ok: true, canceled: true };
+      try {
+        const filePath = selection.filePaths[0];
+        if ((await stat(filePath)).size > MAX_CHARACTER_PACKAGE_BYTES) throw new Error();
+        return {
+          ok: true,
+          canceled: false,
+          preview: await characterPackages.preview(new Uint8Array(await readFile(filePath))),
+        };
+      } catch {
+        return {
+          ok: false,
+          canceled: false,
+          message: '角色包无效、不兼容、过大，或包含不安全文件。',
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.confirmCharacterPackageImport,
+    async (event, input: unknown): Promise<CharacterPackageFileResult> => {
+      requireTrustedSender(event, windows);
+      if (!characterPackages) {
+        return { ok: false, canceled: false, message: '角色包服务不可用。' };
+      }
+      try {
+        const parsed = parseConfirmCharacterPackageImportInput(input);
+        await characterPackages.confirmImport(parsed.previewId, parsed.replaceExisting);
+        return { ok: true, canceled: false };
+      } catch (error) {
+        return {
+          ok: false,
+          canceled: false,
+          message: error instanceof Error ? error.message : '角色包导入失败。',
+        };
+      }
+    },
+  );
+  ipcMain.handle(
+    IPC_CHANNELS.exportActiveCharacterPackage,
+    async (event): Promise<CharacterPackageFileResult> => {
+      requireTrustedSender(event, windows);
+      if (!characterPackages) {
+        return { ok: false, canceled: false, message: '角色包服务不可用。' };
+      }
+      try {
+        const exported = await characterPackages.exportActive();
+        const destination = await showSaveDialog(windows, {
+          title: '导出当前角色包',
+          defaultPath: path.join(app.getPath('documents'), exported.fileName),
+          filters: [{ name: 'For People No Friend 角色包', extensions: ['zip'] }],
+        });
+        if (destination.canceled || !destination.filePath) return { ok: true, canceled: true };
+        await writeFile(destination.filePath, exported.bytes, { mode: 0o600 });
+        return { ok: true, canceled: false };
+      } catch (error) {
+        const code =
+          error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
+        const message =
+          code === 'ENOENT'
+            ? '内置模型资源不完整，无法导出角色包。'
+            : code === 'EACCES' || code === 'EPERM'
+              ? '无法写入所选位置，请换一个文件夹或文件名。'
+              : '当前角色包导出失败，请重试。';
+        return { ok: false, canceled: false, message };
+      }
+    },
+  );
+  ipcMain.handle(IPC_CHANNELS.activateCharacter, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(async () => {
+      if (!characterPackages) throw new Error();
+      await characterPackages.activate(parseCharacterIdInput(input).characterId);
+    }, '角色切换失败。');
+  });
+  ipcMain.handle(IPC_CHANNELS.removeCharacter, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(async () => {
+      if (!characterPackages) throw new Error();
+      await characterPackages.remove(parseCharacterIdInput(input).characterId);
+    }, '角色删除失败。');
+  });
+  ipcMain.handle(IPC_CHANNELS.getActiveCharacterModelManifest, async (event) => {
+    requireTrustedSender(event, windows);
+    return characterPackages?.getActiveModelManifest();
+  });
   ipcMain.handle(IPC_CHANNELS.getWorkGlossaryStatus, (event, input: unknown) => {
     requireTrustedSender(event, windows);
     return workGlossary.getStatus(parseWorkGlossaryInput(input).sourceWork);
@@ -270,13 +388,13 @@ export const registerIpcHandlers = (
 
   ipcMain.handle(IPC_CHANNELS.getMemorySettings, (event) => {
     requireTrustedSender(event, windows);
-    return { automaticMemoryEnabled: memories.isAutomaticMemoryEnabled() };
+    return memories.getSettings();
   });
   ipcMain.handle(IPC_CHANNELS.setMemorySettings, (event, input: unknown) => {
     requireTrustedSender(event, windows);
     return runMemoryOperation(() => {
       const parsed = parseSetMemorySettingsInput(input);
-      memories.setAutomaticMemoryEnabled(parsed.automaticMemoryEnabled);
+      return memories.setSettings(parsed);
     });
   });
   ipcMain.handle(IPC_CHANNELS.listMemories, async (event) => {
@@ -406,7 +524,8 @@ export const registerIpcHandlers = (
   });
   ipcMain.handle(IPC_CHANNELS.setChatPanelExpanded, (event, input: unknown) => {
     requireTrustedSender(event, windows);
-    windows.setChatPanelExpanded(parseSetChatPanelExpandedInput(input).expanded);
+    const parsed = parseSetChatPanelExpandedInput(input);
+    windows.setChatPanelExpanded(parsed.expanded, parsed.view === 'settings');
   });
   ipcMain.handle(
     IPC_CHANNELS.getDesktopIntegrationStatus,
@@ -415,7 +534,11 @@ export const registerIpcHandlers = (
       return desktopIntegrations
         ? desktopIntegrations.getStatus()
         : {
-            settings: { globalShortcutsEnabled: false, mediaControlEnabled: false },
+            settings: {
+              globalShortcutsEnabled: false,
+              mediaControlEnabled: false,
+              visibilityShortcut: '\\',
+            },
             shortcutRegistered: false,
             media: { supported: false },
           };

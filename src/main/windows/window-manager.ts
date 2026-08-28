@@ -20,6 +20,7 @@ export class WindowManager {
   private saveTimer: NodeJS.Timeout | undefined;
   private isQuitting = false;
   private chatPanelExpanded = false;
+  private settingsPanelExpanded = false;
   private collapsedStateBeforeExpansion: PersistedWindowState | undefined;
   private expandedOrigin: PersistedWindowState | undefined;
   private readonly store = new WindowStateStore(app.getPath('userData'));
@@ -88,48 +89,64 @@ export class WindowManager {
 
   public getScale(): number {
     const window = this.getWindow();
-    return window ? boundsToState(window.getBounds()).scale : 1;
+    return window ? boundsToState(window.getBounds(), this.settingsPanelExpanded).scale : 1;
   }
 
   public setScale(scale: number): number {
     const window = this.getWindow() ?? this.create();
     const centered = resizeStateAroundCenter(
-      boundsToState(window.getBounds()),
+      boundsToState(window.getBounds(), this.settingsPanelExpanded),
       scale,
       this.chatPanelExpanded,
+      this.settingsPanelExpanded,
     );
     const visible = keepWindowVisible(
       centered,
       screen.getAllDisplays(),
       screen.getPrimaryDisplay().workArea,
       this.chatPanelExpanded,
+      this.settingsPanelExpanded,
     );
-    window.setBounds(stateToBounds(visible, this.chatPanelExpanded));
+    window.setBounds(stateToBounds(visible, this.chatPanelExpanded, this.settingsPanelExpanded));
     this.scheduleSave();
     return visible.scale;
   }
 
-  public setChatPanelExpanded(expanded: boolean): void {
-    if (this.chatPanelExpanded === expanded) return;
+  public setChatPanelExpanded(expanded: boolean, settingsExpanded = false): void {
+    const nextSettingsExpanded = expanded && settingsExpanded;
+    if (
+      this.chatPanelExpanded === expanded &&
+      this.settingsPanelExpanded === nextSettingsExpanded
+    ) {
+      return;
+    }
     const window = this.getWindow() ?? this.create();
-    const current = boundsToState(window.getBounds());
-    const target = expanded ? current : this.deriveCollapsedState(current);
-    if (expanded) this.collapsedStateBeforeExpansion = current;
+    const current = boundsToState(window.getBounds(), this.settingsPanelExpanded);
+    if (this.chatPanelExpanded && expanded) {
+      this.collapsedStateBeforeExpansion = this.deriveCollapsedState(current);
+    }
+    const target = expanded
+      ? (this.collapsedStateBeforeExpansion ?? current)
+      : this.deriveCollapsedState(current);
+    if (expanded && !this.chatPanelExpanded) this.collapsedStateBeforeExpansion = current;
     this.chatPanelExpanded = expanded;
-    if (expanded) configureMainWindowLayout(window, true);
+    this.settingsPanelExpanded = nextSettingsExpanded;
+    if (expanded) configureMainWindowLayout(window, true, nextSettingsExpanded);
     const visible = keepWindowVisible(
       target,
       screen.getAllDisplays(),
       screen.getPrimaryDisplay().workArea,
       expanded,
+      nextSettingsExpanded,
     );
-    window.setBounds(stateToBounds(visible, expanded));
+    window.setBounds(stateToBounds(visible, expanded, nextSettingsExpanded));
     if (expanded) {
       this.expandedOrigin = visible;
     } else {
       configureMainWindowLayout(window, false);
       this.collapsedStateBeforeExpansion = undefined;
       this.expandedOrigin = undefined;
+      this.settingsPanelExpanded = false;
     }
     this.scheduleSave();
   }
@@ -149,12 +166,15 @@ export class WindowManager {
     }
 
     const visibleState = keepWindowVisible(
-      boundsToState(window.getBounds()),
+      boundsToState(window.getBounds(), this.settingsPanelExpanded),
       screen.getAllDisplays(),
       screen.getPrimaryDisplay().workArea,
       this.chatPanelExpanded,
+      this.settingsPanelExpanded,
     );
-    window.setBounds(stateToBounds(visibleState, this.chatPanelExpanded));
+    window.setBounds(
+      stateToBounds(visibleState, this.chatPanelExpanded, this.settingsPanelExpanded),
+    );
     this.scheduleSave();
   }
 
@@ -183,7 +203,9 @@ export class WindowManager {
     }
 
     try {
-      this.store.save(this.deriveCollapsedState(boundsToState(window.getBounds())));
+      this.store.save(
+        this.deriveCollapsedState(boundsToState(window.getBounds(), this.settingsPanelExpanded)),
+      );
     } catch (error) {
       console.warn('Unable to save the deskpet window state.', error);
     }
@@ -197,7 +219,12 @@ export class WindowManager {
       this.collapsedStateBeforeExpansion,
       current.scale,
     );
-    const expandedAtScale = resizeStateAroundCenter(this.expandedOrigin, current.scale, true);
+    const expandedAtScale = resizeStateAroundCenter(
+      this.expandedOrigin,
+      current.scale,
+      true,
+      this.settingsPanelExpanded,
+    );
     return {
       ...current,
       x: collapsedAtScale.x + current.x - expandedAtScale.x,

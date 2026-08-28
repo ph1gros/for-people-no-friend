@@ -1,8 +1,15 @@
-import type { MediaCommand, MediaSessionState } from '../core/desktop/integration';
+import {
+  validateShortcutBindings,
+  type MediaCommand,
+  type MediaSessionState,
+} from '../core/desktop/integration';
+
+export const DEFAULT_VISIBILITY_SHORTCUT = '\\';
 
 export interface DesktopIntegrationSettings {
   globalShortcutsEnabled: boolean;
   mediaControlEnabled: boolean;
+  visibilityShortcut: string;
 }
 
 export interface SetDesktopIntegrationSettingsInput {
@@ -25,14 +32,22 @@ export const parseDesktopIntegrationSettings = (value: unknown): DesktopIntegrat
     typeof value !== 'object' ||
     Array.isArray(value) ||
     typeof (value as Record<string, unknown>).globalShortcutsEnabled !== 'boolean' ||
-    typeof (value as Record<string, unknown>).mediaControlEnabled !== 'boolean'
+    typeof (value as Record<string, unknown>).mediaControlEnabled !== 'boolean' ||
+    typeof (value as Record<string, unknown>).visibilityShortcut !== 'string'
   ) {
     throw new Error('The desktop integration settings are invalid.');
   }
-  const record = value as Record<string, boolean>;
+  const record = value as Record<string, unknown>;
+  const [shortcut] = validateShortcutBindings([
+    {
+      accelerator: (record.visibilityShortcut as string).trim(),
+      action: 'toggle-visibility',
+    },
+  ]);
   return {
-    globalShortcutsEnabled: record.globalShortcutsEnabled,
-    mediaControlEnabled: record.mediaControlEnabled,
+    globalShortcutsEnabled: record.globalShortcutsEnabled as boolean,
+    mediaControlEnabled: record.mediaControlEnabled as boolean,
+    visibilityShortcut: shortcut.accelerator,
   };
 };
 

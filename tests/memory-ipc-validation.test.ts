@@ -13,6 +13,13 @@ describe('M5 memory IPC validation', () => {
   it('accepts bounded settings and edits', () => {
     expect(parseSetMemorySettingsInput({ automaticMemoryEnabled: true })).toEqual({
       automaticMemoryEnabled: true,
+      semanticIndex: 'local',
+      relationshipIndex: 'local',
+      qdrantUrl: 'http://127.0.0.1:6333',
+      qdrantCollection: 'deskpet_memories',
+      neo4jUrl: 'http://127.0.0.1:7474',
+      neo4jDatabase: 'neo4j',
+      neo4jUsername: 'neo4j',
     });
     expect(
       parseUpdateMemoryInput({

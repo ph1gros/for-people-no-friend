@@ -16,6 +16,8 @@ export interface LocalModelManifest {
   parameters?: Record<string, number>;
   presentation?: Live2DPresentation;
   controls: Live2DControlMap;
+  assetRoot?: string;
+  coreUrl?: string;
 }
 
 export interface Live2DPresentation {
@@ -203,15 +205,25 @@ export const parseLocalModelManifest = (value: unknown): LocalModelManifest | un
   };
 };
 
-export const resolveLocalModelUrl = (relativePath: string): string =>
-  new URL(relativePath, new URL(LOCAL_MODEL_ROOT, window.location.href)).href;
+export const resolveLocalModelUrl = (relativePath: string, assetRoot = LOCAL_MODEL_ROOT): string =>
+  new URL(relativePath, new URL(assetRoot, window.location.href)).href;
 
 export const loadLocalModelManifest = async (
   fetcher: typeof fetch = fetch,
 ): Promise<LocalModelManifest> => {
+  const importedManifest =
+    typeof window === 'undefined'
+      ? undefined
+      : await window.deskpet?.getActiveCharacterModelManifest();
+  const manifestUrl = importedManifest
+    ? `deskpet-model://active/${importedManifest
+        .split('/')
+        .map((segment) => encodeURIComponent(segment))
+        .join('/')}`
+    : MODEL_MANIFEST_URL;
   let response: Response;
   try {
-    response = await fetcher(MODEL_MANIFEST_URL, { cache: 'no-store' });
+    response = await fetcher(manifestUrl, { cache: 'no-store' });
   } catch {
     throw new ModelManifestError('无法读取本地 Live2D 模型配置。', 'unavailable');
   }
@@ -233,5 +245,11 @@ export const loadLocalModelManifest = async (
   if (!manifest) {
     throw new ModelManifestError('model.json 格式无效或包含不安全路径。', 'invalid');
   }
-  return manifest;
+  return importedManifest
+    ? {
+        ...manifest,
+        assetRoot: new URL('./', manifestUrl).href,
+        coreUrl: resolveLocalModelUrl('live2dcubismcore.min.js'),
+      }
+    : manifest;
 };

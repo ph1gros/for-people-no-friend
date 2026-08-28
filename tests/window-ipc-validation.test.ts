@@ -10,7 +10,12 @@ import {
 describe('window scale IPC validation', () => {
   it('accepts only an explicit boolean chat panel state', () => {
     expect(parseSetChatPanelExpandedInput({ expanded: true })).toEqual({ expanded: true });
+    expect(parseSetChatPanelExpandedInput({ expanded: true, view: 'settings' })).toEqual({
+      expanded: true,
+      view: 'settings',
+    });
     expect(() => parseSetChatPanelExpandedInput({ expanded: 'yes' })).toThrow();
+    expect(() => parseSetChatPanelExpandedInput({ expanded: true, view: 'other' })).toThrow();
   });
   it('accepts values within the supported UI range', () => {
     expect(parseSetWindowScaleInput({ scale: MIN_WINDOW_SCALE })).toEqual({

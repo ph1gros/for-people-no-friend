@@ -28,7 +28,32 @@ export interface MediaController {
   send(command: MediaCommand): Promise<boolean>;
 }
 
-const SAFE_ACCELERATOR = /^(?=(?:.*(?:CommandOrControl|Ctrl|Alt|Shift)){2,})[A-Za-z0-9+]+$/;
+const SAFE_MODIFIERS = new Set(['CommandOrControl', 'Ctrl', 'Alt', 'Shift', 'Super']);
+const SAFE_KEYS = new Set([
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',
+  ...Array.from({ length: 24 }, (_value, index) => `F${index + 1}`),
+  'Space',
+  'Delete',
+  'Backspace',
+  'Enter',
+  'Return',
+  '[',
+  ']',
+  '\\',
+]);
+
+const isSafeAccelerator = (accelerator: string): boolean => {
+  if (accelerator === '\\') return true;
+  const parts = accelerator.split('+');
+  const key = parts.pop();
+  return (
+    parts.length >= 2 &&
+    new Set(parts).size === parts.length &&
+    parts.every((part) => SAFE_MODIFIERS.has(part)) &&
+    typeof key === 'string' &&
+    SAFE_KEYS.has(key)
+  );
+};
 
 export const validateShortcutBindings = (
   bindings: readonly DesktopShortcutBinding[],
@@ -37,7 +62,7 @@ export const validateShortcutBindings = (
   const seen = new Set<string>();
   return bindings.map((binding) => {
     if (
-      !SAFE_ACCELERATOR.test(binding.accelerator) ||
+      !isSafeAccelerator(binding.accelerator) ||
       !DESKTOP_ACTIONS.includes(binding.action) ||
       seen.has(binding.accelerator.toLowerCase())
     ) {

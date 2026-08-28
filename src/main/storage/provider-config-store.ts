@@ -4,11 +4,15 @@ import path from 'node:path';
 import { resolveChatCompletionsUrl } from '../../adapters/llm/openai-compatible-provider';
 import type { ModelSelection } from '../../core/llm/contracts';
 import { parseConversationConfiguration } from '../../shared/conversation-ipc';
+import { parseProviderConfiguration } from '../../shared/model-ipc';
+import type { ProviderConfiguration } from '../../shared/model-ipc';
 
 interface ProviderConfigFile {
-  version: 1;
+  version: 2;
   openAICompatibleBaseUrl: string;
   conversationSelection?: ModelSelection;
+  allowRemoteComplexTasks: boolean;
+  remoteSelection?: ModelSelection;
 }
 
 const DEFAULT_OPENAI_COMPATIBLE_BASE_URL = 'https://api.openai.com/v1';
@@ -31,6 +35,25 @@ export class ProviderConfigStore {
       resolveChatCompletionsUrl(baseUrl);
       const current = await this.read();
       await this.write({ ...current, openAICompatibleBaseUrl: baseUrl.trim() });
+    });
+  }
+
+  public async getProviderConfiguration(): Promise<ProviderConfiguration> {
+    await this.writeQueue;
+    const current = await this.read();
+    return {
+      openAICompatibleBaseUrl: current.openAICompatibleBaseUrl,
+      allowRemoteComplexTasks: current.allowRemoteComplexTasks,
+      ...(current.remoteSelection ? { remoteSelection: { ...current.remoteSelection } } : {}),
+    };
+  }
+
+  public setProviderConfiguration(configuration: ProviderConfiguration): Promise<void> {
+    return this.enqueueWrite(async () => {
+      const validated = parseProviderConfiguration(configuration);
+      resolveChatCompletionsUrl(validated.openAICompatibleBaseUrl);
+      const current = await this.read();
+      await this.write({ ...current, ...validated });
     });
   }
 
@@ -66,7 +89,7 @@ export class ProviderConfigStore {
         typeof value !== 'object' ||
         value === null ||
         !('version' in value) ||
-        value.version !== 1 ||
+        (value.version !== 1 && value.version !== 2) ||
         !('openAICompatibleBaseUrl' in value) ||
         typeof value.openAICompatibleBaseUrl !== 'string'
       ) {
@@ -76,10 +99,20 @@ export class ProviderConfigStore {
       const conversationSelection = parseConversationConfiguration({
         selection: 'conversationSelection' in value ? value.conversationSelection : undefined,
       }).selection;
+      const version2 = value.version === 2 ? (value as Record<string, unknown>) : undefined;
+      const collaboration = parseProviderConfiguration({
+        openAICompatibleBaseUrl: value.openAICompatibleBaseUrl,
+        allowRemoteComplexTasks: version2?.allowRemoteComplexTasks ?? false,
+        remoteSelection: version2?.remoteSelection,
+      });
       return {
-        version: 1,
+        version: 2,
         openAICompatibleBaseUrl: value.openAICompatibleBaseUrl,
         ...(conversationSelection ? { conversationSelection } : {}),
+        allowRemoteComplexTasks: collaboration.allowRemoteComplexTasks,
+        ...(collaboration.remoteSelection
+          ? { remoteSelection: collaboration.remoteSelection }
+          : {}),
       };
     } catch (error) {
       if (
@@ -89,8 +122,9 @@ export class ProviderConfigStore {
         error.code === 'ENOENT'
       ) {
         return {
-          version: 1,
+          version: 2,
           openAICompatibleBaseUrl: DEFAULT_OPENAI_COMPATIBLE_BASE_URL,
+          allowRemoteComplexTasks: false,
         };
       }
       throw error;

@@ -1,4 +1,5 @@
 import { CharacterReplyStreamDecoder } from '../../core/character/character-reply';
+import { selectContextualRoleplayExamples } from '../../core/character/character-lore';
 import { GraphemeStreamBuffer } from '../../core/conversation/grapheme-stream';
 import {
   adaptLegacyCharacterLore,
@@ -51,6 +52,8 @@ const busyResult = (): StartConversationResult => ({
 
 export class ConversationRuntime {
   private readonly active = new Map<string, ActiveConversation>();
+  private readonly conversationTurns = new Map<string, number>();
+  private readonly recentlyUsedRoleplayExamples = new Map<string, Map<string, number>>();
 
   public constructor(
     private readonly models: ModelRuntime,
@@ -165,6 +168,7 @@ export class ConversationRuntime {
       emit({ requestId: input.requestId, type: 'started', userMessage });
 
       let memoryContext = '';
+      let memoryFallback = false;
       if (this.memories) {
         try {
           const explicitResult = this.memories.handleExplicitIntent(
@@ -174,13 +178,14 @@ export class ConversationRuntime {
           memoryContext = [
             formatExplicitMemoryResult(explicitResult),
             formatMemoryContext(
-              this.memories.getConversationContext(profile.memoryNamespace, input.message),
+              await this.memories.getConversationContext(profile.memoryNamespace, input.message),
             ),
           ]
             .filter(Boolean)
             .join('\n\n');
         } catch {
           memoryContext = '';
+          memoryFallback = true;
         }
       }
       const context = selectRecentMessages([
@@ -193,6 +198,22 @@ export class ConversationRuntime {
         .filter((message) => message.status === 'complete')
         .slice(-4)
         .map(({ role, content }) => ({ role, content }));
+      const turn = (this.conversationTurns.get(profile.memoryNamespace) ?? 0) + 1;
+      this.conversationTurns.set(profile.memoryNamespace, turn);
+      const recentUses =
+        this.recentlyUsedRoleplayExamples.get(profile.memoryNamespace) ?? new Map();
+      const excludedKeys = new Set(
+        [...recentUses].filter(([, usedAt]) => turn - usedAt <= 2).map(([key]) => key),
+      );
+      const selectedRoleplay = profile.lore
+        ? selectContextualRoleplayExamples(profile.lore, {
+            query: input.message,
+            recentMessages: recentCompanionRecords.map(({ content }) => content),
+            excludedKeys,
+          })
+        : [];
+      for (const selected of selectedRoleplay) recentUses.set(selected.key, turn);
+      this.recentlyUsedRoleplayExamples.set(profile.memoryNamespace, recentUses);
       const [workGlossaryContext, characterKnowledgeContext] = await Promise.all([
         this.glossary
           ? this.glossary
@@ -209,6 +230,62 @@ export class ConversationRuntime {
           : '',
         this.buildCharacterKnowledgeContext(profile, input.message),
       ]);
+      emit({
+        requestId: input.requestId,
+        type: 'context-debug',
+        debug: {
+          providerId: selection.providerId,
+          modelId: selection.modelId,
+          recentMessageCount: context.length,
+          sources: [
+            {
+              name: '最近完整对话',
+              characters: context.reduce((total, message) => total + message.content.length, 0),
+              reason: '保持当前话题与指代连续',
+            },
+            ...(memoryContext
+              ? [
+                  {
+                    name: '记忆',
+                    characters: memoryContext.length,
+                    reason: '关键词与已确认事实命中',
+                  },
+                ]
+              : []),
+            ...(workGlossaryContext
+              ? [
+                  {
+                    name: '作品词库',
+                    characters: workGlossaryContext.length,
+                    reason: '当前消息命中作品专有词',
+                  },
+                ]
+              : []),
+            ...(characterKnowledgeContext
+              ? [
+                  {
+                    name: '角色资料',
+                    characters: characterKnowledgeContext.length,
+                    reason: '当前问题需要角色设定或相关来源',
+                  },
+                ]
+              : []),
+          ],
+          roleplayExamples: selectedRoleplay.map(({ example, score, reasons }) => ({
+            scene: example.scene,
+            line: example.line,
+            score,
+            reasons,
+          })),
+          fallbacks: [
+            ...(memoryFallback ? ['记忆读取异常，已回退为不注入记忆'] : []),
+            ...(!characterKnowledgeContext && profile.lore
+              ? ['未命中细节资料，使用稳定角色核心']
+              : []),
+            ...(selectedRoleplay.length === 0 ? ['没有情境示例命中，本轮不强塞台词'] : []),
+          ],
+        },
+      });
       let inputTokens = 0;
       let outputTokens = 0;
       for await (const event of this.models.streamConversation(
@@ -221,6 +298,7 @@ export class ConversationRuntime {
             workGlossaryContext,
             characterKnowledgeContext,
             recentCompanionRecords,
+            selectedRoleplay.map(({ example }) => example),
           ),
           messages: context,
           temperature: 0.8,

@@ -7,6 +7,11 @@ import type {
   ModelSelection,
   ModelTask,
 } from '../../core/llm/contracts';
+import {
+  selectTaskProvider,
+  type ModelProviderCapabilities,
+  type ModelTaskKind,
+} from '../../core/llm/provider-capabilities';
 import { DisabledProvider, ModelRouter } from '../../core/llm/model-router';
 import { ProviderRegistry } from '../../core/llm/provider-registry';
 import { ConfigurationError, ProviderResponseError, toPublicLlmError } from '../../core/llm/errors';
@@ -142,17 +147,16 @@ export class ModelRuntime {
       id: provider.id,
       displayName: provider.displayName,
       capabilities: [...provider.listCapabilities('')],
+      capabilityProfile: this.describeCapabilities(provider.id, ''),
     }));
   }
 
   public async getConfiguration(): Promise<ProviderConfiguration> {
-    return {
-      openAICompatibleBaseUrl: await this.configuration.getOpenAICompatibleBaseUrl(),
-    };
+    return this.configuration.getProviderConfiguration();
   }
 
   public async setConfiguration(configuration: ProviderConfiguration): Promise<void> {
-    await this.configuration.setOpenAICompatibleBaseUrl(configuration.openAICompatibleBaseUrl);
+    await this.configuration.setProviderConfiguration(configuration);
   }
 
   public async getConversationConfiguration(): Promise<ConversationConfiguration> {
@@ -174,13 +178,24 @@ export class ModelRuntime {
     return this.createRouter(selection).streamChat('conversation', request, signal);
   }
 
-  public streamMemoryTask(
+  public async *streamMemoryTask(
     task: Extract<ModelTask, 'memoryExtraction' | 'summarization'>,
     request: ChatRequest,
     selection: ModelSelection,
     signal?: AbortSignal,
   ): AsyncIterable<ChatEvent> {
-    return this.createRouter(selection).streamChat(task, request, signal);
+    const taskKind: ModelTaskKind = 'memory-maintenance';
+    const primary = await this.selectComplexTask(taskKind, selection);
+    const events: ChatEvent[] = [];
+    try {
+      for await (const event of this.createRouter(primary).streamChat(task, request, signal)) {
+        events.push(event);
+      }
+      yield* events;
+    } catch (error) {
+      if (signal?.aborted || primary.providerId === selection.providerId) throw error;
+      yield* this.createRouter(selection).streamChat(task, request, signal);
+    }
   }
 
   public async generateCharacterLore(
@@ -191,6 +206,20 @@ export class ModelRuntime {
     if (!selection) {
       throw new ConfigurationError('Choose a conversation provider and model first.');
     }
+    const primary = await this.selectComplexTask('character-research', selection);
+    try {
+      return await this.generateCharacterLoreWithSelection(input, primary, signal);
+    } catch (error) {
+      if (signal?.aborted || primary.providerId === selection.providerId) throw error;
+      return this.generateCharacterLoreWithSelection(input, selection, signal);
+    }
+  }
+
+  private async generateCharacterLoreWithSelection(
+    input: CharacterLoreGenerationInput,
+    selection: ModelSelection,
+    signal?: AbortSignal,
+  ): Promise<CharacterLoreGenerationResult> {
     let output = '';
     let finishReason = '';
     const supportsStructuredOutput = this.registry
@@ -214,6 +243,8 @@ export class ModelRuntime {
           'sampleLines 是中文短语气示例，应忠实保留角色表达习惯但换一种简短说法，不逐字搬运原文；每条最多 20 个中文字符，不得拼接长句、整段对白或字幕。',
           'roleplayExamples 参考 SillyTavern 的示例对话分层和 RoleLLM 的情境知识方法，给出 8 至 20 条。每条包含 scene（场景）、emotion（情绪）、trigger（用户输入或情境触发）、attitude（角色采取的态度）、line（中文短回应示例）和 sourceId（最直接支持它的 source_N）。',
           'roleplayExamples 应覆盖日常问候、开心、怀疑、生气、认真判断、帮助、安慰、拒绝和不确定等不同反应；不要只换几个近义词重复同一种场景。',
+          '资料确实支持时，roleplayExamples 中应包含 2 至 4 条可结合上下文触发的幽默、接梗或自我回调场景，例如傲娇角色被提到自己的口是心非台词时会羞恼地接话；不得给本来没有这种特征的角色强加中二、傲娇或网络梗。',
+          '幽默示例的 trigger 要写清触发条件，attitude 要写清关系距离和分寸；同一梗不要连续复读，line 仍只是语气示范。',
           'line 用于学习反应方式和语言节奏，不是可直接复读的固定答案；每条最多 30 个中文字符。无法找到直接台词依据时，不要虚构 sourceId，也不要生成该条。',
           'speechStyle 只归纳称呼、语气、句式、惯用表达和不同情绪下的变化，不要在其中重复堆放台词。',
           'personality 应从角色行为和台词表现归纳，不能只抄身份说明。背景只保留影响角色认知和谈吐的事实。',
@@ -316,5 +347,36 @@ export class ModelRuntime {
       summarization: selection,
       characterResearch: selection,
     });
+  }
+
+  private describeCapabilities(providerId: string, modelId: string): ModelProviderCapabilities {
+    const capabilities = this.registry.get(providerId).listCapabilities(modelId);
+    return {
+      streaming: capabilities.has('streaming'),
+      structuredOutput: capabilities.has('structured-output') ? 'native' : 'prompted',
+      cancellation: true,
+      suitableForComplexResearch: providerId === 'anthropic' || providerId === 'deepseek',
+    };
+  }
+
+  private async selectComplexTask(
+    task: Extract<ModelTaskKind, 'character-research' | 'memory-maintenance'>,
+    current: ModelSelection,
+  ): Promise<ModelSelection> {
+    const configuration = await this.configuration.getProviderConfiguration();
+    const remote = configuration.remoteSelection;
+    const providerId = selectTaskProvider({
+      task,
+      currentProviderId: current.providerId,
+      current: this.describeCapabilities(current.providerId, current.modelId),
+      ...(remote
+        ? {
+            remoteProviderId: remote.providerId,
+            remote: this.describeCapabilities(remote.providerId, remote.modelId),
+          }
+        : {}),
+      allowRemoteComplexTasks: configuration.allowRemoteComplexTasks,
+    });
+    return remote && providerId === remote.providerId ? remote : current;
   }
 }

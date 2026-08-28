@@ -10,10 +10,28 @@ import { deriveMemoryKey } from '../core/memory/memory-policy';
 
 export interface MemorySettings {
   automaticMemoryEnabled: boolean;
+  semanticIndex: 'local' | 'qdrant';
+  relationshipIndex: 'local' | 'neo4j';
+  qdrantUrl: string;
+  qdrantCollection: string;
+  qdrantApiKeySaved: boolean;
+  neo4jUrl: string;
+  neo4jDatabase: string;
+  neo4jUsername: string;
+  neo4jPasswordSaved: boolean;
 }
 
 export interface SetMemorySettingsInput {
   automaticMemoryEnabled: boolean;
+  semanticIndex?: 'local' | 'qdrant';
+  relationshipIndex?: 'local' | 'neo4j';
+  qdrantUrl?: string;
+  qdrantCollection?: string;
+  qdrantApiKey?: string;
+  neo4jUrl?: string;
+  neo4jDatabase?: string;
+  neo4jUsername?: string;
+  neo4jPassword?: string;
 }
 
 export interface UpdateMemoryInput {
@@ -61,7 +79,64 @@ export const parseSetMemorySettingsInput = (value: unknown): SetMemorySettingsIn
   ) {
     throw new Error('The memory settings are invalid.');
   }
-  return { automaticMemoryEnabled: value.automaticMemoryEnabled };
+  const record = value as Record<string, unknown>;
+  const semanticIndex = record.semanticIndex ?? 'local';
+  const relationshipIndex = record.relationshipIndex ?? 'local';
+  const qdrantUrl = record.qdrantUrl ?? 'http://127.0.0.1:6333';
+  const qdrantCollection = record.qdrantCollection ?? 'deskpet_memories';
+  const neo4jUrl = record.neo4jUrl ?? 'http://127.0.0.1:7474';
+  const neo4jDatabase = record.neo4jDatabase ?? 'neo4j';
+  const neo4jUsername = record.neo4jUsername ?? 'neo4j';
+  const validSecret = (secret: unknown): secret is string =>
+    secret === undefined ||
+    (typeof secret === 'string' &&
+      secret.trim().length > 0 &&
+      secret.length <= 32_768 &&
+      !/^\*+$/u.test(secret.trim()));
+  if (
+    (semanticIndex !== 'local' && semanticIndex !== 'qdrant') ||
+    (relationshipIndex !== 'local' && relationshipIndex !== 'neo4j') ||
+    typeof qdrantUrl !== 'string' ||
+    qdrantUrl.length > 2_048 ||
+    typeof qdrantCollection !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,64}$/u.test(qdrantCollection) ||
+    typeof neo4jUrl !== 'string' ||
+    neo4jUrl.length > 2_048 ||
+    typeof neo4jDatabase !== 'string' ||
+    !/^[A-Za-z0-9_-]{1,64}$/u.test(neo4jDatabase) ||
+    typeof neo4jUsername !== 'string' ||
+    !neo4jUsername.trim() ||
+    neo4jUsername.length > 128 ||
+    !validSecret(record.qdrantApiKey) ||
+    !validSecret(record.neo4jPassword)
+  ) {
+    throw new Error('The memory index settings are invalid.');
+  }
+  for (const address of [qdrantUrl, neo4jUrl]) {
+    const url = new URL(address);
+    const loopback = ['127.0.0.1', 'localhost', '::1'].includes(url.hostname);
+    if (
+      (url.protocol !== 'https:' && !(url.protocol === 'http:' && loopback)) ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash
+    ) {
+      throw new Error('The memory index URL is invalid.');
+    }
+  }
+  return {
+    automaticMemoryEnabled: value.automaticMemoryEnabled,
+    semanticIndex,
+    relationshipIndex,
+    qdrantUrl: qdrantUrl.trim(),
+    qdrantCollection,
+    neo4jUrl: neo4jUrl.trim(),
+    neo4jDatabase,
+    neo4jUsername: neo4jUsername.trim(),
+    ...(typeof record.qdrantApiKey === 'string' ? { qdrantApiKey: record.qdrantApiKey } : {}),
+    ...(typeof record.neo4jPassword === 'string' ? { neo4jPassword: record.neo4jPassword } : {}),
+  };
 };
 
 export const parseMemoryIdInput = (value: unknown): MemoryIdInput => {

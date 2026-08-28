@@ -5,10 +5,12 @@ import type { Rectangle } from 'electron';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 export const DEFAULT_WINDOW_SIZE = Object.freeze({ width: 360, height: 520 });
 export const EXPANDED_WINDOW_SIZE = Object.freeze({ width: 720, height: 520 });
+export const SETTINGS_WINDOW_SIZE = EXPANDED_WINDOW_SIZE;
+export const DEFAULT_WINDOW_SCALE = 0.85;
 export { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 
 export interface PersistedWindowState {
-  version: 1;
+  version: 5;
   x: number;
   y: number;
   scale: number;
@@ -41,9 +43,18 @@ export const parseWindowState = (value: unknown): PersistedWindowState | undefin
     return undefined;
   }
 
-  const candidate = value as Partial<PersistedWindowState>;
+  const candidate = value as {
+    version?: number;
+    x?: unknown;
+    y?: unknown;
+    scale?: unknown;
+  };
   if (
-    candidate.version !== 1 ||
+    (candidate.version !== 1 &&
+      candidate.version !== 2 &&
+      candidate.version !== 3 &&
+      candidate.version !== 4 &&
+      candidate.version !== 5) ||
     !isFiniteNumber(candidate.x) ||
     !isFiniteNumber(candidate.y) ||
     !isFiniteNumber(candidate.scale)
@@ -52,42 +63,62 @@ export const parseWindowState = (value: unknown): PersistedWindowState | undefin
   }
 
   return {
-    version: 1,
+    version: 5,
     x: Math.round(candidate.x),
     y: Math.round(candidate.y),
-    scale: clamp(candidate.scale, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE),
+    scale: clamp(
+      (candidate.version < 3 && candidate.scale === 1) ||
+        (candidate.version === 3 && candidate.scale === 0.9) ||
+        (candidate.version === 4 && candidate.scale === 0.8)
+        ? DEFAULT_WINDOW_SCALE
+        : candidate.scale,
+      MIN_WINDOW_SCALE,
+      MAX_WINDOW_SCALE,
+    ),
   };
 };
 
-const layoutSize = (expanded: boolean): Readonly<{ width: number; height: number }> =>
-  expanded ? EXPANDED_WINDOW_SIZE : DEFAULT_WINDOW_SIZE;
+const layoutSize = (
+  expanded: boolean,
+  settings = false,
+): Readonly<{ width: number; height: number }> =>
+  settings ? SETTINGS_WINDOW_SIZE : expanded ? EXPANDED_WINDOW_SIZE : DEFAULT_WINDOW_SIZE;
 
-export const stateToBounds = (state: PersistedWindowState, expanded = false): Rectangle => ({
+export const stateToBounds = (
+  state: PersistedWindowState,
+  expanded = false,
+  settings = false,
+): Rectangle => ({
   x: Math.round(state.x),
   y: Math.round(state.y),
-  width: Math.round(layoutSize(expanded).width * state.scale),
-  height: Math.round(layoutSize(expanded).height * state.scale),
+  width: Math.round(layoutSize(expanded, settings).width * state.scale),
+  height: Math.round(layoutSize(expanded, settings).height * state.scale),
 });
 
-export const boundsToState = (bounds: Rectangle): PersistedWindowState => ({
-  version: 1,
+export const boundsToState = (bounds: Rectangle, settings = false): PersistedWindowState => ({
+  version: 5,
   x: Math.round(bounds.x),
   y: Math.round(bounds.y),
-  scale: clamp(bounds.height / DEFAULT_WINDOW_SIZE.height, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE),
+  scale: clamp(
+    bounds.height / (settings ? SETTINGS_WINDOW_SIZE.height : DEFAULT_WINDOW_SIZE.height),
+    MIN_WINDOW_SCALE,
+    MAX_WINDOW_SCALE,
+  ),
 });
 
 export const resizeStateAroundCenter = (
   state: PersistedWindowState,
   requestedScale: number,
   expanded = false,
+  settings = false,
 ): PersistedWindowState => {
-  const currentBounds = stateToBounds(state, expanded);
+  const currentBounds = stateToBounds(state, expanded, settings);
   const scale = clamp(requestedScale, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE);
-  const size = layoutSize(expanded);
+  const size = layoutSize(expanded, settings);
   const width = Math.round(size.width * scale);
   const height = Math.round(size.height * scale);
   return {
-    version: 1,
+    version: 5,
     x: Math.round(currentBounds.x + (currentBounds.width - width) / 2),
     y: Math.round(currentBounds.y + (currentBounds.height - height) / 2),
     scale,
@@ -95,10 +126,14 @@ export const resizeStateAroundCenter = (
 };
 
 export const createDefaultWindowState = (workArea: Rectangle): PersistedWindowState => ({
-  version: 1,
-  x: Math.round(workArea.x + workArea.width - DEFAULT_WINDOW_SIZE.width - 24),
-  y: Math.round(workArea.y + workArea.height - DEFAULT_WINDOW_SIZE.height - 24),
-  scale: 1,
+  version: 5,
+  x: Math.round(
+    workArea.x + workArea.width - DEFAULT_WINDOW_SIZE.width * DEFAULT_WINDOW_SCALE - 24,
+  ),
+  y: Math.round(
+    workArea.y + workArea.height - DEFAULT_WINDOW_SIZE.height * DEFAULT_WINDOW_SCALE - 24,
+  ),
+  scale: DEFAULT_WINDOW_SCALE,
 });
 
 export const keepWindowVisible = (
@@ -106,9 +141,10 @@ export const keepWindowVisible = (
   displays: readonly WorkAreaDisplay[],
   primaryWorkArea: Rectangle,
   expanded = false,
+  settings = false,
 ): PersistedWindowState => {
-  const size = layoutSize(expanded);
-  const originalBounds = stateToBounds(state, expanded);
+  const size = layoutSize(expanded, settings);
+  const originalBounds = stateToBounds(state, expanded, settings);
   let targetWorkArea = primaryWorkArea;
   let greatestIntersection = 0;
 
@@ -134,7 +170,7 @@ export const keepWindowVisible = (
   const height = Math.round(size.height * scale);
 
   return {
-    version: 1,
+    version: 5,
     x: Math.round(
       clamp(state.x, targetWorkArea.x, targetWorkArea.x + targetWorkArea.width - width),
     ),

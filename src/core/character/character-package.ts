@@ -58,6 +58,9 @@ export const validateCharacterPackageManifest = (value: unknown): CharacterPacka
   if (new Set(assets.map(({ path }) => path)).size !== assets.length) {
     throw new Error('The character package contains duplicate assets.');
   }
+  if (record.modelManifest && !assets.some(({ path }) => path === record.modelManifest)) {
+    throw new Error('The character package model manifest is missing.');
+  }
   const attribution = record.attribution.map((value) => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new Error('The character package attribution is invalid.');

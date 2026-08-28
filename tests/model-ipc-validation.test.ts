@@ -23,9 +23,11 @@ describe('model IPC validation', () => {
     expect(
       parseProviderConfiguration({
         openAICompatibleBaseUrl: 'http://127.0.0.1:11434/v1',
+        allowRemoteComplexTasks: false,
       }),
     ).toEqual({
       openAICompatibleBaseUrl: 'http://127.0.0.1:11434/v1',
+      allowRemoteComplexTasks: false,
     });
     expect(parseSetProviderSecretInput({ providerId: 'deepseek', apiKey: 'fake-key' })).toEqual({
       providerId: 'deepseek',
@@ -41,5 +43,11 @@ describe('model IPC validation', () => {
       parseSetProviderSecretInput({ providerId: 'anthropic', apiKey: '********' }),
     ).toThrow();
     expect(() => parseCancelProviderRequestInput({ requestId: '../bad' })).toThrow();
+    expect(() =>
+      parseProviderConfiguration({
+        openAICompatibleBaseUrl: 'https://api.example.com/v1',
+        allowRemoteComplexTasks: true,
+      }),
+    ).toThrow();
   });
 });

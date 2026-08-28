@@ -39,10 +39,12 @@ describe('hybrid memory retrieval', () => {
     expect(result.find(({ record }) => record.id === 'first')?.reasons).toEqual([
       'keyword',
       'relationship',
+      'importance',
     ]);
     expect(result.find(({ record }) => record.id === 'second')?.reasons).toEqual([
       'keyword',
       'semantic',
+      'importance',
     ]);
   });
 
@@ -57,6 +59,6 @@ describe('hybrid memory retrieval', () => {
       },
     });
     expect(result[0]?.record.id).toBe('safe');
-    expect(result[0]?.reasons).toEqual(['keyword']);
+    expect(result[0]?.reasons).toEqual(['keyword', 'importance']);
   });
 });

@@ -76,6 +76,16 @@ describe('local provider storage', () => {
       providerId: 'openai-compatible',
       modelId: 'fake-local',
     });
+    await store.setProviderConfiguration({
+      openAICompatibleBaseUrl: 'http://127.0.0.1:11434/v1',
+      allowRemoteComplexTasks: true,
+      remoteSelection: { providerId: 'anthropic', modelId: 'fake-remote' },
+    });
+    expect(await new ProviderConfigStore(directory).getProviderConfiguration()).toEqual({
+      openAICompatibleBaseUrl: 'http://127.0.0.1:11434/v1',
+      allowRemoteComplexTasks: true,
+      remoteSelection: { providerId: 'anthropic', modelId: 'fake-remote' },
+    });
     expect(await store.getOpenAICompatibleBaseUrl()).toBe('http://127.0.0.1:11434/v1');
     await expect(store.setOpenAICompatibleBaseUrl('http://remote.example/v1')).rejects.toThrow(
       /HTTPS/,

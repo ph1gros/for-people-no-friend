@@ -17,3 +17,10 @@ export const resolveWindowAssetPaths = (compiledWindowDirectory: string): Window
     'index.html',
   ),
 });
+
+export const resolveBundledModelRoot = (compiledMainDirectory: string): string =>
+  path.join(
+    path.dirname(resolveWindowAssetPaths(path.join(compiledMainDirectory, 'windows')).renderer),
+    'models',
+    'local',
+  );

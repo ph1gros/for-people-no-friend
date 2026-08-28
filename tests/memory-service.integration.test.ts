@@ -182,7 +182,9 @@ describe('M5 memory service integration', () => {
         evidence: [expect.objectContaining({ sourceMessageId: 'message-28' })],
       }),
     ]);
-    expect(service.getConversationContext('default-character', '你记得我喜欢什么颜色吗')).toEqual(
+    expect(
+      await service.getConversationContext('default-character', '你记得我喜欢什么颜色吗'),
+    ).toEqual(
       expect.objectContaining({
         summary: '用户早些时候讨论过学习计划。',
         memories: [],
@@ -193,7 +195,8 @@ describe('M5 memory service integration', () => {
       expect.objectContaining({ content: '用户喜欢蓝色', source: 'automatic' }),
     );
     expect(
-      service.getConversationContext('default-character', '你记得我喜欢什么颜色吗').memories,
+      (await service.getConversationContext('default-character', '你记得我喜欢什么颜色吗'))
+        .memories,
     ).toEqual([expect.objectContaining({ content: '用户喜欢蓝色' })]);
   });
 });

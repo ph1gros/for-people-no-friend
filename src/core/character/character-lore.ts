@@ -51,7 +51,104 @@ const EXAMPLE_INTENT_HINTS: ReadonlyArray<[RegExp, string[]]> = [
   [/(怀疑|真的|确定|靠谱吗|可疑|骗)/u, ['怀疑', '警惕', '质疑', '可疑']],
   [/(帮忙|怎么办|建议|认真|决定|选择)/u, ['认真', '帮助', '建议', '判断']],
   [/(你好|早上好|晚上好|在吗|聊聊|日常)/u, ['日常', '问候', '闲聊', '平静']],
+  [
+    /(玩笑|开玩笑|梗|接梗|中二|羞耻|黑历史|傲娇|口是心非|刚才说|你说过)/u,
+    ['玩笑', '梗', '中二', '羞耻', '黑历史', '傲娇', '调侃', '口是心非', '回忆'],
+  ],
 ];
+
+export interface RoleplayExampleSelection {
+  example: CharacterRoleplayExample;
+  key: string;
+  score: number;
+  reasons: string[];
+}
+
+const exampleKey = (example: CharacterRoleplayExample): string =>
+  `${example.scene}\u0000${example.trigger}\u0000${example.line}`;
+
+export const selectContextualRoleplayExamples = (
+  lore: CharacterLore,
+  input: {
+    query: string;
+    recentMessages?: readonly string[];
+    excludedKeys?: ReadonlySet<string>;
+    maximum?: number;
+    maximumCharacters?: number;
+  },
+): RoleplayExampleSelection[] => {
+  const examples = lore.roleplayExamples ?? [];
+  const maximum = input.maximum ?? 4;
+  const maximumCharacters = input.maximumCharacters ?? 1_800;
+  if (examples.length === 0 || maximum <= 0) return [];
+  const normalizedQuery = input.query.normalize('NFKC').toLowerCase();
+  const recentContext = (input.recentMessages ?? [])
+    .slice(-6)
+    .join(' ')
+    .normalize('NFKC')
+    .toLowerCase();
+  const hintedWords = EXAMPLE_INTENT_HINTS.flatMap(([pattern, words]) =>
+    pattern.test(normalizedQuery) || pattern.test(recentContext) ? words : [],
+  );
+  const ranked = examples
+    .map((example, index) => {
+      const key = exampleKey(example);
+      const metadata = [example.scene, example.emotion, example.trigger, example.attitude]
+        .join(' ')
+        .normalize('NFKC')
+        .toLowerCase();
+      const terms = metadata.split(/[\s、，。；：:／/|｜]+/u).filter((term) => term.length >= 2);
+      const directMatches = terms.filter((term) => normalizedQuery.includes(term)).length;
+      const recentMatches = terms.filter((term) => recentContext.includes(term)).length;
+      const intentWords = hintedWords.filter((word) => metadata.includes(word));
+      const quotedOwnLine = [...example.line.normalize('NFKC')]
+        .filter((character) => /[\p{L}\p{N}]/u.test(character))
+        .join('');
+      const callbackMatch =
+        quotedOwnLine.length >= 4 &&
+        [...Array(Math.max(0, quotedOwnLine.length - 3)).keys()].some((offset) =>
+          normalizedQuery.includes(quotedOwnLine.slice(offset, offset + 4)),
+        );
+      const generalBonus = /(日常|平静|闲聊|通用)/u.test(metadata) ? 1 : 0;
+      const reasons = [
+        directMatches ? `当前消息命中 ${directMatches} 个情境词` : '',
+        recentMatches ? `最近上下文命中 ${recentMatches} 个情境词` : '',
+        intentWords.length ? `意图匹配：${[...new Set(intentWords)].join('、')}` : '',
+        callbackMatch ? '用户提到了角色自己的示例台词' : '',
+        generalBonus ? '通用日常回退' : '',
+      ].filter(Boolean);
+      return {
+        example,
+        key,
+        index,
+        score:
+          directMatches * 5 +
+          recentMatches * 2 +
+          intentWords.length * 3 +
+          (callbackMatch ? 10 : 0) +
+          generalBonus,
+        reasons,
+      };
+    })
+    .filter(({ key, score }) => score > 0 && !input.excludedKeys?.has(key))
+    .sort((left, right) => right.score - left.score || left.index - right.index);
+  const selected: RoleplayExampleSelection[] = [];
+  let usedCharacters = 0;
+  for (const item of ranked) {
+    const size = [
+      item.example.scene,
+      item.example.emotion,
+      item.example.trigger,
+      item.example.attitude,
+      item.example.line,
+    ].join('').length;
+    if (selected.length >= Math.min(4, maximum)) break;
+    if (selected.length > 0 && usedCharacters + size > maximumCharacters) continue;
+    selected.push(item);
+    usedCharacters += size;
+  }
+  return selected;
+};
 
 export const selectRoleplayExamples = (
   lore: CharacterLore,
@@ -59,54 +156,22 @@ export const selectRoleplayExamples = (
   maximum = 4,
   maximumCharacters = 1_800,
 ): CharacterRoleplayExample[] => {
-  const examples = lore.roleplayExamples ?? [];
-  if (examples.length === 0 || maximum <= 0) return [];
-  const normalizedQuery = query.normalize('NFKC').toLowerCase();
-  const hintedWords = EXAMPLE_INTENT_HINTS.flatMap(([pattern, words]) =>
-    pattern.test(normalizedQuery) ? words : [],
+  return selectContextualRoleplayExamples(lore, { query, maximum, maximumCharacters }).map(
+    ({ example }) => example,
   );
-  const ranked = examples
-    .map((example, index) => {
-      const metadata = [example.scene, example.emotion, example.trigger, example.attitude]
-        .join(' ')
-        .normalize('NFKC')
-        .toLowerCase();
-      const terms = metadata.split(/[\s、，。；：:／/|｜]+/u).filter((term) => term.length >= 2);
-      const directMatches = terms.filter((term) => normalizedQuery.includes(term)).length;
-      const intentMatches = hintedWords.filter((word) => metadata.includes(word)).length;
-      const generalBonus = /(日常|平静|闲聊|通用)/u.test(metadata) ? 1 : 0;
-      return { example, index, score: directMatches * 4 + intentMatches * 3 + generalBonus };
-    })
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .filter(({ score }) => score > 0)
-    .map(({ example }) => example);
-  const selected: CharacterRoleplayExample[] = [];
-  let usedCharacters = 0;
-  for (const example of ranked) {
-    const size = [
-      example.scene,
-      example.emotion,
-      example.trigger,
-      example.attitude,
-      example.line,
-    ].join('').length;
-    if (selected.length >= Math.min(4, maximum)) break;
-    if (selected.length > 0 && usedCharacters + size > maximumCharacters) continue;
-    selected.push(example);
-    usedCharacters += size;
-  }
-  return selected;
 };
 
 export const formatCharacterLore = (
   lore?: CharacterLore,
   includeDetails = false,
   currentUserMessage = '',
+  selectedExamplesOverride?: readonly CharacterRoleplayExample[],
 ): string => {
   if (!lore) {
     return '';
   }
-  const selectedExamples = selectRoleplayExamples(lore, currentUserMessage);
+  const selectedExamples =
+    selectedExamplesOverride ?? selectRoleplayExamples(lore, currentUserMessage);
   const hasStructuredExamples = (lore.roleplayExamples?.length ?? 0) > 0;
   return [
     '用户已确认的角色资料（这是角色设定，不是用户长期记忆）：',

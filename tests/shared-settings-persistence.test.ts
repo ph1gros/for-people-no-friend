@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -8,6 +8,7 @@ import { KALTSIT_CHARACTER_PROFILE } from '../src/core/conversation/character-pr
 import { MemoryService } from '../src/main/memory/memory-service';
 import { CharacterProfileStore } from '../src/main/storage/character-profile-store';
 import { DeskpetDatabase } from '../src/main/storage/deskpet-database';
+import { DesktopIntegrationStore } from '../src/main/storage/desktop-integration-store';
 import { ProviderConfigStore } from '../src/main/storage/provider-config-store';
 import { WorkGlossaryStore } from '../src/main/storage/work-glossary-store';
 import { WindowStateStore } from '../src/main/windows/window-state';
@@ -20,15 +21,33 @@ describe('shared settings persistence contract', () => {
     directory = undefined;
   });
 
+  it('migrates version 1 desktop settings to the default toggle shortcut', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-desktop-settings-'));
+    await writeFile(
+      path.join(directory, 'desktop-integrations.v1.json'),
+      JSON.stringify({
+        version: 1,
+        settings: { globalShortcutsEnabled: true, mediaControlEnabled: false },
+      }),
+      'utf8',
+    );
+
+    await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
+      globalShortcutsEnabled: true,
+      mediaControlEnabled: false,
+      visibilityShortcut: '\\',
+    });
+  });
+
   it('restores window, provider, character, memory and glossary state after reopening stores', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-shared-settings-'));
 
-    new WindowStateStore(directory).save({ version: 1, x: 120, y: 80, scale: 0.8 });
+    new WindowStateStore(directory).save({ version: 5, x: 120, y: 80, scale: 0.85 });
     expect(new WindowStateStore(directory).load()).toEqual({
-      version: 1,
+      version: 5,
       x: 120,
       y: 80,
-      scale: 0.8,
+      scale: 0.85,
     });
 
     const providers = new ProviderConfigStore(directory);
@@ -44,6 +63,17 @@ describe('shared settings persistence contract', () => {
     await expect(reopenedProviders.getConversationSelection()).resolves.toEqual({
       providerId: 'openai-compatible',
       modelId: 'fake-local-model',
+    });
+
+    await new DesktopIntegrationStore(directory).set({
+      globalShortcutsEnabled: true,
+      mediaControlEnabled: true,
+      visibilityShortcut: 'Ctrl+Shift+]',
+    });
+    await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
+      globalShortcutsEnabled: true,
+      mediaControlEnabled: true,
+      visibilityShortcut: 'Ctrl+Shift+]',
     });
 
     const profiles = new CharacterProfileStore(directory);
