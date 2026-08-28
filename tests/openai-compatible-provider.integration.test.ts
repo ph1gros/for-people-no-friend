@@ -83,6 +83,60 @@ describe('OpenAICompatibleProvider integration', () => {
     ]);
   });
 
+  it('supports a fixed DeepSeek identity without exposing a configurable base URL', async () => {
+    let requestPath = '';
+    server = await startFakeHttpServer((request, response) => {
+      requestPath = request.url ?? '';
+      response.writeHead(200, { 'content-type': 'text/event-stream' });
+      response.end(
+        'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+      );
+    });
+    const provider = new OpenAICompatibleProvider({
+      providerId: 'deepseek',
+      displayName: 'DeepSeek',
+      requireApiKey: true,
+      getConfiguration: async () => ({
+        baseUrl: `${server?.baseUrl}`,
+        apiKey: 'fake-deepseek-key',
+      }),
+    });
+
+    expect(provider.id).toBe('deepseek');
+    expect(provider.displayName).toBe('DeepSeek');
+    await expect(
+      collect(
+        provider.streamChat(
+          { systemPrompt: '', messages: [{ role: 'user', content: 'Hello' }] },
+          { providerId: 'deepseek', modelId: 'deepseek-v4-flash' },
+        ),
+      ),
+    ).resolves.toContainEqual({ type: 'text-delta', text: 'OK' });
+    expect(requestPath).toBe('/chat/completions');
+  });
+
+  it('requires a key for providers that do not support anonymous local access', async () => {
+    const provider = new OpenAICompatibleProvider({
+      providerId: 'deepseek',
+      displayName: 'DeepSeek',
+      requireApiKey: true,
+      getConfiguration: async () => ({ baseUrl: 'https://api.deepseek.com' }),
+    });
+
+    const result = await provider.testConnection({
+      providerId: 'deepseek',
+      modelId: 'deepseek-v4-flash',
+    });
+    expect(result).toEqual({
+      ok: false,
+      error: {
+        code: 'configuration',
+        message: 'An API key is required for DeepSeek.',
+        retryable: false,
+      },
+    });
+  });
+
   it('maps HTTP errors and rejects malformed SSE', async () => {
     server = await startFakeHttpServer((_request, response) => {
       response.writeHead(429, { 'content-type': 'application/json' });

@@ -44,6 +44,11 @@ export interface ConversationMemoryContext {
   memories: MemoryRecord[];
 }
 
+export interface ExplicitMemoryResult {
+  remembered: boolean;
+  forgotten: number;
+}
+
 interface SummaryPlan {
   messages: ConversationMessage[];
   coveredUntilMessageId: string;
@@ -102,6 +107,23 @@ export const formatMemoryContext = (context: ConversationMemoryContext): string 
     );
   }
   return parts.join('\n').slice(0, 6_000);
+};
+
+export const formatExplicitMemoryResult = (result: ExplicitMemoryResult): string => {
+  if (result.remembered) {
+    return [
+      '【本轮记忆处理结果】',
+      '用户明确要求记住的内容已经保存；同类旧记忆也已按用户的新说法更新。',
+      '只需用当前角色本人的口吻自然回应，不要解释记忆流程，不要使用“已录入”“更新完成”等系统提示式措辞，也不要重复追问用户刚说过的内容。',
+    ].join('\n');
+  }
+  if (result.forgotten > 0) {
+    return [
+      '【本轮记忆处理结果】',
+      `已按用户要求删除 ${result.forgotten} 条匹配记忆。用当前角色本人的口吻简短回应。`,
+    ].join('\n');
+  }
+  return '';
 };
 
 export class MemoryService {
@@ -201,13 +223,16 @@ export class MemoryService {
   public handleExplicitIntent(
     namespace: string,
     message: ConversationMessage,
-  ): { remembered: boolean; forgotten: number } {
+  ): ExplicitMemoryResult {
     const intent = parseExplicitMemoryIntent(message.content);
     if (!intent) {
       return { remembered: false, forgotten: 0 };
     }
     if (intent.type === 'forget') {
-      return { remembered: false, forgotten: this.store.forget(namespace, intent.content) };
+      return {
+        remembered: false,
+        forgotten: this.store.forget(namespace, intent.content),
+      };
     }
     const type = inferMemoryType(intent.content);
     const candidate = sanitizeMemoryCandidate(

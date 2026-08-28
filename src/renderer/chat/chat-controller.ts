@@ -19,6 +19,7 @@ import {
   AUTOMATIC_MEMORY_MIN_IMPORTANCE,
 } from '../../core/memory/memory-policy';
 import type { ConversationEvent, ConversationMessage } from '../../shared/conversation-ipc';
+import type { ConfigurableProviderId } from '../../shared/model-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
 import { WindowScaleSync } from '../settings/window-scale-sync';
@@ -259,6 +260,7 @@ export const initializeChat = async ({
   const providerSelect = document.createElement('select');
   for (const [value, label] of [
     ['anthropic', 'Anthropic Claude'],
+    ['deepseek', 'DeepSeek'],
     ['openai-compatible', 'OpenAI / Ollama 兼容'],
   ]) {
     const option = document.createElement('option');
@@ -594,6 +596,12 @@ export const initializeChat = async ({
 
   const updateProviderVisibility = (): void => {
     baseUrlField.hidden = providerSelect.value !== 'openai-compatible';
+    modelInput.placeholder =
+      providerSelect.value === 'deepseek'
+        ? '例如：deepseek-v4-flash'
+        : providerSelect.value === 'anthropic'
+          ? '例如：Claude 模型 ID'
+          : '例如：OpenAI 或本地模型 ID';
   };
 
   const updateSecretStatus = async (): Promise<void> => {
@@ -601,7 +609,7 @@ export const initializeChat = async ({
       return;
     }
     const secrets = await api.getProviderSecretStatus();
-    const selected = providerSelect.value as 'anthropic' | 'openai-compatible';
+    const selected = providerSelect.value as ConfigurableProviderId;
     deleteSecretButton.hidden = !secrets[selected];
     secretStatus.textContent = secrets[selected]
       ? '已安全保存密钥；留空不会覆盖。'
@@ -1416,7 +1424,7 @@ export const initializeChat = async ({
     if (!api || !profile) {
       return false;
     }
-    const providerId = providerSelect.value as 'anthropic' | 'openai-compatible';
+    const providerId = providerSelect.value as ConfigurableProviderId;
     const modelId = modelInput.value.trim();
     if (!modelId) {
       settingsStatus.textContent = '请填写模型名称。';
@@ -1637,7 +1645,7 @@ export const initializeChat = async ({
       const requestId = createRequestId('test');
       const result = await api.testProviderConnection({
         requestId,
-        providerId: providerSelect.value as 'anthropic' | 'openai-compatible',
+        providerId: providerSelect.value as ConfigurableProviderId,
         modelId: modelInput.value.trim(),
       });
       settingsStatus.textContent = result.ok
@@ -1650,7 +1658,7 @@ export const initializeChat = async ({
       if (!api || !window.confirm('确定删除当前提供商已保存的 API Key 吗？')) {
         return;
       }
-      const providerId = providerSelect.value as 'anthropic' | 'openai-compatible';
+      const providerId = providerSelect.value as ConfigurableProviderId;
       const result = await api.deleteProviderSecret({ providerId });
       settingsStatus.textContent = result.ok ? '密钥已删除。' : result.error.message;
       await updateSecretStatus();

@@ -26,6 +26,8 @@ import {
 import { SecretStore } from '../security/secret-store';
 import { ProviderConfigStore } from '../storage/provider-config-store';
 
+const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
+
 const CHARACTER_LORE_SCHEMA: Record<string, unknown> = {
   type: 'object',
   properties: {
@@ -118,6 +120,17 @@ export class ModelRuntime {
         getConfiguration: async () => ({
           baseUrl: await this.configuration.getOpenAICompatibleBaseUrl(),
           apiKey: await this.secrets.get('openai-compatible'),
+        }),
+      }),
+    );
+    this.registry.register(
+      new OpenAICompatibleProvider({
+        providerId: 'deepseek',
+        displayName: 'DeepSeek',
+        requireApiKey: true,
+        getConfiguration: async () => ({
+          baseUrl: DEEPSEEK_BASE_URL,
+          apiKey: await this.secrets.get('deepseek'),
         }),
       }),
     );
@@ -232,12 +245,14 @@ export class ModelRuntime {
   }
 
   public async getSecretStatus(): Promise<ProviderSecretStatus> {
-    const [anthropic, openAICompatible] = await Promise.all([
+    const [anthropic, deepseek, openAICompatible] = await Promise.all([
       this.secrets.has('anthropic'),
+      this.secrets.has('deepseek'),
       this.secrets.has('openai-compatible'),
     ]);
     return {
       anthropic,
+      deepseek,
       'openai-compatible': openAICompatible,
     };
   }

@@ -25,6 +25,9 @@ export interface OpenAICompatibleConfiguration {
 
 export interface OpenAICompatibleProviderOptions {
   getConfiguration(): Promise<OpenAICompatibleConfiguration>;
+  providerId?: string;
+  displayName?: string;
+  requireApiKey?: boolean;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
 }
@@ -83,10 +86,13 @@ const readProviderError = async (response: Response): Promise<string> => {
 };
 
 export class OpenAICompatibleProvider implements LlmProvider {
-  public readonly id = 'openai-compatible';
-  public readonly displayName = 'OpenAI Compatible';
+  public readonly id: string;
+  public readonly displayName: string;
 
-  public constructor(private readonly options: OpenAICompatibleProviderOptions) {}
+  public constructor(private readonly options: OpenAICompatibleProviderOptions) {
+    this.id = options.providerId ?? 'openai-compatible';
+    this.displayName = options.displayName ?? 'OpenAI Compatible';
+  }
 
   public listCapabilities(): ReadonlySet<ProviderCapability> {
     return new Set<ProviderCapability>(['streaming']);
@@ -112,6 +118,9 @@ export class OpenAICompatibleProvider implements LlmProvider {
     const configuration = await this.options.getConfiguration();
     const endpoint = resolveChatCompletionsUrl(configuration.baseUrl);
     const apiKey = configuration.apiKey?.trim();
+    if (this.options.requireApiKey && !apiKey) {
+      throw new ConfigurationError(`An API key is required for ${this.displayName}.`, this.id);
+    }
     const fetchImplementation = this.options.fetch ?? globalThis.fetch;
 
     const timeoutSignal = AbortSignal.timeout(

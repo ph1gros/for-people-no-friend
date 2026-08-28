@@ -106,7 +106,7 @@ describe('M5 SQLite storage and memory lifecycle', () => {
 
     database = new DeskpetDatabase(directory);
     const store = new MemoryStore(database);
-    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
+    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
     expect(store.list('default-character')).toEqual([
       expect.objectContaining({ id: 'manual-memory', content: '用户的猫叫团子', source: 'manual' }),
     ]);
@@ -184,6 +184,20 @@ describe('M5 SQLite storage and memory lifecycle', () => {
       ),
     ).toBeUndefined();
     expect(store.list(namespace)).toHaveLength(1);
+    expect(
+      store.saveAutomaticCandidate(
+        namespace,
+        {
+          type: 'preference',
+          normalizedKey: key,
+          content: '我现在不喜欢草莓蛋糕',
+          importance: 0.8,
+          confidence: 0.95,
+        },
+        { id: 'message-2', createdAt: 2 },
+      ),
+    ).toEqual(expect.objectContaining({ status: 'conflict' }));
+    expect(store.listCandidates(namespace)).toHaveLength(1);
 
     const replacement = store.save(
       namespace,
@@ -201,6 +215,7 @@ describe('M5 SQLite storage and memory lifecycle', () => {
     expect(store.list(namespace)).toEqual([
       expect.objectContaining({ content: '我现在不喜欢草莓蛋糕', status: 'active' }),
     ]);
+    expect(store.listCandidates(namespace)).toEqual([]);
     const superseded = database.connection
       .prepare(`SELECT status FROM memories WHERE id = ?`)
       .get(original?.id ?? '') as { status: string };

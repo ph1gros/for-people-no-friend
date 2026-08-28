@@ -1,6 +1,6 @@
 import type { ConnectionResult, ProviderCapability } from '../core/llm/contracts';
 
-export type ConfigurableProviderId = 'anthropic' | 'openai-compatible';
+export type ConfigurableProviderId = 'anthropic' | 'deepseek' | 'openai-compatible';
 
 export interface ProviderSummary {
   id: string;
@@ -14,6 +14,7 @@ export interface ProviderConfiguration {
 
 export interface ProviderSecretStatus {
   anthropic: boolean;
+  deepseek: boolean;
   'openai-compatible': boolean;
 }
 
@@ -41,7 +42,11 @@ export type ModelOperationResult =
 
 export type TestProviderConnectionResult = ConnectionResult;
 
-const PROVIDER_IDS = new Set<ConfigurableProviderId>(['anthropic', 'openai-compatible']);
+const PROVIDER_IDS = new Set<ConfigurableProviderId>([
+  'anthropic',
+  'deepseek',
+  'openai-compatible',
+]);
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 
 export const parseProviderId = (value: unknown): ConfigurableProviderId => {

@@ -67,6 +67,42 @@ describe('M5.1 character research service', () => {
     await expect(service.search('search_bad_list', '守岸人', '未知作品')).resolves.toEqual([]);
   });
 
+  it('rejects resource, subpage and non-character entries from the candidate list', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname === 'arknights.wiki.gg') {
+        throw new Error('preferred source unavailable');
+      }
+      if (url.hostname === 'prts.wiki') {
+        return jsonResponse({
+          query: {
+            search: [
+              {
+                pageid: 21,
+                title: '变格凯尔希(敌人)/spine',
+                snippet: 'PRTS Wiki 明日方舟资源页。',
+              },
+              {
+                pageid: 22,
+                title: '凯尔希的中坚怪物',
+                snippet: '用于搜寻凯尔希的道路。',
+              },
+              {
+                pageid: 23,
+                title: '凯尔希/语音记录',
+                snippet: '凯尔希的语音台词。',
+              },
+            ],
+          },
+        });
+      }
+      return new Response('', { status: 503 });
+    }) as unknown as typeof fetch;
+
+    const service = new CharacterResearchService(fetcher);
+    await expect(service.search('search_reject_assets', '凯尔希', '明日方舟')).resolves.toEqual([]);
+  });
+
   it('falls back to a public web query composed from the character name and source work', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());

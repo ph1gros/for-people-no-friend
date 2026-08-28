@@ -25,7 +25,11 @@ import type {
 import { resolveCharacterMemoryNamespace } from '../character/character-namespace';
 import type { ModelRuntime } from '../llm/model-runtime';
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
-import { formatMemoryContext, type MemoryService } from '../memory/memory-service';
+import {
+  formatExplicitMemoryResult,
+  formatMemoryContext,
+  type MemoryService,
+} from '../memory/memory-service';
 import type { CharacterProfileStore } from '../storage/character-profile-store';
 import type { CharacterKnowledgeStore } from '../storage/character-knowledge-store';
 import type { ConversationStore } from '../storage/conversation-store';
@@ -163,10 +167,18 @@ export class ConversationRuntime {
       let memoryContext = '';
       if (this.memories) {
         try {
-          this.memories.handleExplicitIntent(profile.memoryNamespace, userMessage);
-          memoryContext = formatMemoryContext(
-            this.memories.getConversationContext(profile.memoryNamespace, input.message),
+          const explicitResult = this.memories.handleExplicitIntent(
+            profile.memoryNamespace,
+            userMessage,
           );
+          memoryContext = [
+            formatExplicitMemoryResult(explicitResult),
+            formatMemoryContext(
+              this.memories.getConversationContext(profile.memoryNamespace, input.message),
+            ),
+          ]
+            .filter(Boolean)
+            .join('\n\n');
         } catch {
           memoryContext = '';
         }

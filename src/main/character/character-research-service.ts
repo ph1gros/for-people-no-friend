@@ -175,8 +175,34 @@ const DIALOGUE_MARKER =
 const ADDRESS_MARKER = /(称呼|稱呼|叫法|玩家|主角|旅行者|博士|呼び方|主人公|プレイヤー|よびかた)/iu;
 const INDEX_PAGE_MARKER =
   /(?:角色|人物|登场人物|登場人物|共鸣者|共鳴者|characters?)\s*(?:列表|一览|一覽|图鉴|圖鑑|名单|名單|list|index)|(?:列表|一览|一覽|图鉴|圖鑑|名单|名單)\s*(?:角色|人物|characters?)/iu;
+const NON_CHARACTER_PAGE_MARKER =
+  /(?:^|[\s（(\-—|｜:：])(spine|sprite|skin|skins|file|dialogue|voice|voices|gallery|enemy|enemies|npc|技能|天赋|天賦|语音|語音|台词|臺詞|对白|對白|立绘|立繪|模型|皮肤|皮膚|敌人|敵人|怪物|道具|家具|模组|模組|召唤物|召喚物)(?:$|[\s）)\-—|｜:：])/iu;
 
 const normalize = (value: string): string => value.normalize('NFKC').trim().toLowerCase();
+
+const isPlausibleCharacterCandidateTitle = (title: string, name: string): boolean => {
+  const normalizedTitle = normalize(title);
+  const normalizedName = normalize(name);
+  if (
+    !normalizedName ||
+    /[/\\#]/u.test(title) ||
+    INDEX_PAGE_MARKER.test(title) ||
+    NON_CHARACTER_PAGE_MARKER.test(title)
+  ) {
+    return false;
+  }
+  if (normalizedTitle === normalizedName) return true;
+  if (!normalizedTitle.startsWith(normalizedName)) return false;
+
+  // Alternate encyclopedia titles may append a work or site label, for example
+  // “刻晴（原神）” or “刻晴 | 原神 Wiki”. Free-form continuations such as
+  // “凯尔希的中坚怪物” are not character profile pages.
+  const suffix = normalizedTitle.slice(normalizedName.length).trim();
+  return (
+    /^[（(][^）)]{1,80}[）)]$/u.test(suffix) ||
+    /^(?:[-–—|｜:：])\s*[^-–—|｜:：]{1,100}$/u.test(suffix)
+  );
+};
 
 const decodeSnippet = (value: string): string =>
   value
@@ -700,7 +726,7 @@ export class CharacterResearchService {
       if (!title) return [];
       const normalizedTitle = normalize(title);
       const exactName = normalizedTitle === normalizedName;
-      const containsName = normalizedTitle.includes(normalizedName);
+      const plausibleTitle = isPlausibleCharacterCandidateTitle(title, name);
       const decodedDescription = decodeSnippet(boundedString(item.snippet, 2_000));
       const confirmsWork =
         workMatches ||
@@ -710,8 +736,7 @@ export class CharacterResearchService {
         );
       // A work-wide index can mention the requested name in its body, but it is not the
       // requested character's profile and must not become a selectable candidate.
-      if ((!exactName && !containsName) || !confirmsWork || INDEX_PAGE_MARKER.test(title))
-        return [];
+      if (!plausibleTitle || !confirmsWork) return [];
       const score = (exactName ? 120 : 60 - index * 4) + (workMatches ? 100 : 0);
       const candidateId = `candidate_${randomUUID().replaceAll('-', '')}`;
       const sourceUrl = new URL(
@@ -825,17 +850,14 @@ export class CharacterResearchService {
   ): Promise<Array<{ record: CandidateRecord; score: number }>> {
     const query = [name, sourceWork, '角色资料'].filter(Boolean).join(' ');
     const results = await this.searchWeb(query, 'profile', signal);
-    const normalizedName = normalize(name);
     const workTerms = sourceWork
       .split(/[/|·（）()\s]+/u)
       .map(normalize)
       .filter((term) => term.length >= 2);
     return results.flatMap((result, index) => {
-      const normalizedTitle = normalize(result.title);
       const haystack = normalize(`${result.title} ${result.description}`);
       if (
-        !normalizedTitle.includes(normalizedName) ||
-        INDEX_PAGE_MARKER.test(result.title) ||
+        !isPlausibleCharacterCandidateTitle(result.title, name) ||
         (workTerms.length > 0 && !workTerms.some((term) => haystack.includes(term)))
       ) {
         return [];

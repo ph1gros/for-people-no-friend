@@ -169,7 +169,7 @@ describe('V1.2 character knowledge storage', () => {
 
     database = new DeskpetDatabase(directory!);
 
-    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 5 });
+    expect(database.connection.prepare('PRAGMA user_version').get()).toEqual({ user_version: 6 });
     expect(
       database.connection
         .prepare(`SELECT name FROM pragma_table_info('character_knowledge_namespaces')`)

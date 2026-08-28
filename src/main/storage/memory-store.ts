@@ -565,27 +565,40 @@ export class MemoryStore {
       .get(namespace, candidate.normalizedKey) as unknown as MemoryRow | undefined;
     const now = Date.now();
     if (existing && existing.content === candidate.content) {
-      this.database.connection
-        .prepare(
-          `UPDATE memories
-              SET importance = MAX(importance, ?),
-                  confidence = MAX(confidence, ?),
-                  updated_at = ?,
-                  last_confirmed_at = ?,
-                  source_message_id = COALESCE(?, source_message_id),
-                  source = CASE WHEN ? = 'manual' THEN 'manual' ELSE source END
-            WHERE id = ?`,
-        )
-        .run(
-          candidate.importance,
-          candidate.confidence,
+      this.database.connection.exec('BEGIN IMMEDIATE');
+      try {
+        this.database.connection
+          .prepare(
+            `UPDATE memories
+                SET importance = MAX(importance, ?),
+                    confidence = MAX(confidence, ?),
+                    updated_at = ?,
+                    last_confirmed_at = ?,
+                    source_message_id = COALESCE(?, source_message_id),
+                    source = CASE WHEN ? = 'manual' THEN 'manual' ELSE source END
+              WHERE id = ?`,
+          )
+          .run(
+            candidate.importance,
+            candidate.confidence,
+            now,
+            now,
+            sourceMessageId ?? null,
+            source,
+            existing.id,
+          );
+        this.resolveCandidatesAfterManualSave(
+          namespace,
+          candidate.normalizedKey,
+          candidate.content,
           now,
-          now,
-          sourceMessageId ?? null,
-          source,
-          existing.id,
         );
-      return this.get(namespace, existing.id);
+        this.database.connection.exec('COMMIT');
+        return this.get(namespace, existing.id);
+      } catch (error) {
+        this.database.connection.exec('ROLLBACK');
+        throw error;
+      }
     }
     const id = randomUUID();
     this.database.connection.exec('BEGIN IMMEDIATE');
@@ -624,6 +637,12 @@ export class MemoryStore {
           'INSERT INTO memories_fts (id, namespace, normalized_key, content) VALUES (?, ?, ?, ?)',
         )
         .run(id, namespace, candidate.normalizedKey, candidate.content);
+      this.resolveCandidatesAfterManualSave(
+        namespace,
+        candidate.normalizedKey,
+        candidate.content,
+        now,
+      );
       this.database.connection.exec('COMMIT');
       return this.get(namespace, id);
     } catch (error) {
@@ -889,6 +908,51 @@ export class MemoryStore {
         ) VALUES (?, ?, ?)`,
       )
       .run(candidateId, evidence.id, Math.trunc(evidence.createdAt));
+  }
+
+  private resolveCandidatesAfterManualSave(
+    namespace: string,
+    normalizedKey: string,
+    content: string,
+    now: number,
+  ): void {
+    const candidates = this.database.connection
+      .prepare(
+        `SELECT id, content FROM memory_candidates
+          WHERE namespace = ? AND normalized_key = ? AND status IN ('pending', 'conflict')`,
+      )
+      .all(namespace, normalizedKey) as unknown as Array<{ id: string; content: string }>;
+    for (const candidate of candidates) {
+      if (candidate.content === content) {
+        this.database.connection
+          .prepare(
+            `UPDATE memory_candidates SET
+              status = 'confirmed', conflicting_memory_id = NULL,
+              updated_at = ?, decision_at = ?
+              WHERE id = ? AND namespace = ?`,
+          )
+          .run(now, now, candidate.id, namespace);
+        continue;
+      }
+      this.database.connection
+        .prepare(
+          `UPDATE memory_candidates SET
+            normalized_key = ?, content = '', status = 'rejected',
+            review_reasons_json = '[]', conflicting_memory_id = NULL,
+            legacy_memory_id = NULL, updated_at = ?, decision_at = ?, expires_at = NULL
+            WHERE id = ? AND namespace = ?`,
+        )
+        .run(
+          `rejected:${candidateFingerprint(normalizedKey, candidate.content)}`,
+          now,
+          now,
+          candidate.id,
+          namespace,
+        );
+      this.database.connection
+        .prepare('DELETE FROM memory_candidate_evidence WHERE candidate_id = ?')
+        .run(candidate.id);
+    }
   }
 
   private expire(namespace: string): void {

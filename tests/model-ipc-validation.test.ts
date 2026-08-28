@@ -27,6 +27,10 @@ describe('model IPC validation', () => {
     ).toEqual({
       openAICompatibleBaseUrl: 'http://127.0.0.1:11434/v1',
     });
+    expect(parseSetProviderSecretInput({ providerId: 'deepseek', apiKey: 'fake-key' })).toEqual({
+      providerId: 'deepseek',
+      apiKey: 'fake-key',
+    });
   });
 
   it('rejects unknown providers, masked secrets and malformed cancellation IDs', () => {

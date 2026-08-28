@@ -5,7 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ChatEvent, ChatRequest, ModelSelection, ModelTask } from '../src/core/llm/contracts';
-import { MemoryService } from '../src/main/memory/memory-service';
+import { formatExplicitMemoryResult, MemoryService } from '../src/main/memory/memory-service';
 import { DeskpetDatabase } from '../src/main/storage/deskpet-database';
 import type { ConversationMessage } from '../src/shared/conversation-ipc';
 
@@ -20,6 +20,16 @@ describe('M5 memory service integration', () => {
       await rm(directory, { recursive: true, force: true });
       directory = undefined;
     }
+  });
+
+  it('tells the reply model to acknowledge an explicit update naturally', () => {
+    const context = formatExplicitMemoryResult({
+      remembered: true,
+      forgotten: 0,
+    });
+    expect(context).toContain('同类旧记忆也已按用户的新说法更新');
+    expect(context).toContain('不要解释记忆流程');
+    expect(context).toContain('不要重复追问');
   });
 
   it('handles explicit remember and forget without a model call', async () => {
@@ -56,6 +66,45 @@ describe('M5 memory service integration', () => {
     ).toEqual({ remembered: false, forgotten: 1 });
     expect(service.list('default-character')).toEqual([]);
     expect(modelCalled).toBe(false);
+  });
+
+  it('lets an explicit remember request immediately replace the old preference', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-memory-explicit-conflict-'));
+    database = new DeskpetDatabase(directory);
+    const service = new MemoryService(database, {
+      streamMemoryTask: async function* (): AsyncIterable<ChatEvent> {
+        yield { type: 'finish', reason: 'unexpected' };
+      },
+    });
+    const namespace = 'default-character';
+
+    expect(
+      service.handleExplicitIntent(namespace, {
+        id: 'preference-old',
+        role: 'user',
+        content: '记住：我喜欢喝温水，不喜欢冰水。',
+        createdAt: 1,
+        status: 'complete',
+      }),
+    ).toEqual({ remembered: true, forgotten: 0 });
+    expect(
+      service.handleExplicitIntent(namespace, {
+        id: 'preference-new',
+        role: 'user',
+        content: '记住：我不再喜欢喝温水，不喜欢冰水。',
+        createdAt: 2,
+        status: 'complete',
+      }),
+    ).toEqual({ remembered: true, forgotten: 0 });
+
+    expect(service.list(namespace)).toEqual([
+      expect.objectContaining({
+        content: '我不再喜欢喝温水，不喜欢冰水',
+        source: 'manual',
+        status: 'active',
+      }),
+    ]);
+    expect(service.listCandidates(namespace)).toEqual([]);
   });
 
   it('summarizes only old complete turns and extracts a bounded automatic batch', async () => {

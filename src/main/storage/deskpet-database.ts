@@ -222,7 +222,7 @@ export class DeskpetDatabase {
       (this.connection.prepare('PRAGMA user_version').get() as { user_version: number })
         .user_version,
     );
-    if (version > 5) {
+    if (version > 6) {
       throw new Error(`The deskpet database schema version ${version} is not supported.`);
     }
     if (version === 0) {
@@ -301,6 +301,10 @@ export class DeskpetDatabase {
     }
     if (version === 4) {
       this.migrateCharacterKnowledgeProfileRevision();
+      version = 5;
+    }
+    if (version === 5) {
+      this.migrateMemoryCandidateSource();
     }
   }
 
@@ -507,6 +511,28 @@ export class DeskpetDatabase {
         PRAGMA user_version = 5;
         COMMIT;
       `);
+    } catch (error) {
+      this.connection.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  private migrateMemoryCandidateSource(): void {
+    const hasSourceColumn = (
+      this.connection
+        .prepare(`SELECT name FROM pragma_table_info('memory_candidates')`)
+        .all() as unknown as Array<{ name: string }>
+    ).some((column) => column.name === 'source');
+    this.connection.exec('BEGIN IMMEDIATE');
+    try {
+      if (!hasSourceColumn) {
+        this.connection.exec(`
+          ALTER TABLE memory_candidates
+            ADD COLUMN source TEXT NOT NULL DEFAULT 'automatic'
+            CHECK (source IN ('manual', 'automatic'));
+        `);
+      }
+      this.connection.exec('PRAGMA user_version = 6; COMMIT');
     } catch (error) {
       this.connection.exec('ROLLBACK');
       throw error;
