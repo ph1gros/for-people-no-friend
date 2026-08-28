@@ -54,7 +54,7 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - V1.1b：候选整理、有效期编辑与冲突决策
 - V1.1c：角色资料与情境对话增强；动态 WebP 伊雷娜形成 GIF Version
 - V1.2 / M6：双版本各自完成带来源角色生成、资料检索、隔离与安全回退
-- V1.3：Live2D 深化 AIRI 式表现与运行时；GIF 深化 SillyTavern/RoleLLM 式角色扮演；两边补短期连续性
+- V1.3：Live2D 深化角色表现、短期连续性、可信记忆与模型提供商支持
 - V1.4：版本化角色包、混合记忆、可选 Embedding/向量/关系索引，以及本地/远端模型透明协作
 - V1.5：受限快捷键、媒体播放控制、时间/空闲事件和声明式扩展接口
 - V1.6：本地/远端 ASR、TTS、VAD、打断、字幕与角色口型/说话动画
@@ -66,11 +66,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环。动态 WebP 后续在独立 GIF Version 仓库发展。V1.2 提供免安装 Windows 压缩包，但暂不提供安装器、代码签名和自动升级。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环。V1.3 继续完善 Live2D 表现和短期情绪连续性，加入 DeepSeek，并修正角色搜索与主动记忆更新。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[V1.2.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.2.0) 同时保留了两个免安装包。后续 Live2D 发布继续留在本仓库，动态 WebP 发布转到 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.3.0 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.3.0) 提供 Windows x64 免安装包。[V1.2.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.2.0) 仍保留双版本旧包；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
