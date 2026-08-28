@@ -4,7 +4,7 @@
 
 M0～M5.2 组成 For People No Friend 1.0.0 功能基线。本仓库固定为 Live2D 完整功能主线。
 
-伊雷娜动态 WebP 已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
+动态 WebP 已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
 本路线图从此只记录 Live2D 主仓库的实现与规划，不再维护独立仓库的角色、素材格式、表现调度、语音回退或发布计划。角色生成继续遵循安全流程：只把用户确认的角色名和作品名发送给公开资料源，生成带来源的本地草稿，用户保存后才生效。
 
