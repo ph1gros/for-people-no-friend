@@ -52,6 +52,7 @@ export const createMainWindow = (state: PersistedWindowState): BrowserWindow => 
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    icon: assets.icon,
     webPreferences: {
       preload: assets.preload,
       nodeIntegration: false,

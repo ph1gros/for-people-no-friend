@@ -22,6 +22,171 @@ describe('M5.1 character research service', () => {
     expect(DEFAULT_CHARACTER_LORE_GENERATION_TIMEOUT_MS).toBe(180_000);
   });
 
+  it('prefers an exact regional wiki page when full-text search only returns related assets', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname === 'arknights.wiki.gg') {
+        return new Response('unavailable', { status: 503 });
+      }
+      if (url.searchParams.get('list') === 'search') {
+        return jsonResponse({
+          query: {
+            search:
+              url.hostname === 'prts.wiki'
+                ? [
+                    {
+                      pageid: 7,
+                      title: '凯尔希的中坚信物',
+                      snippet: '明日方舟中的道具。',
+                    },
+                  ]
+                : [],
+          },
+        });
+      }
+      if (url.searchParams.get('titles') === '凯尔希') {
+        return jsonResponse({
+          query: {
+            pages: [
+              {
+                pageid: url.hostname === 'moegirl.icu' ? 11 : 12,
+                title: '凯尔希',
+                fullurl: `https://${url.hostname}/${encodeURIComponent('凯尔希')}`,
+                extract: '凯尔希是《明日方舟》中的角色。',
+              },
+            ],
+          },
+        });
+      }
+      return jsonResponse({ query: { search: [] } });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch);
+
+    await expect(service.search('search_regional_exact', '凯尔希', '明日方舟')).resolves.toEqual([
+      expect.objectContaining({
+        name: '凯尔希',
+        sourceName: '萌娘百科',
+        matchReason: '精确页面正文同时匹配“明日方舟”',
+      }),
+    ]);
+  });
+
+  it.each([
+    ['贤者', '贤者（英语：Sage）是由拳头游戏开发并发行的游戏《无畏契约》的登场角色。', '无畏契约'],
+    ['温迪', '温迪是米哈游研发的游戏《原神》及其衍生作品的登场角色。', '原神'],
+    [
+      '千早爱音',
+      '千早爱音是企划《BanG Dream!》及其衍生作品的登场角色。乐队MyGO!!!!!的吉他手。',
+      'BanG Dream! / MyGO!!!!!',
+    ],
+    [
+      '晓山瑞希',
+      '晓山瑞希是《世界计划 彩色舞台 feat. 初音未来》及其衍生作品的登场角色。',
+      '世界计划 彩色舞台 feat. 初音未来',
+    ],
+    [
+      '若叶睦',
+      '若叶睦是企划《BanG Dream!》及其衍生作品的登场角色。乐队Ave Mujica的吉他手。',
+      'BanG Dream! / Ave Mujica',
+    ],
+  ])(
+    'infers and fills the source work for %s when the user leaves it blank',
+    async (name, extract, expectedWork) => {
+      const fetcher = vi.fn(async (input: string | URL | Request) => {
+        const url = new URL(input instanceof Request ? input.url : input.toString());
+        if (url.searchParams.get('list') === 'search') {
+          return jsonResponse({
+            query: { search: [{ pageid: 1, title: name, snippet: `${name}的角色资料。` }] },
+          });
+        }
+        return jsonResponse({
+          query: {
+            pages: [
+              {
+                pageid: 1,
+                title: name,
+                fullurl: `https://moegirl.icu/${encodeURIComponent(name)}`,
+                extract,
+              },
+            ],
+          },
+        });
+      });
+      const service = new CharacterResearchService(fetcher as typeof fetch);
+
+      await expect(service.search(`search_${name}`, name, '')).resolves.toEqual([
+        expect.objectContaining({
+          name,
+          sourceWork: expectedWork,
+          matchReason: `精确页面正文识别作品“${expectedWork}”`,
+        }),
+      ]);
+    },
+  );
+
+  it('selects a work-specific character page instead of an exact-name disambiguation page', async () => {
+    let receivedSourceText = '';
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname === 'html.duckduckgo.com') {
+        return xmlResponse(`<?xml version="1.0"?><rss><channel>
+          <item><title>Luna voice lines</title><link>https://www.youtube.com/watch?v=unrelated</link><description>Azur Lane Luna voice lines</description></item>
+        </channel></rss>`);
+      }
+      if (url.searchParams.get('list') === 'search') {
+        return jsonResponse({
+          query: {
+            search: [
+              {
+                pageid: 1,
+                title: '露娜',
+                snippet: '露娜(神行少女)是另一角色。露娜(三角洲行动)是游戏《三角洲行动》的角色。',
+              },
+              {
+                pageid: 2,
+                title: '露娜(三角洲行动)',
+                snippet: '露娜是游戏《三角洲行动》的侦察型特战干员。',
+              },
+            ],
+          },
+        });
+      }
+      return jsonResponse({
+        query: {
+          pages: [
+            {
+              pageid: 2,
+              title: '露娜(三角洲行动)',
+              fullurl: 'https://moegirl.icu/露娜(三角洲行动)',
+              extract:
+                '露娜（金卢娜）是《三角洲行动》的侦察型特战干员。她曾任情报官，擅长信息分析和箭术。',
+            },
+          ],
+        },
+      });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch, {
+      generateCharacterLore: vi.fn(async (input) => {
+        receivedSourceText = input.sourceText;
+        return { identity: '侦察型特战干员。' };
+      }),
+    });
+
+    const candidates = await service.search('search_luna_delta', '露娜', '三角洲');
+    expect(candidates).toEqual([
+      expect.objectContaining({
+        name: '露娜',
+        sourceWork: '三角洲行动',
+        sourceUrl:
+          'https://moegirl.icu/%E9%9C%B2%E5%A8%9C(%E4%B8%89%E8%A7%92%E6%B4%B2%E8%A1%8C%E5%8A%A8)',
+      }),
+    ]);
+    const draft = await service.buildDraft('draft_luna_delta', candidates[0]!.id);
+    expect(draft.lore.sources).toHaveLength(1);
+    expect(receivedSourceText).toContain('曾任情报官');
+    expect(receivedSourceText).not.toContain('Azur Lane');
+  });
+
   it('rejects work-wide list pages and accepts a work-matched individual Wuthering Waves page', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());
@@ -317,6 +482,46 @@ describe('M5.1 character research service', () => {
     expect(draft.profileFields.userDisplayName).not.toBe('时较为直接');
   });
 
+  it('rejects an incomplete generated user-address fragment as a speech style', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.searchParams.get('list') === 'search') {
+        return jsonResponse({
+          query: {
+            search: [{ title: '露娜(三角洲行动)', snippet: '三角洲行动中的侦察干员。' }],
+          },
+        });
+      }
+      return jsonResponse({
+        query: {
+          pages: [
+            {
+              pageid: 1,
+              title: '露娜(三角洲行动)',
+              fullurl: 'https://moegirl.icu/露娜(三角洲行动)',
+              extract: '露娜是《三角洲行动》中的侦察干员。',
+            },
+          ],
+        },
+      });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch, {
+      generateCharacterLore: vi.fn(async () => ({
+        identity: '侦察型特战干员。',
+        speechStyle: '称呼用户为',
+      })),
+    });
+    const candidate = (await service.search('search_incomplete_speech', '露娜', '三角洲'))[0]!;
+    const draft = await service.buildDraft('draft_incomplete_speech', candidate.id);
+
+    expect(draft.lore.speechStyle).toBe('通常直接称用户为“你”。');
+    expect(draft.profileFields.userDisplayName).toBe('你');
+    expect(draft.profileFields.personaPrompt).not.toMatch(/称呼用户为$/u);
+    expect(draft.warnings).toContain(
+      '模型返回的说话方式不完整；已恢复能够确认的称呼规则，其他表达特点可以重新整理。',
+    );
+  });
+
   it('turns parsed community-wiki HTML into plain text before model整理', async () => {
     let receivedSourceText = '';
     const parsedPages: string[] = [];
@@ -383,7 +588,7 @@ describe('M5.1 character research service', () => {
         const dialogue = url.searchParams.get('q')?.match(/台词|セリフ/u);
         if (address) {
           return xmlResponse(`<?xml version="1.0"?><rss><channel>
-            <item><title>伊雷娜如何称呼玩家</title><link>https://anibase.net/ja/character/elaina-address</link><description>伊雷娜与玩家对话时使用旅行者这一称呼</description></item>
+            <item><title>伊雷娜如何称呼玩家</title><link>https://anibase.net/ja/character/elaina-address</link><description>《魔女之旅》伊雷娜与玩家对话时使用旅行者这一称呼</description></item>
           </channel></rss>`);
         }
         return xmlResponse(`<?xml version="1.0"?><rss><channel>

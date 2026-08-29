@@ -6,6 +6,7 @@ import {
 } from '../src/core/conversation/context-assembler';
 import { DEFAULT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
 import { KALTSIT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
+import { formatWorkGlossaryContext } from '../src/core/conversation/work-glossary';
 
 describe('conversation context assembly', () => {
   it('keeps only the newest bounded messages in chronological order', () => {
@@ -52,6 +53,32 @@ describe('conversation context assembly', () => {
     expect(prompt).toContain('明确设限');
     expect(prompt).toContain('不得因单轮情绪、辱骂或夸奖突然跳变');
     expect(prompt).toContain('不写入长期人格、关系等级或用户画像');
+  });
+
+  it('gives sourced work terminology precedence over long-term user memory', () => {
+    const prompt = buildConversationSystemPrompt(
+      DEFAULT_CHARACTER_PROFILE,
+      [],
+      '【长期记忆】用户以前把花来理解成送花。',
+      '花来是什么意思？',
+      formatWorkGlossaryContext([
+        {
+          term: '花来',
+          aliases: [],
+          meaning: '三角洲行动的夺舍流社区梗。',
+          originContext: '来自在线社区百科。',
+          sources: [{ title: '梗页面', siteName: '社区百科', url: 'https://example.com' }],
+          lastVerified: 1,
+          confidence: 0.9,
+        },
+      ]),
+    );
+
+    expect(prompt).toContain('三角洲行动的夺舍流社区梗');
+    expect(prompt).toContain('解释作品术语时，本段优先于长期用户记忆');
+    expect(prompt.indexOf('用户以前把花来理解成送花')).toBeLessThan(
+      prompt.indexOf('三角洲行动的夺舍流社区梗'),
+    );
   });
 
   it('uses locally entered character identity silently and only adds long lore when relevant', () => {

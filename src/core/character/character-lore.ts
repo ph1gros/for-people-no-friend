@@ -29,6 +29,17 @@ export interface CharacterLoreSource {
   retrievedAt: number;
 }
 
+export const sanitizeCharacterSpeechStyle = (value: string): string => {
+  const text = value.normalize('NFKC').trim();
+  if (!text) return '';
+  const withoutEmptyQuotes = text.replace(/[“「『'"]\s*[”」』'"]/gu, '').trim();
+  return /(?:^(?:对用户(?:的)?称呼|称呼用户|称用户)(?:(?:为|是|作|叫作)\s*)?|(?:称为|称作|叫作|直呼)\s*)[：:，,。；;、]*$/u.test(
+    withoutEmptyQuotes,
+  )
+    ? ''
+    : text;
+};
+
 export const shouldIncludeCharacterLoreDetails = (
   query: string,
   characterName: string,

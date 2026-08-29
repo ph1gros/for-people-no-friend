@@ -128,6 +128,17 @@ export class ConversationRuntime {
     return true;
   }
 
+  public cancelAll(): number {
+    let cancelled = 0;
+    for (const conversation of this.active.values()) {
+      if (!conversation.controller.signal.aborted) {
+        conversation.controller.abort();
+        cancelled += 1;
+      }
+    }
+    return cancelled;
+  }
+
   public dispose(): void {
     for (const conversation of this.active.values()) {
       conversation.controller.abort();
@@ -243,21 +254,21 @@ export class ConversationRuntime {
               characters: context.reduce((total, message) => total + message.content.length, 0),
               reason: '保持当前话题与指代连续',
             },
-            ...(memoryContext
-              ? [
-                  {
-                    name: '记忆',
-                    characters: memoryContext.length,
-                    reason: '关键词与已确认事实命中',
-                  },
-                ]
-              : []),
             ...(workGlossaryContext
               ? [
                   {
                     name: '作品词库',
                     characters: workGlossaryContext.length,
-                    reason: '当前消息命中作品专有词',
+                    reason: '在线来源型公共词义命中，解释术语时优先',
+                  },
+                ]
+              : []),
+            ...(memoryContext
+              ? [
+                  {
+                    name: '记忆',
+                    characters: memoryContext.length,
+                    reason: '用户个人事实与用法命中，不覆盖作品公共词义',
                   },
                 ]
               : []),

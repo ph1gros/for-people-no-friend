@@ -21,7 +21,7 @@ describe('shared settings persistence contract', () => {
     directory = undefined;
   });
 
-  it('migrates version 1 desktop settings to the default toggle shortcut', async () => {
+  it('migrates older desktop settings to both default shortcuts', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-desktop-settings-'));
     await writeFile(
       path.join(directory, 'desktop-integrations.v1.json'),
@@ -36,6 +36,26 @@ describe('shared settings persistence contract', () => {
       globalShortcutsEnabled: true,
       mediaControlEnabled: false,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
+    });
+
+    await writeFile(
+      path.join(directory, 'desktop-integrations.v1.json'),
+      JSON.stringify({
+        version: 2,
+        settings: {
+          globalShortcutsEnabled: true,
+          mediaControlEnabled: false,
+          visibilityShortcut: 'Ctrl+Shift+]',
+        },
+      }),
+      'utf8',
+    );
+    await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
+      globalShortcutsEnabled: true,
+      mediaControlEnabled: false,
+      visibilityShortcut: 'Ctrl+Shift+]',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
   });
 
@@ -69,11 +89,13 @@ describe('shared settings persistence contract', () => {
       globalShortcutsEnabled: true,
       mediaControlEnabled: true,
       visibilityShortcut: 'Ctrl+Shift+]',
+      stopGenerationShortcut: 'Ctrl+Alt+Backspace',
     });
     await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
       globalShortcutsEnabled: true,
       mediaControlEnabled: true,
       visibilityShortcut: 'Ctrl+Shift+]',
+      stopGenerationShortcut: 'Ctrl+Alt+Backspace',
     });
 
     const profiles = new CharacterProfileStore(directory);

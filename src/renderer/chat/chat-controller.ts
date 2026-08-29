@@ -65,6 +65,17 @@ const createField = (
   return label;
 };
 
+const enableAutoGrowingTextarea = (textarea: HTMLTextAreaElement): (() => void) => {
+  textarea.classList.add('settings-textarea--auto');
+  const resize = (): void => {
+    if (!textarea.isConnected || textarea.offsetParent === null) return;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  };
+  textarea.addEventListener('input', resize);
+  return resize;
+};
+
 const formatLocalDateTime = (timestamp?: number): string => {
   if (!timestamp) return '';
   const date = new Date(timestamp);
@@ -403,7 +414,7 @@ export const initializeChat = async ({
   const modelCollaborationStatus = document.createElement('p');
   modelCollaborationStatus.className = 'settings-status';
   modelCollaborationStatus.textContent =
-    '默认关闭。开启后只有角色资料整理、摘要和记忆候选会发送给指定远端模型；普通聊天仍使用当前模型。失败会回退当前模型。';
+    '资料检索对所有模型使用同一来源与超时策略。默认关闭时，角色整理、摘要和记忆候选都由当前模型处理，本地 Ollama 无需联网；开启后才会发送给指定远端模型，失败会回退当前模型。';
   modelCollaborationPanel.append(
     modelCollaborationTitle,
     allowRemoteComplexTasksField,
@@ -571,7 +582,7 @@ export const initializeChat = async ({
   globalShortcutInput.type = 'checkbox';
   const globalShortcutField = document.createElement('label');
   globalShortcutField.className = 'settings-field';
-  globalShortcutField.append(globalShortcutInput, ' 仅在桌宠窗口被选中时启用隐藏快捷键');
+  globalShortcutField.append(globalShortcutInput, ' 仅在桌宠窗口被选中时启用快捷键');
   const visibilityShortcutInput = document.createElement('input');
   visibilityShortcutInput.maxLength = 64;
   visibilityShortcutInput.autocomplete = 'off';
@@ -582,6 +593,16 @@ export const initializeChat = async ({
   visibilityShortcutHint.textContent =
     '默认是 、 键（系统记作 \\）；切到其他程序后不会占用。隐藏后请点击托盘图标重新显示。';
   visibilityShortcutField.append(visibilityShortcutHint);
+  const stopGenerationShortcutInput = document.createElement('input');
+  stopGenerationShortcutInput.maxLength = 64;
+  stopGenerationShortcutInput.autocomplete = 'off';
+  stopGenerationShortcutInput.spellcheck = false;
+  const stopGenerationShortcutField = createField('停止生成快捷键', stopGenerationShortcutInput);
+  const stopGenerationShortcutHint = document.createElement('small');
+  stopGenerationShortcutHint.className = 'settings-hint';
+  stopGenerationShortcutHint.textContent =
+    '默认 Ctrl+Shift+Delete；只在桌宠窗口被选中时生效，不记录普通按键。';
+  stopGenerationShortcutField.append(stopGenerationShortcutHint);
   const mediaControlInput = document.createElement('input');
   mediaControlInput.type = 'checkbox';
   const mediaControlField = document.createElement('label');
@@ -602,6 +623,7 @@ export const initializeChat = async ({
     desktopIntegrationTitle,
     globalShortcutField,
     visibilityShortcutField,
+    stopGenerationShortcutField,
     mediaControlField,
     desktopIntegrationStatus,
     mediaActions,
@@ -688,6 +710,29 @@ export const initializeChat = async ({
   shell.append(launcherButton, panel);
   root.append(shell, actionDialog);
 
+  const loreTextareas = [
+    bioInput,
+    personaInput,
+    lorePersonalityInput,
+    loreBackgroundInput,
+    loreRelationshipsInput,
+    loreSpeechStyleInput,
+    loreSampleLinesInput,
+  ];
+  const resizeLoreTextareas = (): void => {
+    requestAnimationFrame(() => {
+      for (const resize of loreTextareaResizers) resize();
+    });
+  };
+  const loreTextareaResizers = loreTextareas.map(enableAutoGrowingTextarea);
+  const loreEditorResizeObserver = new ResizeObserver(() => {
+    if (loreEditor.open) resizeLoreTextareas();
+  });
+  loreEditorResizeObserver.observe(settingsPanel);
+  loreEditor.addEventListener('toggle', () => {
+    if (loreEditor.open) resizeLoreTextareas();
+  });
+
   let messages: ConversationMessage[] = [];
   let memoryRecords: MemoryRecord[] = [];
   let memoryCandidates: MemoryCandidateRecord[] = [];
@@ -764,6 +809,28 @@ export const initializeChat = async ({
     setReplyStatus('先和你说了一句');
   };
 
+  const resetCharacterSessionView = (): void => {
+    openingLineShown = false;
+    activeReply = '';
+    latestContextDebug = undefined;
+    memoryRecords = [];
+    memoryCandidates = [];
+    subtitle.hidden = true;
+    subtitle.textContent = '';
+    replyStateLabel = '随时可以开始聊天';
+    renderContextDebug();
+    renderMemories();
+  };
+
+  const refreshActiveCharacter = async (): Promise<void> => {
+    if (!api) return;
+    resetCharacterSessionView();
+    messages = await api.getConversationHistory();
+    await loadSettings();
+    renderHistory();
+    reloadActiveCharacter();
+  };
+
   const reloadActiveCharacter = (): void => {
     window.dispatchEvent(new Event('deskpet:reload-character'));
   };
@@ -796,11 +863,8 @@ export const initializeChat = async ({
               characterLibraryStatus.textContent = result.error.message;
               return;
             }
-            messages = await api.getConversationHistory();
-            await loadSettings();
-            reloadActiveCharacter();
+            await refreshActiveCharacter();
             characterLibraryStatus.textContent = `已切换到“${entry.profile.name}”。`;
-            renderHistory();
           })();
         });
         actions.append(activate);
@@ -822,11 +886,8 @@ export const initializeChat = async ({
               characterLibraryStatus.textContent = result.error.message;
               return;
             }
-            messages = await api.getConversationHistory();
-            await loadSettings();
-            reloadActiveCharacter();
+            await refreshActiveCharacter();
             characterLibraryStatus.textContent = '角色包已删除。';
-            renderHistory();
           })();
         });
         actions.append(remove);
@@ -1586,6 +1647,10 @@ export const initializeChat = async ({
       button.addEventListener('click', () => {
         void (async () => {
           if (!api || activeCharacterResearchId) return;
+          if (candidate.sourceWork) {
+            loreSourceWorkInput.value = candidate.sourceWork;
+            await loadGlossaryStatus(candidate.sourceWork);
+          }
           const requestId = createRequestId('character_draft');
           activeCharacterResearchId = requestId;
           setCharacterResearchBusy(true);
@@ -1605,14 +1670,14 @@ export const initializeChat = async ({
             userNameInput.value = result.draft.profileFields.userDisplayName;
             bioInput.value = result.draft.profileFields.bio;
             personaInput.value = result.draft.profileFields.personaPrompt;
-            loreEditor.open = true;
+            loreEditor.open = false;
             if (result.draft.warnings.length > 0) {
               action.textContent = '重新整理扮演设定 →';
-              characterSearchStatus.textContent = result.draft.warnings.join(' ');
+              characterSearchStatus.textContent = `${result.draft.warnings.join(' ')} 点击“角色设定”展开检查。`;
             } else {
               characterSearchCandidates.replaceChildren();
               characterSearchStatus.textContent =
-                '已综合角色资料和台词来源生成完整扮演设定，请检查后点击“保存”。';
+                '已综合角色资料和台词来源生成扮演设定；点击“角色设定”完整展开，检查后再保存。';
             }
             requestAnimationFrame(() =>
               loreEditor.scrollIntoView({ behavior: 'smooth', block: 'start' }),
@@ -1676,7 +1741,7 @@ export const initializeChat = async ({
         title: '联网查找角色',
         message: sourceWork ? `查找“${name}”（${sourceWork}）？` : `查找“${name}”？`,
         details:
-          '角色名和作品名会发送给公开资料站点。查找结果只会生成本地草稿，点击总设置的“保存”后才会生效。',
+          '角色名和已填写的作品名会发送给公开资料站点；作品留空时会从候选页正文识别并回填。查找结果只会生成本地草稿，点击总设置的“保存”后才会生效。',
         confirmLabel: '开始查找',
       }))
     ) {
@@ -1715,6 +1780,7 @@ export const initializeChat = async ({
     globalShortcutInput.checked = desktopStatus.settings.globalShortcutsEnabled;
     mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
     visibilityShortcutInput.value = desktopStatus.settings.visibilityShortcut;
+    stopGenerationShortcutInput.value = desktopStatus.settings.stopGenerationShortcut;
     mediaControlsAvailable =
       desktopStatus.settings.mediaControlEnabled && desktopStatus.media.supported;
     previousMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
@@ -1722,8 +1788,10 @@ export const initializeChat = async ({
     nextMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
     const shortcutMessage = desktopStatus.settings.globalShortcutsEnabled
       ? desktopStatus.shortcutRegistered
-        ? `${desktopStatus.settings.visibilityShortcut} 窗口隐藏快捷键已启用`
-        : '快捷键注册失败，可能已被其他程序占用'
+        ? desktopStatus.stopGenerationShortcutRegistered
+          ? `${desktopStatus.settings.visibilityShortcut} 切换窗口；${desktopStatus.settings.stopGenerationShortcut} 停止生成`
+          : '窗口快捷键已启用；停止生成快捷键注册失败，可能已被占用'
+        : '窗口快捷键注册失败，可能已被其他程序占用'
       : '窗口隐藏快捷键未启用';
     const mediaMessage = desktopStatus.settings.mediaControlEnabled
       ? desktopStatus.media.supported
@@ -1778,9 +1846,13 @@ export const initializeChat = async ({
     updateIdentity();
     await loadCharacterLibrary();
     await updateSecretStatus();
+    resizeLoreTextareas();
   };
 
-  const saveSettings = async (statusTarget = settingsStatus): Promise<boolean> => {
+  const saveSettings = async (
+    statusTarget = settingsStatus,
+    refreshCharacter = true,
+  ): Promise<boolean> => {
     if (!api || !profile) {
       return false;
     }
@@ -1799,6 +1871,7 @@ export const initializeChat = async ({
       personaPrompt: personaInput.value.trim(),
       lore: readLoreEditor(updatedName),
     };
+    const characterProfileChanged = JSON.stringify(updatedProfile) !== JSON.stringify(profile);
     statusTarget.textContent = '正在保存…';
     const operations = await Promise.all([
       api.setProviderConfiguration({
@@ -1832,14 +1905,16 @@ export const initializeChat = async ({
       statusTarget.textContent = failed.error.message;
       return false;
     }
-    profile = updatedProfile;
-    updateIdentity();
     apiKeyInput.value = '';
     remoteApiKeyInput.value = '';
     statusTarget.textContent = '已保存。';
-    await loadSettings();
-    messages = await api.getConversationHistory();
-    renderHistory();
+    if (refreshCharacter || characterProfileChanged) {
+      await refreshActiveCharacter();
+    } else {
+      await loadSettings();
+      messages = await api.getConversationHistory();
+      renderHistory();
+    }
     return true;
   };
 
@@ -1849,10 +1924,12 @@ export const initializeChat = async ({
       globalShortcutsEnabled: globalShortcutInput.checked,
       mediaControlEnabled: mediaControlInput.checked,
       visibilityShortcut: visibilityShortcutInput.value.trim(),
+      stopGenerationShortcut: stopGenerationShortcutInput.value.trim(),
     };
     globalShortcutInput.disabled = true;
     mediaControlInput.disabled = true;
     visibilityShortcutInput.disabled = true;
+    stopGenerationShortcutInput.disabled = true;
     desktopIntegrationStatus.textContent = '正在应用桌面快捷操作设置…';
     try {
       await api.setDesktopIntegrationSettings({ settings: requestedSettings });
@@ -1869,6 +1946,7 @@ export const initializeChat = async ({
       globalShortcutInput.disabled = false;
       mediaControlInput.disabled = false;
       visibilityShortcutInput.disabled = false;
+      stopGenerationShortcutInput.disabled = false;
     }
   };
 
@@ -1942,6 +2020,9 @@ export const initializeChat = async ({
   visibilityShortcutInput.addEventListener('change', () => {
     void saveDesktopIntegrationSettings();
   });
+  stopGenerationShortcutInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
   cancelCharacterSearchButton.addEventListener('click', () => {
     if (!api || !activeCharacterResearchId) return;
     const requestId = activeCharacterResearchId;
@@ -1997,7 +2078,10 @@ export const initializeChat = async ({
     closeDrawers();
     settingsPanel.hidden = !willOpen;
     setPanelExpanded(true, willOpen ? 'settings' : 'chat');
-    if (willOpen) void loadWindowScale();
+    if (willOpen) {
+      void loadWindowScale();
+      if (loreEditor.open) resizeLoreTextareas();
+    }
   });
   closeHistoryButton.addEventListener('click', closeDrawers);
   closeMemoryButton.addEventListener('click', closeDrawers);
@@ -2131,11 +2215,8 @@ export const initializeChat = async ({
         characterLibraryStatus.textContent = imported.message;
         return;
       }
-      messages = await api.getConversationHistory();
-      await loadSettings();
-      reloadActiveCharacter();
+      await refreshActiveCharacter();
       characterLibraryStatus.textContent = `“${preview.characterName}”已导入并切换。`;
-      renderHistory();
     })();
   });
   exportCharacterButton.addEventListener('click', () => {
@@ -2183,7 +2264,7 @@ export const initializeChat = async ({
   });
   testButton.addEventListener('click', () => {
     void (async () => {
-      if (!api || !(await saveSettings(connectionStatus))) {
+      if (!api || !(await saveSettings(connectionStatus, false))) {
         return;
       }
       connectionStatus.textContent = '正在测试连接…';
@@ -2300,7 +2381,7 @@ export const initializeChat = async ({
 
   const handleCharacterLoaded = (): void => {
     updateIdentity();
-    if (panelExpanded && panelView === 'chat') showOpeningLineIfReady();
+    showOpeningLineIfReady();
   };
   window.addEventListener('deskpet:character-loaded', handleCharacterLoaded);
 
@@ -2309,6 +2390,7 @@ export const initializeChat = async ({
       void api.cancelCharacterResearch({ requestId: activeCharacterResearchId });
     }
     disposeConversationListener?.();
+    loreEditorResizeObserver.disconnect();
     windowScaleSync?.dispose();
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });

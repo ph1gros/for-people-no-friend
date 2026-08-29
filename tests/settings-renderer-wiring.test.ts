@@ -27,7 +27,9 @@ describe('settings renderer regression wiring', () => {
   it('applies both desktop switches immediately through the narrow settings method', () => {
     expect(source).toContain("globalShortcutInput.addEventListener('change'");
     expect(source).toContain("mediaControlInput.addEventListener('change'");
-    expect(source.match(/void saveDesktopIntegrationSettings\(\);/gu)).toHaveLength(3);
+    expect(source.match(/void saveDesktopIntegrationSettings\(\);/gu)).toHaveLength(4);
+    expect(source).toContain("stopGenerationShortcutInput.addEventListener('change'");
+    expect(source).toContain('stopGenerationShortcut: stopGenerationShortcutInput.value.trim()');
     expect(source).toContain(
       'await api.setDesktopIntegrationSettings({ settings: requestedSettings })',
     );
@@ -50,6 +52,18 @@ describe('settings renderer regression wiring', () => {
     expect(styles).not.toContain('.settings-expanded .character-host');
   });
 
+  it('resets character-scoped renderer state and replays the new opening line after updates', () => {
+    expect(source).toContain('const resetCharacterSessionView = (): void => {');
+    expect(source).toContain('openingLineShown = false;');
+    expect(source).toContain('latestContextDebug = undefined;');
+    expect(source).toContain('memoryRecords = [];');
+    expect(source).toContain('memoryCandidates = [];');
+    expect(source).toContain('await refreshActiveCharacter();');
+    expect(source).toContain('const characterProfileChanged =');
+    expect(source).toContain('if (refreshCharacter || characterProfileChanged)');
+    expect(source).toContain('showOpeningLineIfReady();\n  };');
+  });
+
   it('groups history, memory, and context under one records menu', () => {
     expect(source).toContain("recordsMenuButton.textContent = '资料';");
     expect(source).toContain('recordsMenuItems.append(historyButton, memoryButton, debugButton);');
@@ -69,6 +83,24 @@ describe('settings renderer regression wiring', () => {
   it('allows window size adjustment in one-percent increments', () => {
     expect(source).toContain("scaleInput.step = '0.01';");
     expect(source).toContain("scaleInput.value = '0.85';");
+  });
+
+  it('expands character text fields to show their complete content', () => {
+    expect(source).toContain("textarea.classList.add('settings-textarea--auto');");
+    expect(source).toContain('textarea.style.height = `${textarea.scrollHeight}px`;');
+    expect(source).toContain('const loreEditorResizeObserver = new ResizeObserver');
+    expect(source).toContain("loreEditor.addEventListener('toggle'");
+    expect(source).toContain('loreEditor.open = false;');
+    expect(styles).toMatch(
+      /\.settings-field textarea\.settings-textarea--auto\s*\{[^}]*field-sizing:\s*content;[^}]*overflow-y:\s*hidden;[^}]*resize:\s*none;/su,
+    );
+  });
+
+  it('fills an inferred work only after the user selects the matching character candidate', () => {
+    expect(source).toContain('if (candidate.sourceWork) {');
+    expect(source).toContain('loreSourceWorkInput.value = candidate.sourceWork;');
+    expect(source).toContain('await loadGlossaryStatus(candidate.sourceWork);');
+    expect(source).toContain('作品留空时会从候选页正文识别并回填');
   });
 
   it('exposes a remote-provider key field without duplicating same-provider secrets', () => {

@@ -47,4 +47,20 @@ describe('provider capability routing', () => {
       }),
     ).toBe('local');
   });
+
+  it('keeps character research on the current Ollama-compatible model when remote collaboration is off', () => {
+    expect(
+      selectTaskProvider({
+        task: 'character-research',
+        currentProviderId: 'openai-compatible',
+        current: local,
+        remoteProviderId: 'deepseek',
+        remote: {
+          ...local,
+          suitableForComplexResearch: true,
+        },
+        allowRemoteComplexTasks: false,
+      }),
+    ).toBe('openai-compatible');
+  });
 });

@@ -533,6 +533,14 @@ select {
   border-color: rgb(192 156 255 / 72%);
 }
 
+.settings-field textarea.settings-textarea--auto {
+  field-sizing: content;
+  min-height: 52px;
+  max-height: none;
+  overflow-y: hidden;
+  resize: none;
+}
+
 .scale-control {
   display: grid;
   grid-template-columns: 1fr 48px;

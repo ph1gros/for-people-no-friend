@@ -98,17 +98,27 @@ export const buildConversationSystemPrompt = (
       .join('\n'),
   });
   registry.replace({
-    source: 'short-term',
+    source: 'current-scene',
     priority: 20,
     maximumCharacters: 12_000,
     content: [
       '【只属于当前会话的上下文】',
-      memoryContext || undefined,
       formatLive2DCompanionSignals(currentUserMessage, recentCompanionRecords),
-      workGlossaryContext || undefined,
     ]
       .filter((line): line is string => line !== undefined)
       .join('\n\n'),
+  });
+  registry.replace({
+    source: 'long-term-memory',
+    priority: 30,
+    maximumCharacters: 12_000,
+    content: memoryContext,
+  });
+  registry.replace({
+    source: 'work-glossary',
+    priority: 5,
+    maximumCharacters: 12_000,
+    content: workGlossaryContext,
   });
   registry.replace({
     source: 'reply-boundary',

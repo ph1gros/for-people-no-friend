@@ -1,11 +1,13 @@
 import path from 'node:path';
 
 export interface WindowAssetPaths {
+  icon: string;
   preload: string;
   renderer: string;
 }
 
 export const resolveWindowAssetPaths = (compiledWindowDirectory: string): WindowAssetPaths => ({
+  icon: path.resolve(compiledWindowDirectory, '..', '..', '..', 'build', 'icon.png'),
   preload: path.resolve(compiledWindowDirectory, '..', '..', 'preload', 'index.cjs'),
   renderer: path.resolve(
     compiledWindowDirectory,

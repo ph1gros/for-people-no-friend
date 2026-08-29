@@ -538,8 +538,10 @@ export const registerIpcHandlers = (
               globalShortcutsEnabled: false,
               mediaControlEnabled: false,
               visibilityShortcut: '\\',
+              stopGenerationShortcut: 'Ctrl+Shift+Delete',
             },
             shortcutRegistered: false,
+            stopGenerationShortcutRegistered: false,
             media: { supported: false },
           };
     },

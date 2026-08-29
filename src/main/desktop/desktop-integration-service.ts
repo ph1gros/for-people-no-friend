@@ -20,9 +20,11 @@ export class DesktopIntegrationService {
     globalShortcutsEnabled: false,
     mediaControlEnabled: false,
     visibilityShortcut: '\\',
+    stopGenerationShortcut: 'Ctrl+Shift+Delete',
   };
   private shortcutRegistered = false;
-  private registeredVisibilityShortcut: string | undefined;
+  private stopGenerationShortcutRegistered = false;
+  private readonly registeredShortcuts = new Set<string>();
   private shortcutWindowFocused = false;
   private mediaCommandInFlight = false;
 
@@ -31,6 +33,7 @@ export class DesktopIntegrationService {
     private readonly shortcuts: GlobalShortcutAdapter,
     private readonly toggleVisibility: () => void,
     private readonly media: MediaController = unsupportedMedia,
+    private readonly stopGeneration: () => void = () => undefined,
   ) {}
 
   public async initialize(): Promise<void> {
@@ -42,6 +45,7 @@ export class DesktopIntegrationService {
     return {
       settings: { ...this.settings },
       shortcutRegistered: this.shortcutRegistered,
+      stopGenerationShortcutRegistered: this.stopGenerationShortcutRegistered,
       media: this.settings.mediaControlEnabled
         ? await this.media.getState().catch(() => ({ supported: false }))
         : { supported: false },
@@ -71,33 +75,41 @@ export class DesktopIntegrationService {
   }
 
   public dispose(): void {
-    this.unregisterVisibilityShortcut();
+    this.unregisterShortcuts();
     this.shortcutRegistered = false;
+    this.stopGenerationShortcutRegistered = false;
   }
 
   private applyShortcut(): void {
-    this.unregisterVisibilityShortcut();
+    this.unregisterShortcuts();
     this.shortcutRegistered = false;
+    this.stopGenerationShortcutRegistered = false;
     if (this.settings.globalShortcutsEnabled && this.shortcutWindowFocused) {
-      try {
-        this.shortcutRegistered = this.shortcuts.register(
-          this.settings.visibilityShortcut,
-          this.toggleVisibility,
-        );
-        if (this.shortcutRegistered) {
-          this.registeredVisibilityShortcut = this.settings.visibilityShortcut;
-        }
-      } catch {
-        this.unregisterVisibilityShortcut();
-        this.shortcutRegistered = false;
-      }
+      this.shortcutRegistered = this.registerShortcut(
+        this.settings.visibilityShortcut,
+        this.toggleVisibility,
+      );
+      this.stopGenerationShortcutRegistered = this.registerShortcut(
+        this.settings.stopGenerationShortcut,
+        this.stopGeneration,
+      );
     }
   }
 
-  private unregisterVisibilityShortcut(): void {
-    if (this.registeredVisibilityShortcut) {
-      this.shortcuts.unregister(this.registeredVisibilityShortcut);
-      this.registeredVisibilityShortcut = undefined;
+  private registerShortcut(accelerator: string, action: () => void): boolean {
+    try {
+      const registered = this.shortcuts.register(accelerator, action);
+      if (registered) this.registeredShortcuts.add(accelerator);
+      return registered;
+    } catch {
+      return false;
     }
+  }
+
+  private unregisterShortcuts(): void {
+    for (const accelerator of this.registeredShortcuts) {
+      this.shortcuts.unregister(accelerator);
+    }
+    this.registeredShortcuts.clear();
   }
 }

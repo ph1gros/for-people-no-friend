@@ -2,6 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  DEFAULT_STOP_GENERATION_SHORTCUT,
   DEFAULT_VISIBILITY_SHORTCUT,
   parseDesktopIntegrationSettings,
   type DesktopIntegrationSettings,
@@ -11,6 +12,7 @@ const DEFAULT_SETTINGS: DesktopIntegrationSettings = {
   globalShortcutsEnabled: false,
   mediaControlEnabled: false,
   visibilityShortcut: DEFAULT_VISIBILITY_SHORTCUT,
+  stopGenerationShortcut: DEFAULT_STOP_GENERATION_SHORTCUT,
 };
 
 export class DesktopIntegrationStore {
@@ -28,15 +30,17 @@ export class DesktopIntegrationStore {
         typeof value !== 'object' ||
         Array.isArray(value) ||
         ((value as Record<string, unknown>).version !== 1 &&
-          (value as Record<string, unknown>).version !== 2)
+          (value as Record<string, unknown>).version !== 2 &&
+          (value as Record<string, unknown>).version !== 3)
       ) {
         throw new Error('The desktop integration file is invalid.');
       }
       const record = value as Record<string, unknown>;
-      if (record.version === 1) {
+      if (record.version === 1 || record.version === 2) {
         return parseDesktopIntegrationSettings({
           ...(record.settings as Record<string, unknown>),
-          visibilityShortcut: DEFAULT_VISIBILITY_SHORTCUT,
+          ...(record.version === 1 ? { visibilityShortcut: DEFAULT_VISIBILITY_SHORTCUT } : {}),
+          stopGenerationShortcut: DEFAULT_STOP_GENERATION_SHORTCUT,
         });
       }
       return parseDesktopIntegrationSettings(record.settings);
@@ -52,7 +56,7 @@ export class DesktopIntegrationStore {
     const validated = parseDesktopIntegrationSettings(settings);
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.tmp`;
-    await writeFile(temporaryPath, JSON.stringify({ version: 2, settings: validated }, null, 2), {
+    await writeFile(temporaryPath, JSON.stringify({ version: 3, settings: validated }, null, 2), {
       encoding: 'utf8',
       mode: 0o600,
     });

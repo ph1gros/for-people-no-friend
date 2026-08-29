@@ -13,10 +13,14 @@ import { CURATED_WORK_GLOSSARIES, type CuratedWorkGlossary } from './curated-wor
 type GlossaryFetch = (input: string, init?: RequestInit) => Promise<Response>;
 const AKP_HANDBOOK_API = 'https://akp.fandom.com/zh/api.php';
 const PUBLIC_SEARCH_URL = 'https://html.duckduckgo.com/html/';
+const SECONDARY_PUBLIC_SEARCH_URL = 'https://www.bing.com/search?format=rss';
+const MOEGIRL_API_URL = 'https://moegirl.icu/api.php';
 const USER_AGENT = 'For-People-No-Friend/1.0 (https://github.com/ph1gros/for-people-no-friend)';
 const MAX_SEARCH_RESPONSE_CHARACTERS = 1_000_000;
 const COMMUNITY_MARKER =
-  /(梗|黑话|黑稱|黑称|术语|術語|别名|別名|外号|外號|昵称|暱稱|迷因|二创|二創|童谣|童謠|口号|口號|台词|臺詞|meme|slang|glossary|nickname)/iu;
+  /(梗|黑话|黑稱|黑称|术语|術語|别名|別名|外号|外號|昵称|暱稱|称为|稱為|迷因|二创|二創|童谣|童謠|口号|口號|台词|臺詞|meme|slang|glossary|nickname)/iu;
+const BUZZWORD_MARKER =
+  /(梗|黑话|黑稱|黑称|俗称|俗稱|外号|外號|昵称|暱稱|称呼|稱呼|代名词|代名詞|迷因|二创|二創|玩梗|meme|slang)/iu;
 const SEARCH_RESULT_HOSTS = [
   'fandom.com',
   'wiki.gg',
@@ -35,6 +39,20 @@ interface PublicSearchItem {
   title: string;
   url: string;
   description: string;
+  wikiApiUrl?: string;
+  wikiTitle?: string;
+}
+
+interface MediaWikiSearchResult {
+  query?: {
+    search?: Array<{ pageid?: unknown; title?: unknown; snippet?: unknown }>;
+  };
+}
+
+interface MediaWikiPageResult {
+  query?: {
+    pages?: Array<{ title?: unknown; fullurl?: unknown; extract?: unknown; missing?: unknown }>;
+  };
 }
 
 interface DiscoveredPage extends PublicSearchItem {
@@ -73,6 +91,7 @@ const uniqueSources = (entries: readonly WorkGlossaryEntry[]): WorkGlossarySourc
 
 export class WorkGlossaryService {
   private readonly store: WorkGlossaryStore;
+  private readonly secondaryPublicSearchUrl: string | null;
 
   public constructor(
     userDataPath: string,
@@ -80,8 +99,16 @@ export class WorkGlossaryService {
     private readonly catalog: readonly CuratedWorkGlossary[] = CURATED_WORK_GLOSSARIES,
     private readonly handbookApiUrl: string | undefined = AKP_HANDBOOK_API,
     private readonly publicSearchUrl: string | undefined = PUBLIC_SEARCH_URL,
+    private readonly regionalWikiApiUrl: string | null = MOEGIRL_API_URL,
+    secondaryPublicSearchUrl?: string | null,
   ) {
     this.store = new WorkGlossaryStore(userDataPath);
+    this.secondaryPublicSearchUrl =
+      secondaryPublicSearchUrl === undefined
+        ? publicSearchUrl === PUBLIC_SEARCH_URL
+          ? SECONDARY_PUBLIC_SEARCH_URL
+          : null
+        : secondaryPublicSearchUrl;
   }
 
   public async findMatches(
@@ -124,8 +151,14 @@ export class WorkGlossaryService {
     let discoveredEntries: WorkGlossaryEntry[] = [];
     let searchFailed = false;
     let searchedQueries = 0;
-    if (this.publicSearchUrl) {
-      searchedQueries = 4;
+    if (
+      this.publicSearchUrl ||
+      this.secondaryPublicSearchUrl ||
+      this.regionalWikiApiUrl ||
+      glossary.onlineSources?.length
+    ) {
+      searchedQueries =
+        this.publicSearchUrl || this.secondaryPublicSearchUrl || this.regionalWikiApiUrl ? 5 : 0;
       try {
         discoveredEntries = await this.discoverPublicEntries(glossary);
       } catch {
@@ -175,6 +208,7 @@ export class WorkGlossaryService {
       const current = mergedEntries.get(key);
       if (!current || entry.confidence >= current.confidence) mergedEntries.set(key, entry);
     };
+    for (const entry of glossary.entries) mergeEntry(entry);
     for (const entry of previous?.entries ?? []) mergeEntry(entry);
     for (const entry of discoveredEntries) mergeEntry(entry);
     for (const entry of handbookEntries) mergeEntry(entry);
@@ -198,16 +232,16 @@ export class WorkGlossaryService {
       };
     }
     if (
-      previous &&
       discoveredEntries.length === 0 &&
       handbookEntries.length === 0 &&
       verifiedEntries.length === 0
     ) {
+      await this.store.set(glossary.id, [...mergedEntries.values()]);
       return {
         ok: true,
         status: await this.getStatus(sourceWork),
         report,
-        message: `本次同步没有找到可安全写入的新内容${searchFailed ? '；联网搜索暂时失败' : ''}。已保留原有词库，共 ${previous.entries.length} 条。`,
+        message: `联网同步没有取得可复核的新正文${searchFailed ? '；公开搜索暂时失败' : ''}${verifiedSources === 0 && checkedSources > 0 ? '；部分已知站点在当前网络不可达、被拦截或正文由脚本动态加载' : ''}。已保留内置或原有词库，共 ${mergedEntries.size} 条；这不表示已有校对内容失效。`,
       };
     }
     await this.store.set(glossary.id, [...mergedEntries.values()]);
@@ -223,7 +257,10 @@ export class WorkGlossaryService {
 
   private resolve(sourceWork: string): CuratedWorkGlossary | undefined {
     const id = resolveWorkGlossaryId(sourceWork);
-    if (id) return this.catalog.find((glossary) => glossary.id === id);
+    if (id) {
+      const curated = this.catalog.find((glossary) => glossary.id === id);
+      if (curated) return curated;
+    }
     const displayName = sourceWork
       .normalize('NFKC')
       .trim()
@@ -238,30 +275,73 @@ export class WorkGlossaryService {
   }
 
   private async discoverPublicEntries(glossary: CuratedWorkGlossary): Promise<WorkGlossaryEntry[]> {
-    if (!this.publicSearchUrl) return [];
+    if (
+      !this.publicSearchUrl &&
+      !this.secondaryPublicSearchUrl &&
+      !this.regionalWikiApiUrl &&
+      !glossary.onlineSources?.length
+    ) {
+      return [];
+    }
     const queries = [
-      `${glossary.displayName} 梗 黑话 术语 别名 社区`,
-      `${glossary.displayName} 用语与梗 梗百科 经典台词 童谣`,
-      `${glossary.displayName} 玩家 常用梗 名场面 二创 台词`,
-      `${glossary.displayName} meme slang glossary nickname`,
+      glossary.displayName,
+      `"${glossary.displayName}"`,
+      `${glossary.displayName} 梗百科 社区 Wiki`,
+      `${glossary.displayName} 术语 黑话`,
+      `${glossary.displayName} 台词 语音`,
     ];
-    const settled = await Promise.allSettled(queries.map((query) => this.searchPublicWeb(query)));
-    if (settled.every((result) => result.status === 'rejected')) {
+    const settled = await Promise.allSettled(
+      queries.flatMap((query) => [
+        ...(this.regionalWikiApiUrl
+          ? [this.searchRegionalWiki(query, query === `"${glossary.displayName}"` ? 50 : 10)]
+          : []),
+        ...(this.publicSearchUrl ? [this.searchPublicWeb(query, this.publicSearchUrl)] : []),
+        ...(this.secondaryPublicSearchUrl
+          ? [this.searchPublicWeb(query, this.secondaryPublicSearchUrl)]
+          : []),
+      ]),
+    );
+    if (
+      settled.length > 0 &&
+      settled.every((result) => result.status === 'rejected') &&
+      !glossary.onlineSources?.length
+    ) {
       throw new Error('All public glossary searches failed.');
     }
     const workName = glossary.displayName.normalize('NFKC').toLowerCase();
     const candidates = new Map<string, PublicSearchItem>();
+    for (const source of glossary.onlineSources ?? []) {
+      candidates.set(source.pageUrl, {
+        title: source.title,
+        url: source.pageUrl,
+        description: `${glossary.displayName}社区黑话、用语与梗的在线词库。`,
+        wikiApiUrl: source.mediaWikiApiUrl,
+        wikiTitle: source.mediaWikiTitle,
+      });
+    }
     for (const result of settled) {
       if (result.status !== 'fulfilled') continue;
       for (const item of result.value) {
         const haystack = `${item.title} ${item.description}`.normalize('NFKC').toLowerCase();
-        if (haystack.includes(workName) && COMMUNITY_MARKER.test(haystack)) {
+        const exactRegionalWorkPage =
+          Boolean(item.wikiApiUrl) &&
+          normalizeTermKey(item.title) === normalizeTermKey(glossary.displayName);
+        const relatedTermPage =
+          !exactRegionalWorkPage && this.hasWorkBuzzwordAssociation(haystack, workName);
+        if (exactRegionalWorkPage || relatedTermPage) {
           candidates.set(item.url, item);
         }
       }
     }
+    const rankedCandidates = [...candidates.values()]
+      .sort(
+        (left, right) =>
+          this.scoreCandidate(right, glossary.displayName) -
+          this.scoreCandidate(left, glossary.displayName),
+      )
+      .slice(0, 8);
     const fetched = await Promise.allSettled(
-      [...candidates.values()].slice(0, 8).map((item) => this.fetchDiscoveredPage(item, glossary)),
+      rankedCandidates.map((item) => this.fetchDiscoveredPage(item, glossary)),
     );
     const grouped = new Map<string, WorkGlossaryEntry>();
     for (const result of fetched) {
@@ -306,6 +386,67 @@ export class WorkGlossaryService {
     return [...grouped.values()].slice(0, 300);
   }
 
+  private async searchRegionalWiki(query: string, limit = 10): Promise<PublicSearchItem[]> {
+    if (!this.regionalWikiApiUrl) return [];
+    const url = new URL(this.regionalWikiApiUrl);
+    url.search = new URLSearchParams({
+      action: 'query',
+      format: 'json',
+      formatversion: '2',
+      list: 'search',
+      srsearch: query,
+      srlimit: String(Math.min(Math.max(limit, 1), 50)),
+      srnamespace: '0',
+    }).toString();
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6_000);
+    try {
+      const response = await this.fetcher(url.toString(), {
+        method: 'GET',
+        redirect: 'error',
+        signal: controller.signal,
+        headers: { accept: 'application/json', 'user-agent': USER_AGENT },
+      });
+      if (!response.ok) throw new Error('The regional wiki search is unavailable.');
+      if (response.url && new URL(response.url).origin !== url.origin) {
+        throw new Error('The regional wiki search origin is invalid.');
+      }
+      const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+      if (contentType && !contentType.includes('application/json')) {
+        throw new Error('The regional wiki search response type is invalid.');
+      }
+      const contentLength = Number(response.headers.get('content-length') ?? 0);
+      if (contentLength > MAX_SEARCH_RESPONSE_CHARACTERS) {
+        throw new Error('Regional wiki response too large.');
+      }
+      const text = await response.text();
+      if (text.length > MAX_SEARCH_RESPONSE_CHARACTERS) {
+        throw new Error('Regional wiki response too large.');
+      }
+      const parsed = JSON.parse(text) as MediaWikiSearchResult;
+      return (parsed.query?.search ?? []).flatMap((item) => {
+        if (typeof item.title !== 'string') return [];
+        const title = item.title.trim().slice(0, 300);
+        if (!title) return [];
+        const description = this.decodeRssText(
+          typeof item.snippet === 'string' ? item.snippet : '',
+        ).slice(0, 700);
+        const pageUrl = new URL(encodeURIComponent(title.replaceAll(' ', '_')), `${url.origin}/`);
+        return [
+          {
+            title,
+            url: pageUrl.toString(),
+            description,
+            wikiApiUrl: url.toString().split('?')[0],
+            wikiTitle: title,
+          },
+        ];
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   private async fetchDiscoveredPage(
     item: PublicSearchItem,
     glossary: CuratedWorkGlossary,
@@ -314,41 +455,50 @@ export class WorkGlossaryService {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
-      const response = await this.fetcher(url.toString(), {
-        method: 'GET',
-        redirect: 'error',
-        signal: controller.signal,
-        headers: { accept: 'text/html, text/plain;q=0.9', 'user-agent': USER_AGENT },
-      });
-      if (!response.ok) return undefined;
-      if (response.url && new URL(response.url).origin !== url.origin) return undefined;
-      const contentLength = Number(response.headers.get('content-length') ?? 0);
-      if (contentLength > MAX_SEARCH_RESPONSE_CHARACTERS) return undefined;
-      const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+      const loaded =
+        item.wikiApiUrl && item.wikiTitle
+          ? await this.fetchRegionalWikiPage(item.wikiApiUrl, item.wikiTitle, controller.signal)
+          : await this.fetchPublicPage(url, controller.signal);
+      if (!loaded) return undefined;
+      const { body, text } = loaded;
+      const normalized = text.normalize('NFKC').toLowerCase();
+      const workName = glossary.displayName.normalize('NFKC').toLowerCase();
+      const exactWorkPage = normalizeTermKey(item.title) === normalizeTermKey(glossary.displayName);
       if (
-        contentType &&
-        !contentType.includes('text/html') &&
-        !contentType.includes('text/plain')
+        exactWorkPage
+          ? !normalized.includes(workName) || !COMMUNITY_MARKER.test(normalized)
+          : !this.hasWorkBuzzwordAssociation(normalized, workName)
       ) {
         return undefined;
       }
-      const body = await response.text();
-      if (body.length > MAX_SEARCH_RESPONSE_CHARACTERS) return undefined;
-      const text = this.decodeRssText(body).slice(0, 500_000);
-      const normalized = text.normalize('NFKC').toLowerCase();
-      const workName = glossary.displayName.normalize('NFKC').toLowerCase();
-      if (!normalized.includes(workName) || !COMMUNITY_MARKER.test(normalized)) {
-        return undefined;
+      const pageTerm = exactWorkPage
+        ? undefined
+        : this.extractDiscoveredTerm(item.title, glossary.displayName);
+      if (pageTerm) {
+        const focus = normalized.indexOf(pageTerm.normalize('NFKC').toLowerCase());
+        if (focus < 0) return undefined;
+        const description = this.extractTermDescription(text, focus, pageTerm.length);
+        return description.length >= 20
+          ? { ...item, terms: [{ term: pageTerm, description }] }
+          : undefined;
       }
-      const terms = this.extractDiscoveredTerms(body, item.title, glossary.displayName).flatMap(
-        (term) => {
-          const focus = normalized.indexOf(term.normalize('NFKC').toLowerCase());
-          if (focus < 0) return [];
-          const description = this.extractTermDescription(text, focus, term.length);
-          return description.length >= 20 ? [{ term, description }] : [];
-        },
+      const definitions = this.extractGlossaryDefinitions(
+        text,
+        glossary.displayName,
+        exactWorkPage,
       );
-      return terms.length > 0 ? { ...item, terms } : undefined;
+      const terms = new Map(
+        definitions.map((definition) => [normalizeTermKey(definition.term), definition]),
+      );
+      for (const term of this.extractDiscoveredTerms(body, item.title, glossary.displayName)) {
+        const key = normalizeTermKey(term);
+        if (!key || terms.has(key)) continue;
+        const focus = normalized.indexOf(term.normalize('NFKC').toLowerCase());
+        if (focus < 0) continue;
+        const description = this.extractTermDescription(text, focus, term.length);
+        if (description.length >= 20) terms.set(key, { term, description });
+      }
+      return terms.size > 0 ? { ...item, terms: [...terms.values()] } : undefined;
     } catch {
       return undefined;
     } finally {
@@ -356,10 +506,67 @@ export class WorkGlossaryService {
     }
   }
 
-  private async searchPublicWeb(query: string): Promise<PublicSearchItem[]> {
-    if (!this.publicSearchUrl) return [];
-    const searchUrl = new URL(this.publicSearchUrl);
-    searchUrl.search = new URLSearchParams({ q: query }).toString();
+  private async fetchRegionalWikiPage(
+    apiUrl: string,
+    title: string,
+    signal: AbortSignal,
+  ): Promise<{ body: string; text: string } | undefined> {
+    const url = new URL(apiUrl);
+    url.search = new URLSearchParams({
+      action: 'query',
+      format: 'json',
+      formatversion: '2',
+      prop: 'extracts|info',
+      titles: title,
+      exsectionformat: 'plain',
+      inprop: 'url',
+    }).toString();
+    const response = await this.fetcher(url.toString(), {
+      method: 'GET',
+      redirect: 'error',
+      signal,
+      headers: { accept: 'application/json', 'user-agent': USER_AGENT },
+    });
+    if (!response.ok) return undefined;
+    if (response.url && new URL(response.url).origin !== url.origin) return undefined;
+    const contentLength = Number(response.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_SEARCH_RESPONSE_CHARACTERS) return undefined;
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType && !contentType.includes('application/json')) return undefined;
+    const body = await response.text();
+    if (body.length > MAX_SEARCH_RESPONSE_CHARACTERS) return undefined;
+    const parsed = JSON.parse(body) as MediaWikiPageResult;
+    const page = parsed.query?.pages?.[0];
+    if (page?.missing !== undefined || typeof page?.extract !== 'string') return undefined;
+    return { body: page.extract, text: this.decodePageText(page.extract).slice(0, 500_000) };
+  }
+
+  private async fetchPublicPage(
+    url: URL,
+    signal: AbortSignal,
+  ): Promise<{ body: string; text: string } | undefined> {
+    const response = await this.fetcher(url.toString(), {
+      method: 'GET',
+      redirect: 'error',
+      signal,
+      headers: { accept: 'text/html, text/plain;q=0.9', 'user-agent': USER_AGENT },
+    });
+    if (!response.ok) return undefined;
+    if (response.url && new URL(response.url).origin !== url.origin) return undefined;
+    const contentLength = Number(response.headers.get('content-length') ?? 0);
+    if (contentLength > MAX_SEARCH_RESPONSE_CHARACTERS) return undefined;
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (contentType && !contentType.includes('text/html') && !contentType.includes('text/plain')) {
+      return undefined;
+    }
+    const body = await response.text();
+    if (body.length > MAX_SEARCH_RESPONSE_CHARACTERS) return undefined;
+    return { body, text: this.decodePageText(body).slice(0, 500_000) };
+  }
+
+  private async searchPublicWeb(query: string, endpoint: string): Promise<PublicSearchItem[]> {
+    const searchUrl = new URL(endpoint);
+    searchUrl.searchParams.set('q', query);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
     try {
@@ -407,6 +614,47 @@ export class WorkGlossaryService {
     }
   }
 
+  private scoreCandidate(item: PublicSearchItem, workName: string): number {
+    const title = item.title.normalize('NFKC').toLowerCase();
+    const description = item.description.normalize('NFKC').toLowerCase();
+    let score = item.wikiApiUrl ? 40 : 0;
+    if (normalizeTermKey(item.title) === normalizeTermKey(workName)) score += 300;
+    if (/(?:[/：:]梗|梗百科|用语与梗|社区用语|glossary|meme\s*list)/iu.test(title)) {
+      score += 200;
+    }
+    if (/(?:wiki|百科)/iu.test(title)) score += 50;
+    if (COMMUNITY_MARKER.test(description)) score += 30;
+    if (
+      normalizeTermKey(item.title) !== normalizeTermKey(workName) &&
+      this.hasWorkBuzzwordAssociation(`${title} ${description}`, workName)
+    ) {
+      score += 160;
+    }
+    try {
+      const hostname = new URL(item.url).hostname;
+      if (/(?:wiki|fandom|moegirl|biligame|prts)/iu.test(hostname)) score += 40;
+    } catch {
+      return -1;
+    }
+    return score;
+  }
+
+  private hasWorkBuzzwordAssociation(text: string, workName: string): boolean {
+    const normalizedText = text.normalize('NFKC').toLowerCase();
+    const normalizedWork = workName.normalize('NFKC').toLowerCase();
+    if (!normalizedWork) return false;
+    let offset = normalizedText.indexOf(normalizedWork);
+    while (offset >= 0) {
+      const nearby = normalizedText.slice(
+        Math.max(0, offset - 260),
+        Math.min(normalizedText.length, offset + normalizedWork.length + 260),
+      );
+      if (BUZZWORD_MARKER.test(nearby)) return true;
+      offset = normalizedText.indexOf(normalizedWork, offset + normalizedWork.length);
+    }
+    return false;
+  }
+
   private parseDuckDuckGoResults(body: string, allowLoopback: boolean): PublicSearchItem[] {
     return [
       ...body.matchAll(
@@ -447,7 +695,9 @@ export class WorkGlossaryService {
     const leadingTitle = title.split(/\s[-_|｜]\s/u)[0] ?? '';
     if (
       !quoted &&
-      /(?:用语与梗|梗及用语|梗百科|社区用语|meme\s+list|glossary)/iu.test(leadingTitle)
+      /(?:用语与梗|梗及用语|梗百科|社区用语|(?:^|[/：:])梗(?:$|[/])|meme\s+list|glossary)/iu.test(
+        leadingTitle,
+      )
     ) {
       return undefined;
     }
@@ -466,12 +716,17 @@ export class WorkGlossaryService {
 
   private extractDiscoveredTerms(body: string, title: string, workName: string): string[] {
     const candidates: string[] = [];
+    const isCollectionPage =
+      /(?:用语与梗|梗及用语|梗百科|社区用语|[/：:]梗(?:$|\s|[-_|｜]))/iu.test(title) ||
+      /本页面.{0,40}(?:黑话|用语|梗)/iu.test(this.decodeRssText(body).slice(0, 500));
     const titleTerm = this.extractDiscoveredTerm(title, workName);
     if (titleTerm) candidates.push(titleTerm);
     for (const match of body.matchAll(/<h[2-5]\b[^>]*>([\s\S]*?)<\/h[2-5]>/giu)) {
       if (match.index === undefined) continue;
       const nearby = this.decodeRssText(body.slice(match.index, match.index + 2_000));
-      if (COMMUNITY_MARKER.test(nearby)) candidates.push(this.decodeRssText(match[1] ?? ''));
+      if (isCollectionPage || COMMUNITY_MARKER.test(nearby)) {
+        candidates.push(this.decodeRssText(match[1] ?? ''));
+      }
     }
     const plainText = this.decodeRssText(body).slice(0, 100_000);
     for (const match of plainText.matchAll(/[“「『"]([^”」』"]{2,60})[”」』"]/gu)) {
@@ -491,6 +746,36 @@ export class WorkGlossaryService {
       .slice(0, 300);
   }
 
+  private extractGlossaryDefinitions(
+    text: string,
+    workName: string,
+    requireCommunityEvidence = false,
+  ): Array<{ term: string; description: string }> {
+    const definitions = new Map<string, { term: string; description: string }>();
+    const lines = text.split(/\r?\n/gu);
+    for (const [index, line] of lines.entries()) {
+      const match = /^\s*(?:[-*#•·]\s*)?(.{1,80}?)[：:]\s*(.{10,700})\s*$/u.exec(line);
+      if (!match) continue;
+      const term = this.cleanExtractedTerm(match[1] ?? '', workName);
+      const description = (match[2] ?? '').replace(/\s+/gu, ' ').trim().slice(0, 700);
+      const nearbyEvidence = lines
+        .slice(Math.max(0, index - 1), Math.min(lines.length, index + 2))
+        .join('\n');
+      if (
+        !term ||
+        description.length < 10 ||
+        COMMUNITY_MARKER.test(term) ||
+        (requireCommunityEvidence && !COMMUNITY_MARKER.test(nearbyEvidence))
+      ) {
+        continue;
+      }
+      const key = normalizeTermKey(term);
+      if (!key || definitions.has(key)) continue;
+      definitions.set(key, { term, description: `${term}：${description}` });
+    }
+    return [...definitions.values()].slice(0, 300);
+  }
+
   private cleanExtractedTerm(value: string, workName: string): string | undefined {
     const term = value
       .replace(/\[(?:编辑|edit)\]|\((?:编辑|edit)\)/giu, ' ')
@@ -505,7 +790,7 @@ export class WorkGlossaryService {
       normalized.length < 2 ||
       term.length > 60 ||
       normalized === normalizedWork ||
-      /^(?:用语与梗|梗及用语|梗百科|社区用语|角色相关|剧情相关|其他|杂项|简介|概述|背景|目录|参见|参考资料|注释|外部链接)$/u.test(
+      /^(?:用语与梗|梗及用语|梗百科|社区用语|角色相关|剧情相关|制作人员|音乐相关|相关音乐|其他周边|周边商品|其他|杂项|简介|概述|背景|目录|参见|参考资料|注释|外部链接)$/u.test(
         term,
       )
     ) {
@@ -521,7 +806,7 @@ export class WorkGlossaryService {
     );
     const followingStops = [
       text.indexOf('。', focus + termLength),
-      text.indexOf('\n', focus + termLength),
+      text.indexOf('\n', focus + termLength + 1),
     ].filter((position) => position >= 0);
     const following = followingStops.length > 0 ? Math.min(...followingStops) + 1 : text.length;
     return text
@@ -547,6 +832,7 @@ export class WorkGlossaryService {
 
   private decodeRssText(value: string): string {
     return value
+      .replace(/<\/?span\b[^>]*>/giu, '')
       .replace(/<[^>]*>/g, ' ')
       .replaceAll('&quot;', '"')
       .replaceAll('&#039;', "'")
@@ -554,6 +840,22 @@ export class WorkGlossaryService {
       .replaceAll('&lt;', '<')
       .replaceAll('&gt;', '>')
       .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  private decodePageText(value: string): string {
+    return value
+      .replace(/<\/?(?:p|li|h[1-6]|div|section|article|br)\b[^>]*>/giu, '\n')
+      .replace(/<[^>]*>/gu, ' ')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#039;', "'")
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .split(/\r?\n/gu)
+      .map((line) => line.replace(/[\t ]+/gu, ' ').trim())
+      .filter(Boolean)
+      .join('\n')
       .trim();
   }
 

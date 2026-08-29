@@ -1,7 +1,7 @@
 {
   "name": "for-people-no-friend",
   "productName": "For People No Friend",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "A local-first Windows AI character companion built with Electron, TypeScript, and Vite.",
   "main": "dist-electron/main/index.js",
@@ -19,6 +19,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
+    "package:win": "pnpm build && electron-builder --win dir --x64",
     "start": "electron .",
     "smoke:preload": "node scripts/verify-preload.mjs",
     "test": "vitest run",
@@ -32,6 +33,7 @@
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
     "electron": "^43.4.1",
+    "electron-builder": "26.15.3",
     "eslint": "^10.9.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.6",
@@ -47,5 +49,26 @@
     "fflate": "0.8.3",
     "pixi.js": "8.13.1",
     "untitled-pixi-live2d-engine": "1.3.5"
+  },
+  "build": {
+    "appId": "com.ph1gros.forpeoplenofriend",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "assets/**/*",
+      "package.json",
+      "!**/*.map",
+      "!**/*.d.ts",
+      "!**/*.ts"
+    ],
+    "win": {
+      "target": "dir",
+      "icon": "build/icon.ico",
+      "executableName": "For People No Friend"
+    }
   }
 }

@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto';
 
-import type { CharacterLore, CharacterRoleplayExample } from '../../core/character/character-lore';
+import {
+  sanitizeCharacterSpeechStyle,
+  type CharacterLore,
+  type CharacterRoleplayExample,
+} from '../../core/character/character-lore';
 import type {
   CharacterResearchCandidate,
   CharacterResearchDraft,
 } from '../../core/character/character-research';
-import { DEFAULT_CHARACTER_PROFILE } from '../../core/conversation/character-profile';
+import {
+  DEFAULT_CHARACTER_PROFILE,
+  KALTSIT_CHARACTER_PROFILE,
+} from '../../core/conversation/character-profile';
 
 export interface CharacterLoreGenerationInput {
   canonicalName: string;
@@ -27,6 +34,7 @@ export interface CharacterLoreGenerator {
 interface CharacterSourceDefinition {
   id: string;
   label: string;
+  priority: number;
   origin: string;
   apiPath: string;
   articlePath: string;
@@ -87,8 +95,20 @@ interface MediaWikiParseResponse {
 
 const SOURCES: readonly CharacterSourceDefinition[] = [
   {
+    id: 'moegirl-wiki',
+    label: '萌娘百科',
+    priority: 700,
+    origin: 'https://moegirl.icu',
+    apiPath: '/api.php',
+    articlePath: '/',
+    workHints: [],
+    canonicalWork: '',
+    detailSuffixes: [],
+  },
+  {
     id: 'arknights-terra-wiki',
     label: 'Arknights Terra Wiki',
+    priority: 300,
     origin: 'https://arknights.wiki.gg',
     apiPath: '/api.php',
     articlePath: '/wiki/',
@@ -99,6 +119,7 @@ const SOURCES: readonly CharacterSourceDefinition[] = [
   {
     id: 'prts-wiki',
     label: 'PRTS Wiki',
+    priority: 450,
     origin: 'https://prts.wiki',
     apiPath: '/api.php',
     articlePath: '/w/',
@@ -110,6 +131,7 @@ const SOURCES: readonly CharacterSourceDefinition[] = [
   {
     id: 'wuthering-waves-fandom',
     label: '鸣潮 Wiki',
+    priority: 300,
     origin: 'https://wutheringwaves.fandom.com',
     apiPath: '/zh/api.php',
     articlePath: '/zh/wiki/',
@@ -120,6 +142,7 @@ const SOURCES: readonly CharacterSourceDefinition[] = [
   {
     id: 'zh-wikipedia',
     label: '中文维基百科',
+    priority: 150,
     origin: 'https://zh.wikipedia.org',
     apiPath: '/w/api.php',
     articlePath: '/wiki/',
@@ -130,6 +153,7 @@ const SOURCES: readonly CharacterSourceDefinition[] = [
   {
     id: 'en-wikipedia',
     label: 'English Wikipedia',
+    priority: 100,
     origin: 'https://en.wikipedia.org',
     apiPath: '/w/api.php',
     articlePath: '/wiki/',
@@ -179,6 +203,81 @@ const NON_CHARACTER_PAGE_MARKER =
   /(?:^|[\s（(\-—|｜:：])(spine|sprite|skin|skins|file|dialogue|voice|voices|gallery|enemy|enemies|npc|技能|天赋|天賦|语音|語音|台词|臺詞|对白|對白|立绘|立繪|模型|皮肤|皮膚|敌人|敵人|怪物|道具|家具|模组|模組|召唤物|召喚物)(?:$|[\s）)\-—|｜:：])/iu;
 
 const normalize = (value: string): string => value.normalize('NFKC').trim().toLowerCase();
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+
+const parentheticalWorkForTitle = (
+  title: string,
+  name: string,
+  requestedWork: string,
+): string | undefined => {
+  const match = new RegExp(
+    `^${escapeRegExp(name.trim())}\\s*[（(]([^）)]{1,120})[）)]$`,
+    'iu',
+  ).exec(title.trim());
+  const work = match?.[1]?.trim();
+  if (!work) return undefined;
+  const normalizedWork = normalize(work);
+  const normalizedRequested = normalize(requestedWork);
+  return !normalizedRequested ||
+    normalizedWork.includes(normalizedRequested) ||
+    normalizedRequested.includes(normalizedWork)
+    ? work
+    : undefined;
+};
+
+const delimitedWorkForTitle = (title: string, name: string): string | undefined => {
+  const match = new RegExp(
+    `^${escapeRegExp(name.trim())}\\s*(?:[-–—|｜:：])\\s*([^-–—|｜:：]{1,100})$`,
+    'iu',
+  ).exec(title.trim());
+  return match?.[1]?.trim() || undefined;
+};
+
+const quotedWorkFromText = (value: string): string | undefined => {
+  const contextual =
+    /《([^《》\n]{1,120})》(?:及其衍生作品)?(?:中|里的|的)?(?:登场|登場|可操作)?角色/iu.exec(
+      value,
+    )?.[1];
+  return contextual?.trim() || /《([^《》\n]{1,120})》/u.exec(value)?.[1]?.trim() || undefined;
+};
+
+const specializeWorkFromDescription = (work: string, description: string): string => {
+  if (!/bang\s*dream/iu.test(work)) return work;
+  const group =
+    /(?:乐队|樂隊|乐团|樂團)\s*([A-Za-z][A-Za-z0-9 .!?☆★]{1,40}?)(?=的|，|。|、|；|$)/u.exec(
+      description,
+    )?.[1];
+  const normalizedGroup = group?.replace(/\s+/gu, ' ').trim();
+  return normalizedGroup && !normalize(work).includes(normalize(normalizedGroup))
+    ? `${work} / ${normalizedGroup}`
+    : work;
+};
+
+const inferSourceWork = (input: {
+  title: string;
+  name: string;
+  requestedWork: string;
+  description: string;
+  canonicalWork?: string;
+}): string => {
+  const work =
+    input.canonicalWork?.trim() ||
+    parentheticalWorkForTitle(input.title, input.name, input.requestedWork) ||
+    input.requestedWork.trim() ||
+    quotedWorkFromText(input.description) ||
+    delimitedWorkForTitle(input.title, input.name) ||
+    '';
+  return work ? specializeWorkFromDescription(work, input.description) : '';
+};
+
+const isLikelyDisambiguationPage = (title: string, name: string, description: string): boolean => {
+  if (normalize(title) !== normalize(name)) return false;
+  if (/(?:消歧义|消歧義|可以指|可能指|同名角色|按姓氏.*排序)/iu.test(description)) return true;
+  const variants = description.match(
+    new RegExp(`${escapeRegExp(name.trim())}\\s*[（(][^）)]{1,100}[）)]`, 'giu'),
+  );
+  return (variants?.length ?? 0) >= 2;
+};
 
 const isPlausibleCharacterCandidateTitle = (title: string, name: string): boolean => {
   const normalizedTitle = normalize(title);
@@ -238,6 +337,19 @@ const isAllowedSupplementalUrl = (value: string): URL | undefined => {
   } catch {
     return undefined;
   }
+};
+
+const isNonTextualMediaPage = (url: URL): boolean => {
+  const hostname = url.hostname.toLowerCase();
+  return (
+    hostname === 'youtu.be' ||
+    hostname.endsWith('.youtube.com') ||
+    hostname === 'youtube.com' ||
+    hostname.endsWith('.nicovideo.jp') ||
+    hostname === 'nicovideo.jp' ||
+    ((hostname === 'bilibili.com' || hostname.endsWith('.bilibili.com')) &&
+      /^\/video(?:\/|$)/u.test(url.pathname))
+  );
 };
 
 const describeWebSource = (url: URL): { label: string; priority: number } => {
@@ -377,6 +489,11 @@ const boundedChineseText = (value: unknown, maximum: number): string => {
   return text;
 };
 
+const boundedSpeechStyle = (value: unknown): string => {
+  const text = boundedChineseText(value, 2_000);
+  return sanitizeCharacterSpeechStyle(text);
+};
+
 const boundedUserDisplayName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
   const displayName = value
@@ -421,6 +538,22 @@ const inferUserDisplayName = (
       hints.some((hint) => normalizedWork.includes(normalize(hint))),
     )?.displayName ?? DEFAULT_CHARACTER_PROFILE.userDisplayName
   );
+};
+
+const fallbackIncompleteSpeechStyle = (
+  canonicalName: string,
+  sourceWork: string,
+  userDisplayName: string,
+): string => {
+  const normalizedName = normalize(canonicalName).replaceAll("'", '');
+  const normalizedWork = normalize(sourceWork);
+  if (
+    (normalizedName === '凯尔希' || normalizedName === 'kaltsit') &&
+    (normalizedWork.includes('明日方舟') || normalizedWork.includes('arknights'))
+  ) {
+    return KALTSIT_CHARACTER_PROFILE.lore?.speechStyle ?? `通常称用户为“${userDisplayName}”。`;
+  }
+  return `通常直接称用户为“${userDisplayName}”。`;
 };
 
 const buildProfileFields = (
@@ -509,24 +642,27 @@ export class CharacterResearchService {
       this.pruneCandidates();
       const matchedSources = SOURCES.filter((source) => sourceMatchesWork(source, sourceWork));
       const collected: Array<{ record: CandidateRecord; score: number }> = [];
-      if (matchedSources.length > 0) {
-        for (const source of matchedSources) {
-          try {
-            const results = await this.searchSource(source, name, sourceWork, signal);
-            collected.push(...results);
-            const exact = results.filter(
-              ({ record }) => normalize(record.candidate.name) === normalize(name),
-            );
-            if (exact.length > 0) {
-              return this.storeCandidates(exact.slice(0, 1));
-            }
-          } catch {
-            if (signal.aborted) return [];
-            // A failed preferred source falls through to the next matching source.
-          }
-        }
-      } else {
-        const generalSources = SOURCES.filter((source) => source.workHints.length === 0);
+      const regionalSources = SOURCES.filter((source) => source.id === 'moegirl-wiki');
+      const preferredSources = [...new Set([...regionalSources, ...matchedSources])];
+      const preferredSettled = await Promise.allSettled(
+        preferredSources.map(async (source) => {
+          const [searched, exact] = await Promise.all([
+            this.searchSource(source, name, sourceWork, signal),
+            this.lookupExactSource(source, name, sourceWork, signal),
+          ]);
+          return exact ? [...searched, exact] : searched;
+        }),
+      );
+      collected.push(
+        ...preferredSettled.flatMap((result) =>
+          result.status === 'fulfilled' ? result.value : [],
+        ),
+      );
+      if (signal.aborted) return [];
+      if (collected.length === 0) {
+        const generalSources = SOURCES.filter(
+          (source) => source.workHints.length === 0 && !regionalSources.includes(source),
+        );
         const settled = await Promise.allSettled(
           generalSources.map((source) => this.searchSource(source, name, sourceWork, signal)),
         );
@@ -534,6 +670,10 @@ export class CharacterResearchService {
           ...settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : [])),
         );
       }
+      const exact = collected
+        .filter(({ record }) => normalize(record.candidate.name) === normalize(name))
+        .sort((left, right) => right.score - left.score);
+      if (exact.length > 0) return this.storeCandidates(exact.slice(0, 1));
       if (collected.length === 0) {
         try {
           collected.push(...(await this.searchWebCandidates(name, sourceWork, signal)));
@@ -623,7 +763,23 @@ export class CharacterResearchService {
       const relationships = boundedStrings(generated.relationships, 20, 300).filter((item) =>
         /[\u3400-\u9fff]/u.test(item),
       );
-      const speechStyle = boundedChineseText(generated.speechStyle, 2_000);
+      const rawSpeechStyle = boundedChineseText(generated.speechStyle, 2_000);
+      let speechStyle = boundedSpeechStyle(rawSpeechStyle);
+      if (!speechStyle && rawSpeechStyle) {
+        const userDisplayName = inferUserDisplayName(
+          generated.userDisplayName,
+          '',
+          fallback.sourceWork,
+        );
+        speechStyle = fallbackIncompleteSpeechStyle(
+          fallback.canonicalName,
+          fallback.sourceWork,
+          userDisplayName,
+        );
+        warnings.push(
+          '模型返回的说话方式不完整；已恢复能够确认的称呼规则，其他表达特点可以重新整理。',
+        );
+      }
       const sampleLines = boundedStrings(generated.sampleLines, 20, 40).filter(
         (item) => /[\u3400-\u9fff]/u.test(item) && !/\[source_\d+\]/iu.test(item),
       );
@@ -728,6 +884,7 @@ export class CharacterResearchService {
       const exactName = normalizedTitle === normalizedName;
       const plausibleTitle = isPlausibleCharacterCandidateTitle(title, name);
       const decodedDescription = decodeSnippet(boundedString(item.snippet, 2_000));
+      if (isLikelyDisambiguationPage(title, name, decodedDescription)) return [];
       const confirmsWork =
         workMatches ||
         normalizedWorkTerms.length === 0 ||
@@ -737,7 +894,7 @@ export class CharacterResearchService {
       // A work-wide index can mention the requested name in its body, but it is not the
       // requested character's profile and must not become a selectable candidate.
       if (!plausibleTitle || !confirmsWork) return [];
-      const score = (exactName ? 120 : 60 - index * 4) + (workMatches ? 100 : 0);
+      const score = source.priority + (exactName ? 120 : 60 - index * 4) + (workMatches ? 100 : 0);
       const candidateId = `candidate_${randomUUID().replaceAll('-', '')}`;
       const sourceUrl = new URL(
         `${source.articlePath}${encodeURIComponent(title.replaceAll(' ', '_'))}`,
@@ -746,21 +903,32 @@ export class CharacterResearchService {
       const description = /\{\{|\}\}|\[\[/u.test(decodedDescription)
         ? `${source.label} 中的角色资料`
         : decodedDescription;
+      const inferredWork = inferSourceWork({
+        title,
+        name,
+        requestedWork: sourceWork,
+        description: decodedDescription,
+        canonicalWork: source.canonicalWork,
+      });
       const candidate: CharacterResearchCandidate = {
         id: candidateId,
-        name: title,
-        sourceWork: source.canonicalWork || sourceWork,
+        name: inferredWork && normalize(title) !== normalizedName ? name.trim() : title,
+        sourceWork: inferredWork,
         description,
         sourceName: source.label,
         sourceUrl,
         matchReason:
           workMatches && exactName
             ? `名称与“${sourceWork}”完全匹配`
-            : workMatches
-              ? `资料源与“${sourceWork}”匹配`
-              : exactName
-                ? '页面标题与角色名完全一致'
-                : '页面内容与名称相关',
+            : inferredWork && !sourceWork
+              ? `页面资料识别作品“${inferredWork}”`
+              : inferredWork && normalize(title) !== normalizedName
+                ? `页面标题同时匹配角色名和作品“${inferredWork}”`
+                : workMatches
+                  ? `资料源与“${sourceWork}”匹配`
+                  : exactName
+                    ? '页面标题与角色名完全一致'
+                    : '页面内容与名称相关',
       };
       return [
         {
@@ -775,6 +943,96 @@ export class CharacterResearchService {
         },
       ];
     });
+  }
+
+  private async lookupExactSource(
+    source: CharacterSourceDefinition,
+    name: string,
+    sourceWork: string,
+    signal: AbortSignal,
+  ): Promise<{ record: CandidateRecord; score: number } | undefined> {
+    const url = new URL(source.apiPath, source.origin);
+    url.search = new URLSearchParams({
+      action: 'query',
+      format: 'json',
+      formatversion: '2',
+      prop: 'extracts|info',
+      titles: name,
+      exintro: '1',
+      explaintext: '1',
+      inprop: 'url',
+      redirects: '1',
+    }).toString();
+    const body = await this.fetchJson<MediaWikiExtractResponse>(url, source, signal);
+    const page = (body.query?.pages ?? []).find(
+      (candidate) =>
+        candidate.missing === undefined &&
+        typeof candidate.pageid === 'number' &&
+        typeof candidate.title === 'string',
+    );
+    if (!page || typeof page.pageid !== 'number' || typeof page.title !== 'string')
+      return undefined;
+    const title = page.title.trim();
+    if (!isPlausibleCharacterCandidateTitle(title, name)) return undefined;
+    const extract = decodeSnippet(boundedString(page.extract, 20_000));
+    if (isLikelyDisambiguationPage(title, name, extract)) return undefined;
+    const normalizedWorkTerms = sourceWork
+      .split(/[/|·（）()\s]+/u)
+      .map(normalize)
+      .filter((term) => term.length >= 2);
+    const workMatches = sourceMatchesWork(source, sourceWork);
+    if (
+      !workMatches &&
+      normalizedWorkTerms.length > 0 &&
+      !normalizedWorkTerms.some((term) => normalize(`${title} ${extract}`).includes(term))
+    ) {
+      return undefined;
+    }
+    const pageUrl = boundedString(page.fullurl, 2_000);
+    let sourceUrl: URL;
+    try {
+      sourceUrl = pageUrl
+        ? new URL(pageUrl)
+        : new URL(
+            `${source.articlePath}${encodeURIComponent(title.replaceAll(' ', '_'))}`,
+            source.origin,
+          );
+    } catch {
+      return undefined;
+    }
+    if (sourceUrl.protocol !== 'https:' || sourceUrl.origin !== source.origin) return undefined;
+    const candidateId = `candidate_${randomUUID().replaceAll('-', '')}`;
+    const inferredWork = inferSourceWork({
+      title,
+      name,
+      requestedWork: sourceWork,
+      description: extract,
+      canonicalWork: source.canonicalWork,
+    });
+    return {
+      score: source.priority + 240 + (workMatches ? 100 : 0),
+      record: {
+        candidate: {
+          id: candidateId,
+          name: title,
+          sourceWork: inferredWork,
+          description: extract.slice(0, 160) || `${source.label} 中的角色资料`,
+          sourceName: source.label,
+          sourceUrl: sourceUrl.toString(),
+          matchReason: workMatches
+            ? `“${sourceWork}”资料源中的精确角色页面`
+            : sourceWork
+              ? `精确页面正文同时匹配“${sourceWork}”`
+              : inferredWork
+                ? `精确页面正文识别作品“${inferredWork}”`
+                : '精确页面与角色名匹配',
+        },
+        source,
+        pageId: page.pageid,
+        title,
+        expiresAt: Date.now() + CANDIDATE_TTL_MS,
+      },
+    };
   }
 
   private async discoverSupplementalPages(
@@ -802,12 +1060,14 @@ export class CharacterResearchService {
       if (result.status !== 'fulfilled') continue;
       for (const item of result.value) {
         const haystack = normalize(`${item.title} ${item.description}`);
+        const parsedUrl = isAllowedSupplementalUrl(item.url);
+        if (!parsedUrl || isNonTextualMediaPage(parsedUrl)) continue;
         if (!haystack.includes(normalizedName)) continue;
+        if (workTerms.length > 0 && !workTerms.some((term) => haystack.includes(term))) continue;
         if (item.kind === 'dialogue' && !DIALOGUE_MARKER.test(haystack)) continue;
         if (item.kind === 'address' && !ADDRESS_MARKER.test(haystack)) continue;
         if (
           item.kind === 'profile' &&
-          !workTerms.some((term) => haystack.includes(term)) &&
           !/(角色|人物|身份|背景|性格|关系|character|profile)/iu.test(haystack)
         ) {
           continue;
@@ -866,14 +1126,24 @@ export class CharacterResearchService {
       if (!sourceUrl) return [];
       const sourceDetails = describeWebSource(sourceUrl);
       const candidateId = `candidate_${randomUUID().replaceAll('-', '')}`;
+      const inferredWork = inferSourceWork({
+        title: result.title,
+        name,
+        requestedWork: sourceWork,
+        description: result.description,
+      });
       const candidate: CharacterResearchCandidate = {
         id: candidateId,
         name: name.trim(),
-        sourceWork: sourceWork.trim(),
+        sourceWork: inferredWork,
         description: result.description,
         sourceName: sourceDetails.label,
         sourceUrl: sourceUrl.toString(),
-        matchReason: `网页标题包含角色名，摘要同时匹配“${sourceWork}”`,
+        matchReason: sourceWork
+          ? `网页标题包含角色名，摘要同时匹配“${sourceWork}”`
+          : inferredWork
+            ? `网页资料识别作品“${inferredWork}”`
+            : '网页标题与角色名匹配',
       };
       return [
         {

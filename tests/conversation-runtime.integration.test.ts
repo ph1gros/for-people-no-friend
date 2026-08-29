@@ -141,6 +141,46 @@ describe('conversation runtime integration', () => {
     database.close();
   });
 
+  it('cancels the active generation through the bounded Main shortcut action', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-conversation-cancel-all-'));
+    const models = {
+      getConversationConfiguration: async () => ({
+        selection: { providerId: 'openai-compatible', modelId: 'fake-model' },
+      }),
+      streamConversation: async function* (
+        _request: ChatRequest,
+        _selection: ModelSelection,
+        signal?: AbortSignal,
+      ): AsyncIterable<ChatEvent> {
+        await new Promise<void>((_resolve, reject) => {
+          const abort = (): void => reject(new DOMException('Aborted', 'AbortError'));
+          if (signal?.aborted) abort();
+          else signal?.addEventListener('abort', abort, { once: true });
+        });
+        yield { type: 'finish', reason: 'stop' };
+      },
+    } as unknown as ModelRuntime;
+    const database = new DeskpetDatabase(directory);
+    const runtime = new ConversationRuntime(
+      models,
+      new CharacterProfileStore(directory),
+      new ConversationStore(database),
+    );
+    const cancelled = new Promise<void>((resolve) => {
+      runtime.start(
+        { requestId: 'chat_shortcut_stop', message: '请生成很长的回复', availableActions: [] },
+        (event) => {
+          if (event.type === 'cancelled') resolve();
+        },
+      );
+    });
+
+    expect(runtime.cancelAll()).toBe(1);
+    expect(runtime.cancelAll()).toBe(0);
+    await cancelled;
+    database.close();
+  });
+
   it('reports missing model configuration without invoking a provider', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-conversation-test-'));
     const models = {

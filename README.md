@@ -28,6 +28,8 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - 带场景、情绪、触发条件、角色态度和来源的情境对话示例
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
+- 作品名留空时从精确角色资料页识别并在确认候选后自动回填
+- 仅在桌宠窗口被选中时生效的可配置显示/隐藏与停止生成快捷键
 
 ## 当前不包含
 
@@ -80,11 +82,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环；V1.3 完成 Live2D 表现、短期情绪连续性和模型提供商增强；V1.4 完成角色包、角色库、上下文角色扮演、混合记忆、可选外部索引和本地/远端模型协作。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环；V1.3 完成 Live2D 表现、短期情绪连续性和模型提供商增强；V1.4 完成角色包、角色库、上下文角色扮演、混合记忆、可选外部索引和本地/远端模型协作。V1.5 已开始完善聚焦窗口内的可配置快捷键、停止生成和 Windows 媒体控制边界，尚未完成临时静音、粗粒度活动事件和主动反应。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[V1.4.0 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4.0) 提供 Windows x64 免安装包。[V1.3.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.3.0) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.4b Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4b) 提供 Windows x64 免安装包，并使用 ASAR 避免 Windows 解压路径过长。[V1.4.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4.0) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 

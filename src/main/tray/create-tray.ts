@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { app, Menu, nativeImage, Tray, type BrowserWindow } from 'electron';
 
 export interface TrayActions {
@@ -8,7 +10,15 @@ export interface TrayActions {
 }
 
 export const createDeskpetTray = (actions: TrayActions): Tray => {
-  const icon = nativeImage.createFromPath(process.execPath).resize({ width: 16, height: 16 });
+  const applicationIcon = nativeImage.createFromPath(
+    path.join(app.getAppPath(), 'build', 'icon.png'),
+  );
+  const icon = (
+    applicationIcon.isEmpty() ? nativeImage.createFromPath(process.execPath) : applicationIcon
+  ).resize({
+    width: 16,
+    height: 16,
+  });
   const tray = new Tray(icon);
 
   const updateMenu = (): void => {

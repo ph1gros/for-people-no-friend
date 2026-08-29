@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -6,6 +9,7 @@ import {
 } from '../src/core/desktop/integration';
 import { DesktopIntegrationService } from '../src/main/desktop/desktop-integration-service';
 import {
+  buildWindowsMediaControlScript,
   invokeWindowsMediaSessionMethod,
   WindowsMediaController,
 } from '../src/main/desktop/windows-media-controller';
@@ -17,6 +21,11 @@ import {
 } from '../src/shared/desktop-integration-ipc';
 
 describe('desktop integration boundaries', () => {
+  it('wires the fixed stop-generation action to the conversation runtime in Main', () => {
+    const source = readFileSync(resolve('src/main/index.ts'), 'utf8');
+    expect(source).toContain('() => conversationRuntime?.cancelAll()');
+  });
+
   it('accepts explicit shortcut combinations but rejects ordinary key capture', () => {
     expect(
       validateShortcutBindings([{ accelerator: 'Ctrl+Shift+Space', action: 'toggle-visibility' }]),
@@ -66,6 +75,7 @@ describe('desktop integration boundaries', () => {
           globalShortcutsEnabled: true,
           mediaControlEnabled: false,
           visibilityShortcut: '\\',
+          stopGenerationShortcut: 'Ctrl+Shift+Delete',
         },
       }),
     ).toEqual({
@@ -73,6 +83,7 @@ describe('desktop integration boundaries', () => {
         globalShortcutsEnabled: true,
         mediaControlEnabled: false,
         visibilityShortcut: '\\',
+        stopGenerationShortcut: 'Ctrl+Shift+Delete',
       },
     });
     expect(parseMediaCommandInput({ command: 'next' })).toEqual({ command: 'next' });
@@ -82,6 +93,17 @@ describe('desktop integration boundaries', () => {
           globalShortcutsEnabled: 'yes',
           mediaControlEnabled: false,
           visibilityShortcut: '\\',
+          stopGenerationShortcut: 'Ctrl+Shift+Delete',
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      parseSetDesktopIntegrationSettingsInput({
+        settings: {
+          globalShortcutsEnabled: true,
+          mediaControlEnabled: false,
+          visibilityShortcut: 'Ctrl+Shift+Delete',
+          stopGenerationShortcut: 'Ctrl+Shift+Delete',
         },
       }),
     ).toThrow();
@@ -92,6 +114,7 @@ describe('desktop integration boundaries', () => {
           globalShortcutsEnabled: true,
           mediaControlEnabled: false,
           visibilityShortcut: 'A',
+          stopGenerationShortcut: 'Ctrl+Shift+Delete',
         },
       }),
     ).toThrow();
@@ -102,6 +125,7 @@ describe('desktop integration boundaries', () => {
       globalShortcutsEnabled: false,
       mediaControlEnabled: false,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     };
     const store = {
       get: async () => ({ ...settings }),
@@ -112,6 +136,7 @@ describe('desktop integration boundaries', () => {
     const registrations = new Map<string, () => void>();
     const unregistered: string[] = [];
     let toggles = 0;
+    let stops = 0;
     const service = new DesktopIntegrationService(
       store,
       {
@@ -127,6 +152,10 @@ describe('desktop integration boundaries', () => {
       () => {
         toggles += 1;
       },
+      undefined,
+      () => {
+        stops += 1;
+      },
     );
 
     await service.initialize();
@@ -135,22 +164,30 @@ describe('desktop integration boundaries', () => {
       globalShortcutsEnabled: true,
       mediaControlEnabled: false,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
     expect(registrations.size).toBe(0);
     service.setShortcutWindowFocused(true);
     registrations.get('\\')?.();
+    registrations.get('Ctrl+Shift+Delete')?.();
     expect(toggles).toBe(1);
-    expect((await service.getStatus()).shortcutRegistered).toBe(true);
+    expect(stops).toBe(1);
+    expect(await service.getStatus()).toMatchObject({
+      shortcutRegistered: true,
+      stopGenerationShortcutRegistered: true,
+    });
     service.setShortcutWindowFocused(false);
     expect(registrations.size).toBe(0);
     service.setShortcutWindowFocused(true);
     expect(registrations.has('\\')).toBe(true);
+    expect(registrations.has('Ctrl+Shift+Delete')).toBe(true);
     await service.setSettings({
       globalShortcutsEnabled: false,
       mediaControlEnabled: false,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
-    expect(unregistered).toEqual(['\\', '\\']);
+    expect(unregistered).toEqual(['\\', 'Ctrl+Shift+Delete', '\\', 'Ctrl+Shift+Delete']);
     expect(registrations.size).toBe(0);
   });
 
@@ -159,6 +196,7 @@ describe('desktop integration boundaries', () => {
       globalShortcutsEnabled: false,
       mediaControlEnabled: false,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     };
     const sent: string[] = [];
     const service = new DesktopIntegrationService(
@@ -185,6 +223,7 @@ describe('desktop integration boundaries', () => {
       globalShortcutsEnabled: false,
       mediaControlEnabled: true,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
     await expect(service.sendMediaCommand('previous')).resolves.toBe(true);
     await expect(service.sendMediaCommand('play-pause')).resolves.toBe(true);
@@ -210,6 +249,19 @@ describe('desktop integration boundaries', () => {
     ]);
   });
 
+  it('enumerates Windows media sessions and uses only fixed media-key fallbacks', () => {
+    const playPause = buildWindowsMediaControlScript('TryTogglePlayPauseAsync');
+    const previous = buildWindowsMediaControlScript('TrySkipPreviousAsync');
+    const next = buildWindowsMediaControlScript('TrySkipNextAsync');
+
+    expect(playPause).toContain('$manager.GetSessions()');
+    expect(playPause).toContain('TryTogglePlayPauseAsync');
+    expect(playPause).toContain('keybd_event(0xB3');
+    expect(previous).toContain('keybd_event(0xB1');
+    expect(next).toContain('keybd_event(0xB0');
+    expect(playPause).not.toContain('Start-Process');
+  });
+
   it('does not invoke Windows media control on unsupported platforms', async () => {
     let calls = 0;
     const controller = new WindowsMediaController('linux', async () => {
@@ -233,6 +285,7 @@ describe('desktop integration boundaries', () => {
           globalShortcutsEnabled: true,
           mediaControlEnabled: false,
           visibilityShortcut: '\\',
+          stopGenerationShortcut: 'Ctrl+Shift+Delete',
         }),
         set: async () => undefined,
       } as unknown as DesktopIntegrationStore,
@@ -262,6 +315,7 @@ describe('desktop integration boundaries', () => {
           globalShortcutsEnabled: false,
           mediaControlEnabled: true,
           visibilityShortcut: '\\',
+          stopGenerationShortcut: 'Ctrl+Shift+Delete',
         }),
         set: async () => undefined,
       } as unknown as DesktopIntegrationStore,
@@ -289,6 +343,7 @@ describe('desktop integration boundaries', () => {
       globalShortcutsEnabled: true,
       mediaControlEnabled: false,
       visibilityShortcut: '\\',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     };
     const registrations = new Set<string>();
     const unregistered: string[] = [];
@@ -317,8 +372,9 @@ describe('desktop integration boundaries', () => {
     await service.setSettings({
       ...settings,
       visibilityShortcut: 'Ctrl+Shift+]',
+      stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
-    expect(unregistered).toEqual(['\\']);
-    expect([...registrations]).toEqual(['Ctrl+Shift+]']);
+    expect(unregistered).toEqual(['\\', 'Ctrl+Shift+Delete']);
+    expect([...registrations]).toEqual(['Ctrl+Shift+]', 'Ctrl+Shift+Delete']);
   });
 });

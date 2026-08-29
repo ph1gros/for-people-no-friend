@@ -110,6 +110,13 @@ export const validateWorkGlossaryEntry = (value: unknown): WorkGlossaryEntry => 
 export const resolveWorkGlossaryId = (sourceWork: string): string | undefined => {
   const normalized = normalize(sourceWork).replace(/[《》\s_-]/g, '');
   if (normalized.includes('明日方舟') || normalized.includes('arknights')) return 'arknights';
+  if (
+    normalized.includes('三角洲行动') ||
+    normalized === '三角洲' ||
+    normalized.includes('deltaforce')
+  ) {
+    return 'delta-force';
+  }
   return undefined;
 };
 
@@ -281,7 +288,8 @@ export const findRelevantGlossaryEntries = (
 export const formatWorkGlossaryContext = (entries: readonly WorkGlossaryEntry[]): string => {
   if (entries.length === 0) return '';
   return [
-    '当前作品社区词库命中（这是玩家社区语境，不是角色世界观事实）：',
+    '【在线来源同步的作品社区词库命中】',
+    '这是带出处的玩家社区语境，不是角色世界观事实。解释作品术语时，本段优先于长期用户记忆和模型自身猜测；长期记忆只能补充用户个人的用法与经历，不能改写公共词义。',
     ...entries.map(
       (entry) =>
         `- ${entry.term}（别名：${entry.aliases.join('、') || '无'}；置信度 ${entry.confidence.toFixed(2)}）：${entry.meaning}\n  来源与语境：${entry.originContext}\n  参考：${entry.sources.map((source) => `${source.siteName} ${source.url}`).join('；')}`,

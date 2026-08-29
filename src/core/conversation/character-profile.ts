@@ -1,7 +1,8 @@
-import type {
-  CharacterLore,
-  CharacterLoreSource,
-  CharacterRoleplayExample,
+import {
+  sanitizeCharacterSpeechStyle,
+  type CharacterLore,
+  type CharacterLoreSource,
+  type CharacterRoleplayExample,
 } from '../character/character-lore';
 
 export interface CharacterProfile {
@@ -320,7 +321,7 @@ const validateCharacterLore = (value: unknown): CharacterLore | undefined => {
     personality: readLoreString(record, 'personality', 2_000),
     background: readLoreString(record, 'background', 4_000),
     relationships: readLoreStringArray(record, 'relationships', 20, 300),
-    speechStyle: readLoreString(record, 'speechStyle', 2_000),
+    speechStyle: sanitizeCharacterSpeechStyle(readLoreString(record, 'speechStyle', 2_000)),
     sampleLines:
       record.sampleLines === undefined ? [] : readLoreStringArray(record, 'sampleLines', 20, 40),
     roleplayExamples,
@@ -351,13 +352,37 @@ export const validateCharacterProfile = (value: unknown): CharacterProfile => {
   if (!ID_PATTERN.test(id) || !ID_PATTERN.test(memoryNamespace)) {
     throw new Error('The character profile identifier is invalid.');
   }
-  const lore = validateCharacterLore(record.lore);
+  const name = readString('name', 80);
+  const userDisplayName = readString('userDisplayName', 80);
+  const rawPersonaPrompt = readString('personaPrompt', 16_000);
+  let lore = validateCharacterLore(record.lore);
+  const rawLore =
+    typeof record.lore === 'object' && record.lore !== null
+      ? (record.lore as Record<string, unknown>)
+      : undefined;
+  const rawSpeechStyle = typeof rawLore?.speechStyle === 'string' ? rawLore.speechStyle.trim() : '';
+  const hadIncompleteSpeechStyle = Boolean(rawSpeechStyle && lore && !lore.speechStyle);
+  if (hadIncompleteSpeechStyle && lore) {
+    const normalizedName = lore.canonicalName.normalize('NFKC').toLowerCase().replaceAll("'", '');
+    const normalizedWork = lore.sourceWork.normalize('NFKC').toLowerCase();
+    const repairedSpeechStyle =
+      (normalizedName === '凯尔希' || normalizedName === 'kaltsit') &&
+      (normalizedWork.includes('明日方舟') || normalizedWork.includes('arknights'))
+        ? KALTSIT_CHARACTER_PROFILE.lore!.speechStyle
+        : `通常直接称用户为“${userDisplayName}”。`;
+    lore = { ...lore, speechStyle: repairedSpeechStyle };
+  }
+  const personaPrompt = hadIncompleteSpeechStyle
+    ? `${rawPersonaPrompt
+        .replace(/\n?说话方式：[^\n]*$/u, '')
+        .trim()}\n说话方式：${lore!.speechStyle}`.trim()
+    : rawPersonaPrompt;
   return {
     id,
-    name: readString('name', 80),
-    userDisplayName: readString('userDisplayName', 80),
+    name,
+    userDisplayName,
     bio: readString('bio', 2_000),
-    personaPrompt: readString('personaPrompt', 16_000),
+    personaPrompt,
     live2dModelId,
     memoryNamespace,
     ...(lore ? { lore } : {}),

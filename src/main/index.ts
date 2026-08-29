@@ -102,6 +102,7 @@ if (!hasSingleInstanceLock) {
       globalShortcut,
       () => windowManager?.toggleVisibility(),
       new WindowsMediaController(),
+      () => conversationRuntime?.cancelAll(),
     );
     await desktopIntegrations.initialize();
     registerIpcHandlers(
