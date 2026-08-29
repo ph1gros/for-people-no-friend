@@ -196,7 +196,7 @@ describe('conversation runtime integration', () => {
     const result = await runtime.generateContextualOpeningLine();
 
     expect(result).toEqual({ line: '上次说到团子的近况，今天它还好吗？', emotion: 'happy' });
-    expect(capturedRequest?.maxOutputTokens).toBe(160);
+    expect(capturedRequest?.maxOutputTokens).toBe(512);
     expect(capturedRequest?.timeoutMs).toBe(15_000);
     expect(capturedRequest?.messages).toEqual([
       { role: 'user', content: '团子今天终于肯好好吃饭了。' },
@@ -212,6 +212,34 @@ describe('conversation runtime integration', () => {
     expect(await runtime.generateContextualOpeningLine()).toBeUndefined();
     expect(invocations).toBe(1);
     database.close();
+  });
+
+  it('rejects a contextual opening line when the model reports token truncation', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-opening-line-truncated-test-'));
+    const models = {
+      getConversationConfiguration: async () => ({
+        selection: { providerId: 'openai-compatible', modelId: 'fake-model' },
+      }),
+      streamConversation: async function* (): AsyncIterable<ChatEvent> {
+        yield { type: 'text-delta', text: '上次说到一半，所以这次我想继续，' };
+        yield { type: 'finish', reason: 'length' };
+      },
+    } as unknown as ModelRuntime;
+    const history = new ConversationStore(directory);
+    await history.append(
+      {
+        id: 'truncated-opening-user',
+        role: 'user',
+        content: '我们下次继续聊。',
+        createdAt: 1,
+        status: 'complete',
+      },
+      KALTSIT_CHARACTER_PROFILE.memoryNamespace,
+    );
+    const runtime = new ConversationRuntime(models, new CharacterProfileStore(directory), history);
+
+    expect(await runtime.generateContextualOpeningLine()).toBeUndefined();
+    history.close();
   });
 
   it('does not invoke the model for a contextual opening line without history', async () => {

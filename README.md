@@ -31,7 +31,7 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - 作品名留空时从精确角色资料页识别并在确认候选后自动回填
 - 再次启动同一人格且已有对话时，由当前模型用最近几轮和相关已确认记忆生成一句简短关联开场；新人格、切换人格或无历史时使用角色卡默认开场
 - 仅在桌宠窗口被选中时生效的可配置显示/隐藏与停止生成快捷键
-- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；媒体悬浮条显示当前曲目及上一首、播放/暂停、下一首，输入展示按用户白名单显示按键（默认 WASD），并可显示鼠标三键和移动方向。现有组件使用[仓库内类型化注册器](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)，便于开发者或编码 AI 安全增加新组件，不在客户端加载外部插件
+- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；听歌条开启后固定保留，优先适配网易云音乐、QQ 音乐、酷狗音乐、Apple Music 和 Spotify，并提供上一首、播放/暂停、下一首；输入展示按用户白名单显示按键（默认 WASD），可用多种分隔符继续添加常用键盘按键，并可显示鼠标三键和移动方向。现有组件使用[仓库内类型化注册器](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)，便于开发者或编码 AI 安全增加新组件，不在客户端加载外部插件
 
 ## 当前不包含
 
@@ -87,6 +87,27 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
 
+### V1.5b（程序版本 1.5.1）
+
+**完成了什么**
+
+- 修复听歌悬浮条因播放器未提供曲名而消失的问题：组件开启后固定保留，能取得媒体资料时再显示曲名。
+- 明确优先适配网易云音乐、QQ 音乐、酷狗音乐、Apple Music 与 Spotify，并继续把控制限制为上一首、播放/暂停、下一首。
+- 修复每五秒媒体刷新覆盖按键编辑内容的问题；支持逗号、顿号、分号、空格，以及更多常用标点、功能键和数字小键盘按键。
+- 增加关联开场的有界输出预算与截断检测；半句不再直接显示，完整短句会自然收尾。
+
+**使用了什么**
+
+- Windows Global System Media Transport Controls 负责识别五类播放器的受限媒体会话；未发布完整会话时仍使用固定系统媒体键回退。
+- Renderer 只保留尚未提交的按键编辑草稿；保存后仍由 Main Process 按白名单、数量和类型重新验证。
+- 当前会话模型继续负责关联开场，任务保持最近六条完整消息、受限记忆、一次生成、超时与取消边界。
+
+**参考了什么**
+
+- OBS Input Overlay：可编辑按键集合不应在状态轮询时被重置。
+- Windows 系统媒体会话模型：播放器资料读取与固定媒体控制需要分开降级。
+- AIRI、my-neuro：恢复会话时的连续感应由有界上下文生成，并在失败时安全回退。
+
 ### V1.5.0
 
 **完成了什么**
@@ -118,7 +139,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 
 ## 下载
 
-[V1.5.0 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5.0) 提供 Windows x64 免安装包，并使用 ASAR 避免 Windows 解压路径过长。[V1.4b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.5b Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 提供 Windows x64 免安装包，并使用 ASAR 避免 Windows 解压路径过长。[V1.5.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5.0) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 

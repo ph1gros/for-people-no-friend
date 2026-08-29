@@ -31,11 +31,35 @@ export const SUPPORTED_INPUT_OVERLAY_KEYS = [
   'ArrowRight',
   'Backspace',
   'Delete',
+  'PrintScreen',
+  'ScrollLock',
+  'NumLock',
+  'Meta',
   'Home',
   'End',
   'PageUp',
   'PageDown',
-  ...Array.from({ length: 12 }, (_, index) => `F${index + 1}`),
+  'Insert',
+  'CapsLock',
+  'Backquote',
+  'Minus',
+  'Equal',
+  'BracketLeft',
+  'BracketRight',
+  'Backslash',
+  'Semicolon',
+  'Quote',
+  'Comma',
+  'Period',
+  'Slash',
+  ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`),
+  ...Array.from({ length: 10 }, (_, index) => `Numpad${index}`),
+  'NumpadAdd',
+  'NumpadSubtract',
+  'NumpadMultiply',
+  'NumpadDivide',
+  'NumpadDecimal',
+  'NumpadEnter',
 ] as const;
 
 export type InputOverlayKey = (typeof SUPPORTED_INPUT_OVERLAY_KEYS)[number];
@@ -77,8 +101,32 @@ export interface DesktopIntegrationStatus {
 
 const normalizeInputOverlayKey = (value: string): InputOverlayKey | undefined => {
   const normalized = value.normalize('NFKC').trim().toLowerCase();
+  const aliases: Readonly<Record<string, InputOverlayKey>> = {
+    esc: 'Escape',
+    control: 'Ctrl',
+    return: 'Enter',
+    spacebar: 'Space',
+    '`': 'Backquote',
+    '-': 'Minus',
+    '=': 'Equal',
+    '[': 'BracketLeft',
+    ']': 'BracketRight',
+    '\\': 'Backslash',
+    ';': 'Semicolon',
+    "'": 'Quote',
+    ',': 'Comma',
+    '.': 'Period',
+    '/': 'Slash',
+  };
+  if (aliases[normalized]) return aliases[normalized];
   return SUPPORTED_INPUT_OVERLAY_KEYS.find((key) => key.toLowerCase() === normalized);
 };
+
+export const tokenizeInputOverlayKeyDraft = (value: string): string[] =>
+  value
+    .split(/[,，、;；\s]+/u)
+    .map((key) => key.trim())
+    .filter(Boolean);
 
 export const parseInputOverlayKeys = (value: unknown): InputOverlayKey[] => {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_INPUT_OVERLAY_KEYS) {

@@ -31,7 +31,12 @@ describe('opening line continuity', () => {
     expect(sanitizeOpeningLine('（稍稍点头）上次的事情，我还记得。')).toBe(
       '上次的事情，我还记得。',
     );
-    expect(sanitizeOpeningLine(`*挥手* ${'好'.repeat(400)}`)?.length).toBe(280);
+    expect(sanitizeOpeningLine('这句话完整但没有句号')).toBe('这句话完整但没有句号。');
+    expect(sanitizeOpeningLine(`*挥手* ${'好'.repeat(400)}`)).toBeUndefined();
+    expect(sanitizeOpeningLine(`${'好'.repeat(260)}。${'再'.repeat(80)}`)?.endsWith('。')).toBe(
+      true,
+    );
+    expect(sanitizeOpeningLine('这句话还没有说完，')).toBeUndefined();
     expect(sanitizeOpeningLine('（只是看着你）')).toBeUndefined();
   });
 });

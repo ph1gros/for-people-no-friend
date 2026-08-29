@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  resolveSupportedMediaPlayer,
   validateExtensionCapabilityManifest,
   validateShortcutBindings,
 } from '../src/core/desktop/integration';
@@ -22,6 +23,7 @@ import {
   parseMediaCommandInput,
   parseSetDesktopIntegrationSettingsInput,
   parseSetDesktopWidgetEnabledInput,
+  tokenizeInputOverlayKeyDraft,
   type DesktopIntegrationSettings,
 } from '../src/shared/desktop-integration-ipc';
 
@@ -118,6 +120,12 @@ describe('desktop integration boundaries', () => {
       enabled: true,
     });
     expect(parseInputOverlayKeys(['w', 'ArrowUp', 'w'])).toEqual(['W', 'ArrowUp']);
+    expect(tokenizeInputOverlayKeyDraft('W A、S；D, Q')).toEqual(['W', 'A', 'S', 'D', 'Q']);
+    expect(parseInputOverlayKeys(['esc', '[', 'comma'])).toEqual([
+      'Escape',
+      'BracketLeft',
+      'Comma',
+    ]);
     expect(
       parseDesktopInputActivityEvent({ type: 'mouse-direction', direction: 'up-left' }),
     ).toEqual({ type: 'mouse-direction', direction: 'up-left' });
@@ -400,29 +408,65 @@ describe('desktop integration boundaries', () => {
       parseWindowsMediaStateOutput(
         JSON.stringify({
           supported: true,
-          playing: false,
-          title: `  Track\u0000${'x'.repeat(400)}  `,
-          artist: '  Fake\nArtist  ',
-          source: 'fake.player',
+          sessions: [
+            {
+              current: true,
+              playing: false,
+              title: `  Track\u0000${'x'.repeat(400)}  `,
+              artist: '  Fake\nArtist  ',
+              source: 'cloudmusic.exe',
+            },
+          ],
         }),
       ),
     ).toEqual({
       supported: true,
+      sessionAvailable: true,
+      playerId: 'netease-cloud-music',
+      playerName: '网易云音乐',
       playing: false,
       title: `Track ${'x'.repeat(294)}`,
       artist: 'Fake Artist',
-      source: 'fake.player',
+      source: 'cloudmusic.exe',
     });
     expect(
       parseWindowsMediaStateOutput(
         JSON.stringify({
           supported: true,
-          playing: true,
-          title: '栀子花般的她',
-          artist: '中文歌手',
+          sessions: [
+            {
+              current: true,
+              playing: true,
+              title: '栀子花般的她',
+              artist: '中文歌手',
+              source: 'QQMusic.exe',
+            },
+          ],
         }),
       ),
-    ).toMatchObject({ title: '栀子花般的她', artist: '中文歌手' });
+    ).toMatchObject({
+      playerId: 'qq-music',
+      title: '栀子花般的她',
+      artist: '中文歌手',
+    });
+    expect(
+      parseWindowsMediaStateOutput(
+        JSON.stringify({
+          supported: true,
+          sessions: [
+            {
+              current: true,
+              playing: true,
+              title: 'Browser Video',
+              artist: '',
+              source: 'chrome.exe',
+            },
+          ],
+        }),
+      ),
+    ).toEqual({ supported: true, sessionAvailable: true, source: 'chrome.exe' });
+    expect(resolveSupportedMediaPlayer('SpotifyAB.SpotifyMusic!Spotify')?.name).toBe('Spotify');
+    expect(resolveSupportedMediaPlayer('AppleInc.AppleMusic.exe')?.name).toBe('Apple Music');
     expect(() => parseWindowsMediaStateOutput('{"supported":"yes"}')).toThrow();
   });
 
@@ -431,6 +475,7 @@ describe('desktop integration boundaries', () => {
     expect(script).toContain('GlobalSystemMediaTransportControlsSessionManager');
     expect(script).toContain('TryGetMediaPropertiesAsync');
     expect(script).toContain('GetPlaybackInfo');
+    expect(script).toContain('Select-Object -First 16');
     expect(script).toContain('ConvertTo-Json -Compress');
     expect(script).toContain('[Console]::OutputEncoding = $utf8Output');
     expect(script).toContain('$OutputEncoding = $utf8Output');
@@ -443,6 +488,7 @@ describe('desktop integration boundaries', () => {
     const next = buildWindowsMediaControlScript('TrySkipNextAsync');
 
     expect(playPause).toContain('$manager.GetSessions()');
+    expect(playPause).toContain('$supportedSourcePattern');
     expect(playPause).toContain('TryTogglePlayPauseAsync');
     expect(playPause).toContain('keybd_event(0xB3');
     expect(previous).toContain('keybd_event(0xB1');

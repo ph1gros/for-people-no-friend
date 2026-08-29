@@ -9,6 +9,53 @@ export const DESKTOP_ACTIONS = [
 export type DesktopAction = (typeof DESKTOP_ACTIONS)[number];
 export type MediaCommand = 'play-pause' | 'next' | 'previous';
 
+export const SUPPORTED_MEDIA_PLAYERS = [
+  {
+    id: 'netease-cloud-music',
+    name: '网易云音乐',
+    sourceAliases: ['cloudmusic', 'netease', 'orpheus', '网易云'],
+  },
+  {
+    id: 'qq-music',
+    name: 'QQ 音乐',
+    sourceAliases: ['qqmusic', 'tencent.qqmusic', 'qq音乐'],
+  },
+  {
+    id: 'kugou-music',
+    name: '酷狗音乐',
+    sourceAliases: ['kugou', '酷狗'],
+  },
+  {
+    id: 'apple-music',
+    name: 'Apple Music',
+    sourceAliases: ['applemusic', 'apple music', 'appleinc.applemusic'],
+  },
+  {
+    id: 'spotify',
+    name: 'Spotify',
+    sourceAliases: ['spotify'],
+  },
+] as const;
+
+export type SupportedMediaPlayerId = (typeof SUPPORTED_MEDIA_PLAYERS)[number]['id'];
+
+export const resolveSupportedMediaPlayer = (
+  source: string | undefined,
+): (typeof SUPPORTED_MEDIA_PLAYERS)[number] | undefined => {
+  if (!source) return undefined;
+  const normalized = source.normalize('NFKC').toLowerCase();
+  const compact = normalized.replace(/\s+/gu, '');
+  return SUPPORTED_MEDIA_PLAYERS.find((player) =>
+    player.sourceAliases.some((alias) => {
+      const normalizedAlias = alias.normalize('NFKC').toLowerCase();
+      return (
+        normalized.includes(normalizedAlias) ||
+        compact.includes(normalizedAlias.replace(/\s+/gu, ''))
+      );
+    }),
+  );
+};
+
 export interface DesktopShortcutBinding {
   accelerator: string;
   action: DesktopAction;
@@ -16,6 +63,9 @@ export interface DesktopShortcutBinding {
 
 export interface MediaSessionState {
   supported: boolean;
+  sessionAvailable?: boolean;
+  playerId?: SupportedMediaPlayerId;
+  playerName?: string;
   playing?: boolean;
   title?: string;
   artist?: string;

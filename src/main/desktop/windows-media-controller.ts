@@ -6,6 +6,7 @@ import type {
   MediaController,
   MediaSessionState,
 } from '../../core/desktop/integration';
+import { resolveSupportedMediaPlayer } from '../../core/desktop/integration';
 
 const WINDOWS_SESSION_METHODS = {
   'play-pause': 'TryTogglePlayPauseAsync',
@@ -63,7 +64,8 @@ try {
         $sessions += $candidate
       }
     }
-    foreach ($session in $sessions) {
+    $supportedSourcePattern = '(?i)(cloudmusic|netease|orpheus|qq\s*music|qq\s*音乐|kugou|apple\s*music|spotify)'
+    foreach ($session in $sessions | Where-Object { [string]$_.SourceAppUserModelId -match $supportedSourcePattern }) {
       try {
         $result = Await-WinRtOperation ($session.${method}()) ([bool])
         if ($result) { exit 0 }
@@ -117,28 +119,28 @@ try {
   $propertiesType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media.Control, ContentType = WindowsRuntime]
   $manager = Await-WinRtOperation ($managerType::RequestAsync()) $managerType
   $current = $manager.GetCurrentSession()
-  $sessions = @($manager.GetSessions())
-  $session = $sessions |
-    Where-Object {
-      try { $_.GetPlaybackInfo().PlaybackStatus.ToString() -eq 'Playing' } catch { $false }
-    } |
-    Select-Object -First 1
-  if ($null -eq $session) { $session = $current }
-  if ($null -eq $session -and $sessions.Count -gt 0) { $session = $sessions[0] }
-  if ($null -eq $session) {
-    @{ supported = $true } | ConvertTo-Json -Compress
-    exit 0
+  $currentSource = if ($null -ne $current) { [string]$current.SourceAppUserModelId } else { '' }
+  $items = @()
+  foreach ($session in @($manager.GetSessions()) | Select-Object -First 16) {
+    try {
+      $properties = Await-WinRtOperation ($session.TryGetMediaPropertiesAsync()) $propertiesType
+      $playback = $session.GetPlaybackInfo()
+      $source = [string]$session.SourceAppUserModelId
+      $items += [ordered]@{
+        current = $source -eq $currentSource
+        playing = $playback.PlaybackStatus.ToString() -eq 'Playing'
+        title = [string]$properties.Title
+        artist = [string]$properties.Artist
+        source = $source
+      }
+    } catch {
+      # Skip one malformed media session without hiding other supported players.
+    }
   }
-
-  $properties = Await-WinRtOperation ($session.TryGetMediaPropertiesAsync()) $propertiesType
-  $playback = $session.GetPlaybackInfo()
   [ordered]@{
     supported = $true
-    playing = $playback.PlaybackStatus.ToString() -eq 'Playing'
-    title = [string]$properties.Title
-    artist = [string]$properties.Artist
-    source = [string]$session.SourceAppUserModelId
-  } | ConvertTo-Json -Compress
+    sessions = @($items)
+  } | ConvertTo-Json -Compress -Depth 4
   exit 0
 } catch {
   exit 1
@@ -166,21 +168,58 @@ export const parseWindowsMediaStateOutput = (output: string): MediaSessionState 
     throw new Error('The Windows media state response is invalid.');
   }
   const record = value as Record<string, unknown>;
-  if (
-    record.supported !== true ||
-    (record.playing !== undefined && typeof record.playing !== 'boolean')
-  ) {
+  if (record.supported !== true || !Array.isArray(record.sessions) || record.sessions.length > 16) {
     throw new Error('The Windows media state response is invalid.');
   }
-  const title = cleanMediaText(record.title, 300);
-  const artist = cleanMediaText(record.artist, 300);
-  const source = cleanMediaText(record.source, 256);
+  const sessions = record.sessions.map((value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error('The Windows media state response is invalid.');
+    }
+    const session = value as Record<string, unknown>;
+    if (
+      typeof session.current !== 'boolean' ||
+      typeof session.playing !== 'boolean' ||
+      typeof session.source !== 'string'
+    ) {
+      throw new Error('The Windows media state response is invalid.');
+    }
+    const source = cleanMediaText(session.source, 256);
+    return {
+      current: session.current,
+      playing: session.playing,
+      ...(cleanMediaText(session.title, 300) ? { title: cleanMediaText(session.title, 300) } : {}),
+      ...(cleanMediaText(session.artist, 300)
+        ? { artist: cleanMediaText(session.artist, 300) }
+        : {}),
+      ...(source ? { source } : {}),
+      player: resolveSupportedMediaPlayer(source),
+    };
+  });
+  const supportedSessions = sessions.filter((session) => session.player);
+  const selected =
+    supportedSessions.find((session) => session.playing) ??
+    supportedSessions.find((session) => session.current) ??
+    supportedSessions[0];
+  if (!selected?.player) {
+    const current =
+      sessions.find((session) => session.playing) ??
+      sessions.find((session) => session.current) ??
+      sessions[0];
+    return {
+      supported: true,
+      sessionAvailable: sessions.length > 0,
+      ...(current?.source ? { source: current.source } : {}),
+    };
+  }
   return {
     supported: true,
-    ...(typeof record.playing === 'boolean' ? { playing: record.playing } : {}),
-    ...(title ? { title } : {}),
-    ...(artist ? { artist } : {}),
-    ...(source ? { source } : {}),
+    sessionAvailable: true,
+    playerId: selected.player.id,
+    playerName: selected.player.name,
+    playing: selected.playing,
+    ...(selected.title ? { title: selected.title } : {}),
+    ...(selected.artist ? { artist: selected.artist } : {}),
+    ...(selected.source ? { source: selected.source } : {}),
   };
 };
 
@@ -218,7 +257,7 @@ export const invokeWindowsMediaSessionMethod = async (method: unknown): Promise<
 
 export const queryWindowsMediaSessionState = async (): Promise<MediaSessionState> => {
   const powerShellPath = resolvePowerShellPath();
-  if (!powerShellPath) return { supported: true };
+  if (!powerShellPath) return { supported: true, sessionAvailable: false };
 
   return new Promise((resolve) => {
     execFile(
@@ -240,13 +279,13 @@ export const queryWindowsMediaSessionState = async (): Promise<MediaSessionState
       },
       (error, stdout) => {
         if (error) {
-          resolve({ supported: true });
+          resolve({ supported: true, sessionAvailable: false });
           return;
         }
         try {
           resolve(parseWindowsMediaStateOutput(stdout));
         } catch {
-          resolve({ supported: true });
+          resolve({ supported: true, sessionAvailable: false });
         }
       },
     );

@@ -13,6 +13,7 @@ import {
   type OpeningLineContext,
 } from '../../core/conversation/opening-line';
 import type { PublicLlmError } from '../../core/llm/contracts';
+import { SUPPORTED_MEDIA_PLAYERS } from '../../core/desktop/integration';
 import type {
   MemoryCandidateRecord,
   MemoryRecord,
@@ -38,6 +39,7 @@ import type {
   InputOverlayKey,
   MouseInputButton,
 } from '../../shared/desktop-integration-ipc';
+import { tokenizeInputOverlayKeyDraft } from '../../shared/desktop-integration-ipc';
 import type { ConfigurableProviderId } from '../../shared/model-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
@@ -705,7 +707,7 @@ export const initializeChat = async ({
   const inputOverlayHint = document.createElement('small');
   inputOverlayHint.className = 'settings-hint';
   inputOverlayHint.textContent =
-    '默认 W, A, S, D；使用逗号添加最多 24 个按键。只显示白名单按键，不保存输入内容或轨迹，也不会发送给模型。';
+    '默认 W, A, S, D；可用逗号、顿号、分号或空格添加最多 24 个按键，输入时不会被状态刷新覆盖。只显示选定按键，不保存输入内容或轨迹，也不会发送给模型。';
   inputOverlayKeysField.append(inputOverlayHint);
   const inputOverlayMouseInput = document.createElement('input');
   inputOverlayMouseInput.type = 'checkbox';
@@ -801,8 +803,11 @@ export const initializeChat = async ({
   const backFromMediaWidgetButton = createButton('返回', 'text-button');
   const mediaWidgetTitle = document.createElement('strong');
   mediaWidgetTitle.textContent = '听歌控制';
+  const mediaWidgetHint = document.createElement('small');
+  mediaWidgetHint.className = 'settings-hint';
+  mediaWidgetHint.textContent = `当前适配：${SUPPORTED_MEDIA_PLAYERS.map(({ name }) => name).join('、')}。开启后悬浮控制条会固定保留。`;
   mediaWidgetHeader.append(backFromMediaWidgetButton, mediaWidgetTitle, mediaControlInput);
-  mediaWidget.append(mediaWidgetHeader, mediaActions);
+  mediaWidget.append(mediaWidgetHeader, mediaWidgetHint, mediaActions);
   const widgetsStatus = document.createElement('p');
   widgetsStatus.className = 'settings-status widgets-panel__status';
   widgetsStatus.textContent = '输入显示和听歌控制默认关闭。';
@@ -2142,15 +2147,13 @@ export const initializeChat = async ({
   const disposeDesktopInputActivity = api?.onDesktopInputActivity(handleDesktopInputActivity);
 
   const displayMediaOverlay = (desktopStatus: DesktopIntegrationStatus): void => {
-    const visible =
-      desktopStatus.settings.mediaControlEnabled &&
-      desktopStatus.media.supported &&
-      Boolean(desktopStatus.media.title);
-    mediaOverlay.hidden = !visible;
-    mediaTrack.textContent = [desktopStatus.media.title, desktopStatus.media.artist]
+    mediaOverlay.hidden = !desktopStatus.settings.mediaControlEnabled;
+    const trackText = [desktopStatus.media.title, desktopStatus.media.artist]
       .filter(Boolean)
       .join(' — ');
-    mediaTrack.title = mediaTrack.textContent;
+    mediaTrack.textContent = trackText;
+    mediaTrack.title = trackText;
+    mediaTrack.hidden = !trackText;
     playPauseMediaOverlayButton.textContent = desktopStatus.media.playing ? '⏸' : '▶';
     for (const button of [
       previousMediaOverlayButton,
@@ -2166,9 +2169,15 @@ export const initializeChat = async ({
     mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
     inputOverlayEnabledInput.checked = desktopStatus.settings.inputOverlayEnabled;
     inputOverlayMouseInput.checked = desktopStatus.settings.inputOverlayMouseEnabled;
-    inputOverlayKeysInput.value = desktopStatus.settings.inputOverlayKeys.join(', ');
-    visibilityShortcutInput.value = desktopStatus.settings.visibilityShortcut;
-    stopGenerationShortcutInput.value = desktopStatus.settings.stopGenerationShortcut;
+    if (document.activeElement !== inputOverlayKeysInput) {
+      inputOverlayKeysInput.value = desktopStatus.settings.inputOverlayKeys.join(', ');
+    }
+    if (document.activeElement !== visibilityShortcutInput) {
+      visibilityShortcutInput.value = desktopStatus.settings.visibilityShortcut;
+    }
+    if (document.activeElement !== stopGenerationShortcutInput) {
+      stopGenerationShortcutInput.value = desktopStatus.settings.stopGenerationShortcut;
+    }
     mediaControlsAvailable =
       desktopStatus.settings.mediaControlEnabled && desktopStatus.media.supported;
     previousMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
@@ -2350,10 +2359,7 @@ export const initializeChat = async ({
 
   const saveDesktopIntegrationSettings = async (): Promise<void> => {
     if (!api) return;
-    const inputKeys = inputOverlayKeysInput.value
-      .split(/[,，\n]+/u)
-      .map((key) => key.trim())
-      .filter(Boolean);
+    const inputKeys = tokenizeInputOverlayKeyDraft(inputOverlayKeysInput.value);
     const widgetEnabled: Record<DesktopWidgetId, boolean> = {
       input: inputOverlayEnabledInput.checked,
       media: mediaControlInput.checked,

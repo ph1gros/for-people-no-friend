@@ -46,6 +46,9 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('inputOverlayHint.textContent =');
     expect(source).toContain('默认 W, A, S, D');
     expect(source).toContain('最多 24 个');
+    expect(source).toContain('输入时不会被状态刷新覆盖');
+    expect(source).toContain('tokenizeInputOverlayKeyDraft(inputOverlayKeysInput.value)');
+    expect(source).toContain('document.activeElement !== inputOverlayKeysInput');
     expect(source).toContain("'up-right': '↗'");
     expect(source).toContain('inputOverlayMouse.hidden = !settings.inputOverlayMouseEnabled;');
     expect(styles).toContain('.input-overlay__key.is-active');
@@ -121,6 +124,8 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain("'正在播放'");
     expect(source).toContain("'已暂停'");
     expect(source).toContain('mediaStatusRefreshTimer = window.setInterval');
+    expect(source).toContain('mediaOverlay.hidden = !desktopStatus.settings.mediaControlEnabled;');
+    expect(source).toContain('开启后悬浮控制条会固定保留');
     expect(source).toContain("previousMediaOverlayButton = createButton('◀'");
     expect(source).toContain("playPauseMediaOverlayButton = createButton('⏸'");
     expect(source).toContain("nextMediaOverlayButton = createButton('▶'");

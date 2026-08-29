@@ -13,6 +13,8 @@ export const resolveOpeningLineMode = (input: {
 const LEADING_STAGE_DIRECTION =
   /^(?:\s|\n)*(?:[（(][^）)\n]{1,80}[）)]|[*＊][^*＊\n]{1,80}[*＊])\s*/u;
 const MAX_OPENING_LINE_CHARACTERS = 280;
+const TERMINAL_PUNCTUATION = /[。！？!?…~～」』”’）)]$/u;
+const INCOMPLETE_TRAILING_PUNCTUATION = /[，,、：:；;—-]$/u;
 
 export const sanitizeOpeningLine = (value: string): string | undefined => {
   const withoutStageDirection = value
@@ -21,5 +23,16 @@ export const sanitizeOpeningLine = (value: string): string | undefined => {
     .replace(LEADING_STAGE_DIRECTION, '')
     .trim();
   if (!withoutStageDirection) return undefined;
-  return Array.from(withoutStageDirection).slice(0, MAX_OPENING_LINE_CHARACTERS).join('');
+  const characters = Array.from(withoutStageDirection);
+  let bounded = characters.slice(0, MAX_OPENING_LINE_CHARACTERS).join('').trim();
+  if (characters.length > MAX_OPENING_LINE_CHARACTERS) {
+    const completeEnding = [...bounded.matchAll(/[。！？!?…]/gu)].at(-1);
+    if (completeEnding?.index === undefined) return undefined;
+    bounded = bounded.slice(0, completeEnding.index + 1);
+  }
+  if (!bounded || INCOMPLETE_TRAILING_PUNCTUATION.test(bounded)) return undefined;
+  if (TERMINAL_PUNCTUATION.test(bounded)) return bounded;
+  return `${Array.from(bounded)
+    .slice(0, MAX_OPENING_LINE_CHARACTERS - 1)
+    .join('')}。`;
 };
