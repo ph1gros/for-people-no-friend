@@ -10,15 +10,34 @@ import {
 import { DesktopIntegrationService } from '../src/main/desktop/desktop-integration-service';
 import {
   buildWindowsMediaControlScript,
+  buildWindowsMediaStateScript,
   invokeWindowsMediaSessionMethod,
+  parseWindowsMediaStateOutput,
   WindowsMediaController,
 } from '../src/main/desktop/windows-media-controller';
 import type { DesktopIntegrationStore } from '../src/main/storage/desktop-integration-store';
 import {
+  parseDesktopInputActivityEvent,
+  parseInputOverlayKeys,
   parseMediaCommandInput,
   parseSetDesktopIntegrationSettingsInput,
+  parseSetDesktopWidgetEnabledInput,
   type DesktopIntegrationSettings,
 } from '../src/shared/desktop-integration-ipc';
+
+const desktopSettings = (
+  overrides: Partial<DesktopIntegrationSettings> = {},
+): DesktopIntegrationSettings => ({
+  globalShortcutsEnabled: false,
+  mediaControlEnabled: false,
+  inputOverlayEnabled: false,
+  inputOverlayMouseEnabled: true,
+  inputOverlayKeys: ['W', 'A', 'S', 'D'],
+  widgetOrder: [],
+  visibilityShortcut: '\\',
+  stopGenerationShortcut: 'Ctrl+Shift+Delete',
+  ...overrides,
+});
 
 describe('desktop integration boundaries', () => {
   it('wires the fixed stop-generation action to the conversation runtime in Main', () => {
@@ -74,6 +93,9 @@ describe('desktop integration boundaries', () => {
         settings: {
           globalShortcutsEnabled: true,
           mediaControlEnabled: false,
+          inputOverlayEnabled: true,
+          inputOverlayMouseEnabled: true,
+          inputOverlayKeys: ['w', 'A', 'w'],
           visibilityShortcut: '\\',
           stopGenerationShortcut: 'Ctrl+Shift+Delete',
         },
@@ -82,11 +104,28 @@ describe('desktop integration boundaries', () => {
       settings: {
         globalShortcutsEnabled: true,
         mediaControlEnabled: false,
+        inputOverlayEnabled: true,
+        inputOverlayMouseEnabled: true,
+        inputOverlayKeys: ['W', 'A'],
+        widgetOrder: ['input'],
         visibilityShortcut: '\\',
         stopGenerationShortcut: 'Ctrl+Shift+Delete',
       },
     });
     expect(parseMediaCommandInput({ command: 'next' })).toEqual({ command: 'next' });
+    expect(parseSetDesktopWidgetEnabledInput({ widgetId: 'media', enabled: true })).toEqual({
+      widgetId: 'media',
+      enabled: true,
+    });
+    expect(parseInputOverlayKeys(['w', 'ArrowUp', 'w'])).toEqual(['W', 'ArrowUp']);
+    expect(
+      parseDesktopInputActivityEvent({ type: 'mouse-direction', direction: 'up-left' }),
+    ).toEqual({ type: 'mouse-direction', direction: 'up-left' });
+    expect(() => parseInputOverlayKeys(['Password'])).toThrow();
+    expect(() => parseInputOverlayKeys([])).toThrow();
+    expect(() =>
+      parseDesktopInputActivityEvent({ type: 'mouse-direction', direction: 'up', x: 1, y: 2 }),
+    ).toThrow();
     expect(() =>
       parseSetDesktopIntegrationSettingsInput({
         settings: {
@@ -109,6 +148,17 @@ describe('desktop integration boundaries', () => {
     ).toThrow();
     expect(() => parseMediaCommandInput({ command: 'launch-player' })).toThrow();
     expect(() =>
+      parseSetDesktopWidgetEnabledInput({ widgetId: 'media', enabled: true, command: 'launch' }),
+    ).toThrow();
+    expect(() =>
+      parseSetDesktopIntegrationSettingsInput({
+        settings: {
+          ...desktopSettings({ inputOverlayEnabled: true, mediaControlEnabled: true }),
+          widgetOrder: ['media', 'media'],
+        },
+      }),
+    ).toThrow();
+    expect(() =>
       parseSetDesktopIntegrationSettingsInput({
         settings: {
           globalShortcutsEnabled: true,
@@ -121,12 +171,7 @@ describe('desktop integration boundaries', () => {
   });
 
   it('registers the shortcut only while the deskpet window is focused', async () => {
-    let settings: DesktopIntegrationSettings = {
-      globalShortcutsEnabled: false,
-      mediaControlEnabled: false,
-      visibilityShortcut: '\\',
-      stopGenerationShortcut: 'Ctrl+Shift+Delete',
-    };
+    let settings = desktopSettings();
     const store = {
       get: async () => ({ ...settings }),
       set: async (next: DesktopIntegrationSettings) => {
@@ -160,12 +205,7 @@ describe('desktop integration boundaries', () => {
 
     await service.initialize();
     expect(registrations.size).toBe(0);
-    await service.setSettings({
-      globalShortcutsEnabled: true,
-      mediaControlEnabled: false,
-      visibilityShortcut: '\\',
-      stopGenerationShortcut: 'Ctrl+Shift+Delete',
-    });
+    await service.setSettings(desktopSettings({ globalShortcutsEnabled: true }));
     expect(registrations.size).toBe(0);
     service.setShortcutWindowFocused(true);
     registrations.get('\\')?.();
@@ -181,23 +221,59 @@ describe('desktop integration boundaries', () => {
     service.setShortcutWindowFocused(true);
     expect(registrations.has('\\')).toBe(true);
     expect(registrations.has('Ctrl+Shift+Delete')).toBe(true);
-    await service.setSettings({
-      globalShortcutsEnabled: false,
-      mediaControlEnabled: false,
-      visibilityShortcut: '\\',
-      stopGenerationShortcut: 'Ctrl+Shift+Delete',
-    });
+    await service.setSettings(desktopSettings());
     expect(unregistered).toEqual(['\\', 'Ctrl+Shift+Delete', '\\', 'Ctrl+Shift+Delete']);
     expect(registrations.size).toBe(0);
   });
 
+  it('starts the optional input monitor only when enabled and forwards its bounded events', async () => {
+    let settings = desktopSettings();
+    let starts = 0;
+    let stops = 0;
+    const forwarded: unknown[] = [];
+    const service = new DesktopIntegrationService(
+      {
+        get: async () => ({ ...settings }),
+        set: async (next: DesktopIntegrationSettings) => {
+          settings = { ...next };
+        },
+      } as unknown as DesktopIntegrationStore,
+      { register: () => true, unregister: () => undefined },
+      () => undefined,
+      undefined,
+      undefined,
+      {
+        start: async (monitorSettings, emit) => {
+          starts += 1;
+          expect(monitorSettings).toMatchObject({
+            inputOverlayKeys: ['W', 'A', 'S', 'D'],
+            inputOverlayMouseEnabled: true,
+          });
+          emit({ type: 'key', key: 'W', pressed: true });
+          return true;
+        },
+        stop: () => {
+          stops += 1;
+        },
+      },
+      (event) => forwarded.push(event),
+    );
+
+    await service.initialize();
+    expect(starts).toBe(0);
+    await expect(service.getStatus()).resolves.toMatchObject({ inputOverlayActive: false });
+
+    await service.setSettings(desktopSettings({ inputOverlayEnabled: true }));
+    expect(starts).toBe(1);
+    expect(forwarded).toEqual([{ type: 'key', key: 'W', pressed: true }]);
+    await expect(service.getStatus()).resolves.toMatchObject({ inputOverlayActive: true });
+
+    service.dispose();
+    expect(stops).toBe(3);
+  });
+
   it('routes enabled media actions through the bounded controller and blocks them when disabled', async () => {
-    let settings: DesktopIntegrationSettings = {
-      globalShortcutsEnabled: false,
-      mediaControlEnabled: false,
-      visibilityShortcut: '\\',
-      stopGenerationShortcut: 'Ctrl+Shift+Delete',
-    };
+    let settings = desktopSettings();
     const sent: string[] = [];
     const service = new DesktopIntegrationService(
       {
@@ -219,24 +295,75 @@ describe('desktop integration boundaries', () => {
 
     await service.initialize();
     await expect(service.sendMediaCommand('next')).resolves.toBe(false);
-    await service.setSettings({
-      globalShortcutsEnabled: false,
-      mediaControlEnabled: true,
-      visibilityShortcut: '\\',
-      stopGenerationShortcut: 'Ctrl+Shift+Delete',
-    });
+    await service.setSettings(desktopSettings({ mediaControlEnabled: true }));
     await expect(service.sendMediaCommand('previous')).resolves.toBe(true);
     await expect(service.sendMediaCommand('play-pause')).resolves.toBe(true);
     expect(sent).toEqual(['previous', 'play-pause']);
     await expect(service.getStatus()).resolves.toMatchObject({ media: { supported: true } });
   });
 
+  it('routes only fixed declarative actions', async () => {
+    let visibilityToggles = 0;
+    let generationStops = 0;
+    const service = new DesktopIntegrationService(
+      {
+        get: async () => desktopSettings(),
+        set: async () => undefined,
+      } as unknown as DesktopIntegrationStore,
+      { register: () => true, unregister: () => undefined },
+      () => {
+        visibilityToggles += 1;
+      },
+      undefined,
+      () => {
+        generationStops += 1;
+      },
+    );
+    await service.initialize();
+
+    await expect(service.triggerAction('toggle-visibility')).resolves.toBe(true);
+    await expect(service.triggerAction('stop-generation')).resolves.toBe(true);
+    await expect(service.triggerAction('shell-execute' as never)).resolves.toBe(false);
+    expect(visibilityToggles).toBe(1);
+    expect(generationStops).toBe(1);
+  });
+
+  it('enables registered widgets through fixed Main settings routes and preserves order', async () => {
+    let settings = desktopSettings();
+    const service = new DesktopIntegrationService(
+      {
+        get: async () => settings,
+        set: async (next: DesktopIntegrationSettings) => {
+          settings = { ...next, widgetOrder: [...next.widgetOrder] };
+        },
+      } as unknown as DesktopIntegrationStore,
+      { register: () => true, unregister: () => undefined },
+      () => undefined,
+    );
+    await service.initialize();
+
+    await service.setWidgetEnabled('media', true);
+    expect(settings).toMatchObject({ mediaControlEnabled: true, widgetOrder: ['media'] });
+    await service.setWidgetEnabled('input', true);
+    expect(settings).toMatchObject({
+      mediaControlEnabled: true,
+      inputOverlayEnabled: true,
+      widgetOrder: ['media', 'input'],
+    });
+    await service.setWidgetEnabled('media', false);
+    expect(settings).toMatchObject({ mediaControlEnabled: false, widgetOrder: ['input'] });
+  });
+
   it('maps only the three fixed media commands to the current Windows session methods', async () => {
     const invoked: string[] = [];
-    const controller = new WindowsMediaController('win32', async (method) => {
-      invoked.push(method);
-      return true;
-    });
+    const controller = new WindowsMediaController(
+      'win32',
+      async (method) => {
+        invoked.push(method);
+        return true;
+      },
+      async () => ({ supported: true }),
+    );
 
     await expect(controller.getState()).resolves.toEqual({ supported: true });
     await expect(controller.send('next')).resolves.toBe(true);
@@ -247,6 +374,67 @@ describe('desktop integration boundaries', () => {
       'TrySkipPreviousAsync',
       'TryTogglePlayPauseAsync',
     ]);
+  });
+
+  it('reads bounded current-track metadata from the Windows media session', async () => {
+    const controller = new WindowsMediaController(
+      'win32',
+      async () => true,
+      async () => ({
+        supported: true,
+        playing: true,
+        title: 'Test Track',
+        artist: 'Fake Artist',
+        source: 'fake.player',
+      }),
+    );
+
+    await expect(controller.getState()).resolves.toEqual({
+      supported: true,
+      playing: true,
+      title: 'Test Track',
+      artist: 'Fake Artist',
+      source: 'fake.player',
+    });
+    expect(
+      parseWindowsMediaStateOutput(
+        JSON.stringify({
+          supported: true,
+          playing: false,
+          title: `  Track\u0000${'x'.repeat(400)}  `,
+          artist: '  Fake\nArtist  ',
+          source: 'fake.player',
+        }),
+      ),
+    ).toEqual({
+      supported: true,
+      playing: false,
+      title: `Track ${'x'.repeat(294)}`,
+      artist: 'Fake Artist',
+      source: 'fake.player',
+    });
+    expect(
+      parseWindowsMediaStateOutput(
+        JSON.stringify({
+          supported: true,
+          playing: true,
+          title: '栀子花般的她',
+          artist: '中文歌手',
+        }),
+      ),
+    ).toMatchObject({ title: '栀子花般的她', artist: '中文歌手' });
+    expect(() => parseWindowsMediaStateOutput('{"supported":"yes"}')).toThrow();
+  });
+
+  it('queries only the Windows media-session read APIs without launching arbitrary programs', () => {
+    const script = buildWindowsMediaStateScript();
+    expect(script).toContain('GlobalSystemMediaTransportControlsSessionManager');
+    expect(script).toContain('TryGetMediaPropertiesAsync');
+    expect(script).toContain('GetPlaybackInfo');
+    expect(script).toContain('ConvertTo-Json -Compress');
+    expect(script).toContain('[Console]::OutputEncoding = $utf8Output');
+    expect(script).toContain('$OutputEncoding = $utf8Output');
+    expect(script).not.toContain('Start-Process');
   });
 
   it('enumerates Windows media sessions and uses only fixed media-key fallbacks', () => {
@@ -281,12 +469,7 @@ describe('desktop integration boundaries', () => {
   it('degrades a thrown global shortcut registration to an explicit failed status', async () => {
     const service = new DesktopIntegrationService(
       {
-        get: async () => ({
-          globalShortcutsEnabled: true,
-          mediaControlEnabled: false,
-          visibilityShortcut: '\\',
-          stopGenerationShortcut: 'Ctrl+Shift+Delete',
-        }),
+        get: async () => desktopSettings({ globalShortcutsEnabled: true }),
         set: async () => undefined,
       } as unknown as DesktopIntegrationStore,
       {
@@ -311,12 +494,7 @@ describe('desktop integration boundaries', () => {
     let calls = 0;
     const service = new DesktopIntegrationService(
       {
-        get: async () => ({
-          globalShortcutsEnabled: false,
-          mediaControlEnabled: true,
-          visibilityShortcut: '\\',
-          stopGenerationShortcut: 'Ctrl+Shift+Delete',
-        }),
+        get: async () => desktopSettings({ mediaControlEnabled: true }),
         set: async () => undefined,
       } as unknown as DesktopIntegrationStore,
       { register: () => true, unregister: () => undefined },
@@ -339,12 +517,7 @@ describe('desktop integration boundaries', () => {
   });
 
   it('re-registers a user-selected safe shortcut without keeping the old key', async () => {
-    let settings: DesktopIntegrationSettings = {
-      globalShortcutsEnabled: true,
-      mediaControlEnabled: false,
-      visibilityShortcut: '\\',
-      stopGenerationShortcut: 'Ctrl+Shift+Delete',
-    };
+    let settings = desktopSettings({ globalShortcutsEnabled: true });
     const registrations = new Set<string>();
     const unregistered: string[] = [];
     const service = new DesktopIntegrationService(

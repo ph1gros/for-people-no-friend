@@ -40,6 +40,11 @@ export interface CancelConversationInput {
   requestId: string;
 }
 
+export interface ContextualOpeningLineResult {
+  line: string;
+  emotion: CharacterEmotion;
+}
+
 export type StartConversationResult = { ok: true } | { ok: false; error: PublicLlmError };
 
 export type ConversationEvent =

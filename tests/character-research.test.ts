@@ -187,6 +187,177 @@ describe('M5.1 character research service', () => {
     expect(receivedSourceText).not.toContain('Azur Lane');
   });
 
+  it('combines general wiki evidence and keeps late personality and relationship sections', async () => {
+    let receivedSourceText = '';
+    const longLead = '常规剧情经历。'.repeat(1_200);
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.hostname === 'html.duckduckgo.com') {
+        return xmlResponse('<?xml version="1.0"?><rss><channel></channel></rss>');
+      }
+      if (url.searchParams.get('list') === 'search') {
+        if (url.hostname === 'en.wikipedia.org') {
+          return jsonResponse({ query: { search: [] } });
+        }
+        return jsonResponse({
+          query: {
+            search:
+              url.hostname === 'moegirl.icu'
+                ? [
+                    {
+                      pageid: 30,
+                      title: '明日香',
+                      snippet:
+                        '星野明日香——《青涩宝贝》的角色。御岛明日香——《有你的小镇》的角色。惣流·明日香·兰格雷——《新世纪福音战士》的角色。',
+                    },
+                    {
+                      pageid: 31,
+                      title: '惣流·明日香·兰格雷',
+                      snippet: '《新世纪福音战士》中的角色。',
+                    },
+                  ]
+                : [
+                    {
+                      pageid: 32,
+                      title: '惣流·明日香·兰格雷',
+                      snippet: '《新世纪福音战士》中的角色。',
+                    },
+                  ],
+          },
+        });
+      }
+      if (url.hostname === 'en.wikipedia.org') {
+        return jsonResponse({ query: { pages: [{ title: '明日香', missing: true }] } });
+      }
+      const isRegional = url.hostname === 'moegirl.icu';
+      if (isRegional && url.searchParams.has('exintro')) {
+        return jsonResponse({
+          query: {
+            pages: [
+              {
+                pageid: 30,
+                title: '明日香',
+                fullurl: 'https://moegirl.icu/明日香',
+                extract:
+                  '星野明日香——《青涩宝贝》的角色。御岛明日香——《有你的小镇》的角色。惣流·明日香·兰格雷——《新世纪福音战士》的角色。',
+              },
+            ],
+          },
+        });
+      }
+      if (!isRegional && url.searchParams.has('exintro')) {
+        return jsonResponse({ query: { pages: [{ title: '明日香', missing: true }] } });
+      }
+      const extract = isRegional
+        ? `惣流·明日香·兰格雷是《新世纪福音战士》中的角色。${longLead}\n性格\n骄傲好胜，外表强势但渴望认可。\n人物关系\n与碇真嗣既竞争又互相在意。`
+        : `明日香是《新世纪福音战士》中的驾驶员。${longLead}\n说话方式\n表达直接，常以嘲讽掩盖不安。\n关系\n与绫波零长期处于对立状态。`;
+      return jsonResponse({
+        query: {
+          pages: [
+            {
+              pageid: isRegional ? 31 : 32,
+              title: '惣流·明日香·兰格雷',
+              fullurl: `https://${url.hostname}/wiki/${encodeURIComponent('惣流·明日香·兰格雷')}`,
+              extract,
+            },
+          ],
+        },
+      });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch, {
+      generateCharacterLore: vi.fn(async (input) => {
+        receivedSourceText = input.sourceText;
+        return {
+          personality: '骄傲好胜，外表强势但渴望认可。',
+          relationships: ['碇真嗣：既竞争又互相在意', '绫波零：长期对立'],
+          speechStyle: '表达直接，常以嘲讽掩盖不安。',
+        };
+      }),
+    });
+
+    const candidate = (
+      await service.search('search_asuka_cross_source', '明日香', '新世纪福音战士')
+    )[0]!;
+    const draft = await service.buildDraft('draft_asuka_cross_source', candidate.id);
+
+    expect(candidate.name).toBe('惣流·明日香·兰格雷');
+    expect(receivedSourceText).toContain('骄傲好胜');
+    expect(receivedSourceText).toContain('碇真嗣');
+    expect(receivedSourceText).toContain('表达直接');
+    expect(receivedSourceText).toContain('绫波零');
+    expect(draft.lore.sources).toEqual([
+      expect.objectContaining({ siteName: '萌娘百科' }),
+      expect.objectContaining({ siteName: '中文维基百科' }),
+    ]);
+    expect(draft.lore.personality).toContain('渴望认可');
+    expect(draft.lore.relationships).toHaveLength(2);
+    expect(draft.lore.speechStyle).toContain('嘲讽掩盖不安');
+  });
+
+  it('accepts a surname-prefixed full character name for an ambiguous short name', async () => {
+    const fetcher = vi.fn(async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      if (url.searchParams.get('list') === 'search') {
+        expect(url.searchParams.get('srlimit')).toBe('8');
+        return jsonResponse({
+          query: {
+            search:
+              url.hostname === 'moegirl.icu'
+                ? [
+                    ...Array.from({ length: 4 }, (_, index) => ({
+                      pageid: 35 + index,
+                      title: `蔚蓝档案/资料${index + 1}`,
+                      snippet: '作品资料页中提到了爱丽丝，但不是角色个人页面。',
+                    })),
+                    {
+                      pageid: 40,
+                      title: '爱丽丝',
+                      snippet:
+                        '爱丽丝可以指《东方Project旧作》的角色，也可以指《蔚蓝档案》的天童爱丽丝或其他同名角色。',
+                    },
+                    {
+                      pageid: 41,
+                      title: '天童爱丽丝',
+                      snippet: '天童爱丽丝是游戏《蔚蓝档案》中游戏开发部的角色。',
+                    },
+                  ]
+                : [],
+          },
+        });
+      }
+      if (url.searchParams.has('exintro')) {
+        return jsonResponse({
+          query: {
+            pages:
+              url.hostname === 'moegirl.icu'
+                ? [
+                    {
+                      pageid: 40,
+                      title: '爱丽丝',
+                      fullurl: 'https://moegirl.icu/爱丽丝',
+                      extract:
+                        '爱丽丝可以指《东方Project旧作》的角色，也可以指《蔚蓝档案》的天童爱丽丝或其他同名角色。',
+                    },
+                  ]
+                : [{ title: '爱丽丝', missing: true }],
+          },
+        });
+      }
+      return jsonResponse({ query: { search: [] } });
+    });
+    const service = new CharacterResearchService(fetcher as typeof fetch);
+
+    await expect(
+      service.search('search_alice_blue_archive', '爱丽丝', '蔚蓝档案'),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        name: '天童爱丽丝',
+        sourceWork: '蔚蓝档案',
+        sourceName: '萌娘百科',
+      }),
+    ]);
+  });
+
   it('rejects work-wide list pages and accepts a work-matched individual Wuthering Waves page', async () => {
     const fetcher = vi.fn(async (input: string | URL | Request) => {
       const url = new URL(input instanceof Request ? input.url : input.toString());

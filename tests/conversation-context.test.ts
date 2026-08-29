@@ -108,6 +108,8 @@ describe('conversation context assembly', () => {
     expect(casualPrompt).toContain('一次只给出当前角色的一次回应');
     expect(casualPrompt).toContain('禁止只在通用答案的开头或结尾添加角色称呼');
     expect(casualPrompt).toContain('通常用二至五句话直接回应');
+    expect(casualPrompt).toContain('默认只写角色实际说出口的话');
+    expect(casualPrompt).toContain('整条回复最多使用一处简短动作描写');
     expect(casualPrompt).toContain('不得把训练知识冒充为当前事实');
     expect(casualPrompt).toContain('存在多个合理含义');
     expect(casualPrompt).toContain('普通对话不能静默联网查词');
@@ -117,6 +119,24 @@ describe('conversation context assembly', () => {
     const lorePrompt = buildConversationSystemPrompt(profile, [], '', '你在原神里是什么身份？');
     expect(lorePrompt).toContain('较长的原作背景');
     expect(lorePrompt).toContain('与那维莱特共事');
+  });
+
+  it('prevents consecutive stage directions after the previous assistant reply used one', () => {
+    const prompt = buildConversationSystemPrompt(
+      DEFAULT_CHARACTER_PROFILE,
+      [],
+      '',
+      '你怎么了？',
+      '',
+      '',
+      [
+        { role: 'user', content: '夸夸你。' },
+        { role: 'assistant', content: '（手忙脚乱地摆手）才、才没有高兴。' },
+      ],
+    );
+
+    expect(prompt).toContain('上一条角色回复已经使用了动作或神态旁白');
+    expect(prompt).toContain('本轮不要再使用括号或星号动作描写');
   });
 
   it('keeps user-written profile fields alongside structured lore', () => {

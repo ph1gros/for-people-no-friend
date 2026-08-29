@@ -141,6 +141,99 @@ describe('conversation runtime integration', () => {
     database.close();
   });
 
+  it('generates a bounded contextual opening line without adding synthetic history', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-opening-line-test-'));
+    let capturedRequest: ChatRequest | undefined;
+    let invocations = 0;
+    const selection: ModelSelection = { providerId: 'openai-compatible', modelId: 'fake-model' };
+    const models = {
+      getConversationConfiguration: async () => ({ selection }),
+      streamConversation: async function* (request: ChatRequest): AsyncIterable<ChatEvent> {
+        invocations += 1;
+        capturedRequest = request;
+        yield {
+          type: 'text-delta',
+          text: '{"text":"（轻轻点头）上次说到团子的近况，今天它还好吗？","emotion":"happy","action":null}',
+        };
+        yield { type: 'finish', reason: 'stop' };
+      },
+    } as unknown as ModelRuntime;
+    const database = new DeskpetDatabase(directory);
+    const history = new ConversationStore(database);
+    await history.append(
+      {
+        id: 'opening-user',
+        role: 'user',
+        content: '团子今天终于肯好好吃饭了。',
+        createdAt: 1,
+        status: 'complete',
+      },
+      KALTSIT_CHARACTER_PROFILE.memoryNamespace,
+    );
+    await history.append(
+      {
+        id: 'opening-assistant',
+        role: 'assistant',
+        content: '这至少说明情况正在改善，继续观察。',
+        createdAt: 2,
+        status: 'complete',
+      },
+      KALTSIT_CHARACTER_PROFILE.memoryNamespace,
+    );
+    const memories = {
+      getConversationContext: async () => ({
+        summary: '用户最近在照顾宠物团子。',
+        memories: [],
+      }),
+    } as unknown as MemoryService;
+    const runtime = new ConversationRuntime(
+      models,
+      new CharacterProfileStore(directory),
+      history,
+      memories,
+    );
+
+    const result = await runtime.generateContextualOpeningLine();
+
+    expect(result).toEqual({ line: '上次说到团子的近况，今天它还好吗？', emotion: 'happy' });
+    expect(capturedRequest?.maxOutputTokens).toBe(160);
+    expect(capturedRequest?.timeoutMs).toBe(15_000);
+    expect(capturedRequest?.messages).toEqual([
+      { role: 'user', content: '团子今天终于肯好好吃饭了。' },
+      { role: 'assistant', content: '这至少说明情况正在改善，继续观察。' },
+      {
+        role: 'user',
+        content: '[应用启动事件] 请自然延续此前相处，但不要假装用户刚刚说了新内容。',
+      },
+    ]);
+    expect(capturedRequest?.systemPrompt).toContain('用户最近在照顾宠物团子');
+    expect(capturedRequest?.systemPrompt).toContain('不要逐字复述历史');
+    expect(await history.list(100, KALTSIT_CHARACTER_PROFILE.memoryNamespace)).toHaveLength(2);
+    expect(await runtime.generateContextualOpeningLine()).toBeUndefined();
+    expect(invocations).toBe(1);
+    database.close();
+  });
+
+  it('does not invoke the model for a contextual opening line without history', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-empty-opening-line-test-'));
+    let invoked = false;
+    const models = {
+      getConversationConfiguration: async () => ({
+        selection: { providerId: 'openai-compatible', modelId: 'fake-model' },
+      }),
+      streamConversation: async function* (): AsyncIterable<ChatEvent> {
+        invoked = true;
+        yield { type: 'finish', reason: 'stop' };
+      },
+    } as unknown as ModelRuntime;
+    const history = new ConversationStore(directory);
+    const runtime = new ConversationRuntime(models, new CharacterProfileStore(directory), history);
+
+    expect(await runtime.generateContextualOpeningLine()).toBeUndefined();
+    expect(invoked).toBe(false);
+    history.close();
+  });
+
   it('cancels the active generation through the bounded Main shortcut action', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-conversation-cancel-all-'));
     const models = {

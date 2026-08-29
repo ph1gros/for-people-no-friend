@@ -1,10 +1,17 @@
 import type { CharacterLore } from '../../core/character/character-lore';
-import type { CharacterResearchCandidate } from '../../core/character/character-research';
+import {
+  resolveAutomaticGlossarySourceWork,
+  type CharacterResearchCandidate,
+} from '../../core/character/character-research';
 import {
   DEFAULT_CHARACTER_PROFILE,
   type CharacterProfile,
 } from '../../core/conversation/character-profile';
 import { resolveCharacterDisplayName } from '../../core/conversation/character-identity';
+import {
+  resolveOpeningLineMode,
+  type OpeningLineContext,
+} from '../../core/conversation/opening-line';
 import type { PublicLlmError } from '../../core/llm/contracts';
 import type {
   MemoryCandidateRecord,
@@ -23,11 +30,19 @@ import type {
   ConversationEvent,
   ConversationMessage,
 } from '../../shared/conversation-ipc';
-import type { DesktopIntegrationStatus } from '../../shared/desktop-integration-ipc';
+import type {
+  DesktopInputActivityEvent,
+  DesktopIntegrationSettings,
+  DesktopIntegrationStatus,
+  DesktopWidgetId,
+  InputOverlayKey,
+  MouseInputButton,
+} from '../../shared/desktop-integration-ipc';
 import type { ConfigurableProviderId } from '../../shared/model-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import type { LoadedCharacter } from '../live2d/character-runtime';
 import { WindowScaleSync } from '../settings/window-scale-sync';
+import { desktopWidgetRegistry, type DesktopWidgetDefinition } from '../widgets/widget-registry';
 
 interface ChatControllerOptions {
   root: HTMLElement;
@@ -105,6 +120,65 @@ export const initializeChat = async ({
   shell.className = 'chat-shell';
   shell.setAttribute('aria-label', '文字对话');
 
+  const desktopOverlayStack = document.createElement('section');
+  desktopOverlayStack.className = 'desktop-overlay-stack';
+  desktopOverlayStack.setAttribute('aria-label', '桌面小组件显示');
+
+  const mediaOverlay = document.createElement('section');
+  mediaOverlay.className = 'media-overlay';
+  mediaOverlay.hidden = true;
+  mediaOverlay.setAttribute('aria-label', '当前媒体');
+  const mediaOverlayControls = document.createElement('div');
+  mediaOverlayControls.className = 'media-overlay__controls';
+  const previousMediaOverlayButton = createButton('◀', 'media-overlay__control');
+  previousMediaOverlayButton.setAttribute('aria-label', '上一首');
+  const playPauseMediaOverlayButton = createButton('⏸', 'media-overlay__control');
+  playPauseMediaOverlayButton.setAttribute('aria-label', '播放或暂停');
+  const nextMediaOverlayButton = createButton('▶', 'media-overlay__control');
+  nextMediaOverlayButton.setAttribute('aria-label', '下一首');
+  const mediaTrack = document.createElement('span');
+  mediaTrack.className = 'media-overlay__track';
+  mediaOverlayControls.append(
+    previousMediaOverlayButton,
+    playPauseMediaOverlayButton,
+    nextMediaOverlayButton,
+    mediaTrack,
+  );
+  mediaOverlay.append(mediaOverlayControls);
+
+  const inputOverlay = document.createElement('section');
+  inputOverlay.className = 'input-overlay';
+  inputOverlay.hidden = true;
+  inputOverlay.setAttribute('aria-label', '本机输入显示');
+  const inputOverlayLabel = document.createElement('small');
+  inputOverlayLabel.textContent = 'INPUT';
+  const inputOverlayKeys = document.createElement('div');
+  inputOverlayKeys.className = 'input-overlay__keys';
+  const inputOverlayKeyElements = new Map<InputOverlayKey, HTMLElement>();
+  const inputOverlayReleaseTimers = new Map<string, number>();
+  let mouseDirectionTimer: number | undefined;
+  const inputOverlayMouse = document.createElement('div');
+  inputOverlayMouse.className = 'input-overlay__mouse';
+  const mouseDirection = document.createElement('span');
+  mouseDirection.className = 'input-overlay__direction';
+  mouseDirection.textContent = '•';
+  const mouseButtons = new Map<MouseInputButton, HTMLElement>();
+  for (const [button, label] of [
+    ['left', 'L'],
+    ['middle', 'M'],
+    ['right', 'R'],
+  ] as const) {
+    const element = document.createElement('span');
+    element.className = 'input-overlay__mouse-button';
+    element.textContent = label;
+    element.dataset.button = button;
+    mouseButtons.set(button, element);
+    inputOverlayMouse.append(element);
+  }
+  inputOverlayMouse.append(mouseDirection);
+  inputOverlay.append(inputOverlayLabel, inputOverlayKeys, inputOverlayMouse);
+  desktopOverlayStack.append(mediaOverlay, inputOverlay);
+
   const launcherButton = createButton('>>>', 'chat-launcher');
   launcherButton.setAttribute('aria-label', '打开对话面板');
   launcherButton.title = '向右拉开对话面板';
@@ -141,10 +215,11 @@ export const initializeChat = async ({
   const historyButton = createButton('历史', 'chat-toolbar__button');
   const memoryButton = createButton('记忆', 'chat-toolbar__button');
   const debugButton = createButton('上下文', 'chat-toolbar__button');
+  const widgetsButton = createButton('小组件', 'chat-toolbar__button');
   const settingsButton = createButton('设置', 'chat-toolbar__button');
   recordsMenuItems.append(historyButton, memoryButton, debugButton);
   recordsMenu.append(recordsMenuButton, recordsMenuItems);
-  toolbar.append(recordsMenu, settingsButton);
+  toolbar.append(recordsMenu, widgetsButton, settingsButton);
 
   const subtitle = document.createElement('div');
   subtitle.className = 'subtitle-bubble';
@@ -381,16 +456,17 @@ export const initializeChat = async ({
   baseUrlInput.placeholder = '例如：http://127.0.0.1:11434/v1';
   const modelCollaborationPanel = document.createElement('section');
   modelCollaborationPanel.className = 'character-search';
+  const modelCollaborationHeading = document.createElement('label');
+  modelCollaborationHeading.className = 'settings-toggle-heading';
   const modelCollaborationTitle = document.createElement('strong');
   modelCollaborationTitle.textContent = '本地 / 远端模型协作';
   const allowRemoteComplexTasksInput = document.createElement('input');
   allowRemoteComplexTasksInput.type = 'checkbox';
-  const allowRemoteComplexTasksField = document.createElement('label');
-  allowRemoteComplexTasksField.className = 'settings-field';
-  allowRemoteComplexTasksField.append(
-    allowRemoteComplexTasksInput,
-    ' 允许复杂整理使用指定远端模型',
-  );
+  allowRemoteComplexTasksInput.setAttribute('aria-label', '允许复杂整理使用指定远端模型');
+  modelCollaborationHeading.append(modelCollaborationTitle, allowRemoteComplexTasksInput);
+  const modelCollaborationHint = document.createElement('small');
+  modelCollaborationHint.className = 'settings-hint settings-toggle-hint';
+  modelCollaborationHint.textContent = '允许复杂整理使用指定远端模型';
   const remoteProviderSelect = document.createElement('select');
   for (const [value, label] of [
     ['anthropic', 'Anthropic Claude'],
@@ -416,8 +492,8 @@ export const initializeChat = async ({
   modelCollaborationStatus.textContent =
     '资料检索对所有模型使用同一来源与超时策略。默认关闭时，角色整理、摘要和记忆候选都由当前模型处理，本地 Ollama 无需联网；开启后才会发送给指定远端模型，失败会回退当前模型。';
   modelCollaborationPanel.append(
-    modelCollaborationTitle,
-    allowRemoteComplexTasksField,
+    modelCollaborationHeading,
+    modelCollaborationHint,
     createField('远端提供商', remoteProviderSelect),
     createField('远端模型', remoteModelInput),
     createField('远端 API Key', remoteApiKeyInput),
@@ -462,6 +538,12 @@ export const initializeChat = async ({
   characterSearchStatus.className = 'settings-status';
   characterSearchStatus.setAttribute('role', 'status');
   characterSearchStatus.textContent = '可以联网查找公开资料；结果需要你确认后才会保存。';
+  const characterResearchProgress = document.createElement('div');
+  characterResearchProgress.className = 'character-research-progress';
+  characterResearchProgress.hidden = true;
+  characterResearchProgress.setAttribute('role', 'progressbar');
+  characterResearchProgress.setAttribute('aria-label', '联网角色资料处理进度');
+  characterResearchProgress.setAttribute('aria-valuetext', '正在处理');
   const characterSearchCandidates = document.createElement('div');
   characterSearchCandidates.className = 'character-search__candidates';
   const characterSearchActions = document.createElement('div');
@@ -470,7 +552,12 @@ export const initializeChat = async ({
   cancelCharacterSearchButton.hidden = true;
   const searchCharacterButton = createButton('联网查找', 'secondary-button');
   characterSearchActions.append(cancelCharacterSearchButton, searchCharacterButton);
-  characterSearch.append(characterSearchStatus, characterSearchCandidates, characterSearchActions);
+  characterSearch.append(
+    characterSearchStatus,
+    characterResearchProgress,
+    characterSearchCandidates,
+    characterSearchActions,
+  );
   const glossaryPanel = document.createElement('section');
   glossaryPanel.className = 'character-search glossary-sync';
   const glossaryStatus = document.createElement('p');
@@ -576,13 +663,17 @@ export const initializeChat = async ({
   modelCapabilityStatus.className = 'settings-status';
   const desktopIntegrationPanel = document.createElement('section');
   desktopIntegrationPanel.className = 'character-search';
+  const desktopIntegrationHeading = document.createElement('label');
+  desktopIntegrationHeading.className = 'settings-toggle-heading';
   const desktopIntegrationTitle = document.createElement('strong');
   desktopIntegrationTitle.textContent = '桌面快捷操作';
   const globalShortcutInput = document.createElement('input');
   globalShortcutInput.type = 'checkbox';
-  const globalShortcutField = document.createElement('label');
-  globalShortcutField.className = 'settings-field';
-  globalShortcutField.append(globalShortcutInput, ' 仅在桌宠窗口被选中时启用快捷键');
+  globalShortcutInput.setAttribute('aria-label', '仅在桌宠窗口被选中时启用快捷键');
+  desktopIntegrationHeading.append(desktopIntegrationTitle, globalShortcutInput);
+  const globalShortcutHint = document.createElement('small');
+  globalShortcutHint.className = 'settings-hint settings-toggle-hint';
+  globalShortcutHint.textContent = '仅在桌宠窗口被选中时启用快捷键';
   const visibilityShortcutInput = document.createElement('input');
   visibilityShortcutInput.maxLength = 64;
   visibilityShortcutInput.autocomplete = 'off';
@@ -603,31 +694,134 @@ export const initializeChat = async ({
   stopGenerationShortcutHint.textContent =
     '默认 Ctrl+Shift+Delete；只在桌宠窗口被选中时生效，不记录普通按键。';
   stopGenerationShortcutField.append(stopGenerationShortcutHint);
+  const inputOverlayEnabledInput = document.createElement('input');
+  inputOverlayEnabledInput.type = 'checkbox';
+  inputOverlayEnabledInput.setAttribute('aria-label', '启用本机输入显示');
+  const inputOverlayKeysInput = document.createElement('input');
+  inputOverlayKeysInput.maxLength = 256;
+  inputOverlayKeysInput.autocomplete = 'off';
+  inputOverlayKeysInput.spellcheck = false;
+  const inputOverlayKeysField = createField('显示按键', inputOverlayKeysInput);
+  const inputOverlayHint = document.createElement('small');
+  inputOverlayHint.className = 'settings-hint';
+  inputOverlayHint.textContent =
+    '默认 W, A, S, D；使用逗号添加最多 24 个按键。只显示白名单按键，不保存输入内容或轨迹，也不会发送给模型。';
+  inputOverlayKeysField.append(inputOverlayHint);
+  const inputOverlayMouseInput = document.createElement('input');
+  inputOverlayMouseInput.type = 'checkbox';
+  const inputOverlayMouseField = document.createElement('label');
+  inputOverlayMouseField.className = 'settings-field';
+  inputOverlayMouseField.append(inputOverlayMouseInput, ' 显示鼠标三键和移动方向');
   const mediaControlInput = document.createElement('input');
   mediaControlInput.type = 'checkbox';
-  const mediaControlField = document.createElement('label');
-  mediaControlField.className = 'settings-field';
-  mediaControlField.append(mediaControlInput, ' 启用系统媒体控制');
+  mediaControlInput.setAttribute('aria-label', '启用系统媒体控制');
   const desktopIntegrationStatus = document.createElement('p');
   desktopIntegrationStatus.className = 'settings-status';
-  desktopIntegrationStatus.textContent = '窗口快捷键和系统媒体控制默认关闭。';
+  desktopIntegrationStatus.textContent = '窗口快捷键默认关闭。';
   const mediaActions = document.createElement('div');
-  mediaActions.className = 'settings-actions';
+  mediaActions.className = 'settings-actions widget-media-actions';
   const previousMediaButton = createButton('上一首', 'text-button');
   const playPauseMediaButton = createButton('播放 / 暂停', 'text-button');
   const nextMediaButton = createButton('下一首', 'text-button');
   mediaActions.append(previousMediaButton, playPauseMediaButton, nextMediaButton);
   let mediaCommandInFlight = false;
   let mediaControlsAvailable = false;
+  let mediaStatusRefreshInFlight = false;
   desktopIntegrationPanel.append(
-    desktopIntegrationTitle,
-    globalShortcutField,
+    desktopIntegrationHeading,
+    globalShortcutHint,
     visibilityShortcutField,
     stopGenerationShortcutField,
-    mediaControlField,
     desktopIntegrationStatus,
-    mediaActions,
   );
+  const widgetsPanel = document.createElement('section');
+  widgetsPanel.className = 'chat-drawer widgets-panel';
+  widgetsPanel.hidden = true;
+  const widgetsHeader = document.createElement('header');
+  widgetsHeader.className = 'chat-drawer__header';
+  const widgetsTitle = document.createElement('strong');
+  widgetsTitle.textContent = '小组件';
+  const closeWidgetsButton = createButton('关闭', 'text-button');
+  widgetsHeader.append(widgetsTitle, closeWidgetsButton);
+  const widgetsContent = document.createElement('div');
+  widgetsContent.className = 'widgets-panel__content';
+  const widgetsCatalog = document.createElement('div');
+  widgetsCatalog.className = 'widget-catalog';
+  let widgetOrder: DesktopWidgetId[] = [];
+  const createWidgetCatalogCard = (
+    definition: DesktopWidgetDefinition,
+  ): {
+    card: HTMLElement;
+    toggleButton: HTMLButtonElement;
+    settingsButton: HTMLButtonElement;
+  } => {
+    const card = document.createElement('article');
+    card.className = 'widget-catalog-card';
+    const icon = document.createElement('span');
+    icon.className = 'widget-catalog-card__icon';
+    icon.textContent = definition.iconText;
+    const copy = document.createElement('span');
+    copy.className = 'widget-catalog-card__copy';
+    const title = document.createElement('strong');
+    title.textContent = definition.title;
+    const description = document.createElement('small');
+    description.textContent = definition.description;
+    copy.append(title, description);
+    const actions = document.createElement('span');
+    actions.className = 'widget-catalog-card__actions';
+    const toggleButton = createButton('已关闭', 'widget-catalog-card__status');
+    toggleButton.title = `启用${definition.title}`;
+    const settingsButton = createButton('设置', 'widget-catalog-card__settings');
+    settingsButton.title = `${definition.title}的额外设置`;
+    actions.append(toggleButton, settingsButton);
+    card.append(icon, copy, actions);
+    return { card, toggleButton, settingsButton };
+  };
+  const widgetCards = new Map<DesktopWidgetId, ReturnType<typeof createWidgetCatalogCard>>();
+  for (const definition of desktopWidgetRegistry.list()) {
+    const card = createWidgetCatalogCard(definition);
+    widgetCards.set(definition.id, card);
+    widgetsCatalog.append(card.card);
+  }
+  const inputWidget = document.createElement('section');
+  inputWidget.className = 'widget-detail';
+  inputWidget.hidden = true;
+  const inputWidgetHeader = document.createElement('div');
+  inputWidgetHeader.className = 'widget-detail__header';
+  const backFromInputWidgetButton = createButton('返回', 'text-button');
+  const inputWidgetTitle = document.createElement('strong');
+  inputWidgetTitle.textContent = '输入显示';
+  inputWidgetHeader.append(backFromInputWidgetButton, inputWidgetTitle, inputOverlayEnabledInput);
+  inputWidget.append(inputWidgetHeader, inputOverlayKeysField, inputOverlayMouseField);
+  const mediaWidget = document.createElement('section');
+  mediaWidget.className = 'widget-detail';
+  mediaWidget.hidden = true;
+  const mediaWidgetHeader = document.createElement('div');
+  mediaWidgetHeader.className = 'widget-detail__header';
+  const backFromMediaWidgetButton = createButton('返回', 'text-button');
+  const mediaWidgetTitle = document.createElement('strong');
+  mediaWidgetTitle.textContent = '听歌控制';
+  mediaWidgetHeader.append(backFromMediaWidgetButton, mediaWidgetTitle, mediaControlInput);
+  mediaWidget.append(mediaWidgetHeader, mediaActions);
+  const widgetsStatus = document.createElement('p');
+  widgetsStatus.className = 'settings-status widgets-panel__status';
+  widgetsStatus.textContent = '输入显示和听歌控制默认关闭。';
+  widgetsContent.append(widgetsCatalog, inputWidget, mediaWidget, widgetsStatus);
+  widgetsPanel.append(widgetsHeader, widgetsContent);
+  const showWidgetView = (view: 'catalog' | DesktopWidgetId): void => {
+    widgetsCatalog.hidden = view !== 'catalog';
+    inputWidget.hidden = view !== 'input';
+    mediaWidget.hidden = view !== 'media';
+    widgetsTitle.textContent =
+      view === 'input' ? '小组件 · 输入显示' : view === 'media' ? '小组件 · 听歌控制' : '小组件';
+  };
+  for (const definition of desktopWidgetRegistry.list()) {
+    widgetCards
+      .get(definition.id)
+      ?.settingsButton.addEventListener('click', () => showWidgetView(definition.settingsView));
+  }
+  backFromInputWidgetButton.addEventListener('click', () => showWidgetView('catalog'));
+  backFromMediaWidgetButton.addEventListener('click', () => showWidgetView('catalog'));
   const settingsActions = document.createElement('div');
   settingsActions.className = 'settings-actions';
   const testButton = createButton('测试连接', 'secondary-button');
@@ -705,10 +899,11 @@ export const initializeChat = async ({
     historyPanel,
     memoryPanel,
     debugPanel,
+    widgetsPanel,
     settingsPanel,
   );
   shell.append(launcherButton, panel);
-  root.append(shell, actionDialog);
+  root.append(shell, desktopOverlayStack, actionDialog);
 
   const loreTextareas = [
     bioInput,
@@ -740,11 +935,15 @@ export const initializeChat = async ({
   let loreSources: CharacterLore['sources'] = [];
   let roleplayExampleSourceIds = new Map<string, string>();
   let activeCharacterResearchId: string | undefined;
+  let activeGlossarySyncWork: string | undefined;
+  const automaticallyRequestedGlossaryWorks = new Set<string>();
   let activeRequestId: string | undefined;
   let activeReply = '';
   let panelExpanded = false;
   let panelView: 'chat' | 'settings' = 'chat';
   let openingLineShown = false;
+  let openingLineContext: OpeningLineContext = 'resume';
+  let openingLineGeneration = 0;
   let replyStateLabel = '随时可以开始聊天';
   let latestContextDebug: ConversationContextDebug | undefined;
 
@@ -798,18 +997,43 @@ export const initializeChat = async ({
     renderHistory();
   };
 
-  const showOpeningLineIfReady = (): void => {
-    if (openingLineShown || !profile || !getCharacter()) return;
-    const openingLine =
-      profile.lore?.sampleLines?.find((line) => line.trim().length > 0)?.trim() ||
-      `${profile.userDisplayName || '你'}，我在。`;
-    openingLineShown = true;
+  const getDefaultOpeningLine = (): string =>
+    profile?.lore?.sampleLines?.find((line) => line.trim().length > 0)?.trim() ||
+    `${profile?.userDisplayName || '你'}，我在。`;
+
+  const displayOpeningLine = (line: string): void => {
     subtitle.hidden = false;
-    subtitle.textContent = openingLine;
+    subtitle.textContent = line;
     setReplyStatus('先和你说了一句');
   };
 
+  const showOpeningLineIfReady = async (): Promise<void> => {
+    if (openingLineShown || !profile || !getCharacter()) return;
+    const mode = resolveOpeningLineMode({
+      context: openingLineContext,
+      conversationMessages: messages.length,
+    });
+    const generation = ++openingLineGeneration;
+    openingLineShown = true;
+    openingLineContext = 'resume';
+    if (mode === 'default' || !api) {
+      displayOpeningLine(getDefaultOpeningLine());
+      return;
+    }
+
+    setReplyStatus('正在想起上次对话…');
+    const result = await api.generateContextualOpeningLine().catch(() => undefined);
+    if (generation !== openingLineGeneration || activeRequestId) return;
+    displayOpeningLine(result?.line ?? getDefaultOpeningLine());
+    if (result) {
+      void getCharacter()
+        ?.controller.respond(result.emotion)
+        .then(() => getCharacter()?.controller.state.set('idle'));
+    }
+  };
+
   const resetCharacterSessionView = (): void => {
+    openingLineGeneration += 1;
     openingLineShown = false;
     activeReply = '';
     latestContextDebug = undefined;
@@ -825,6 +1049,7 @@ export const initializeChat = async ({
   const refreshActiveCharacter = async (): Promise<void> => {
     if (!api) return;
     resetCharacterSessionView();
+    openingLineContext = 'character-refresh';
     messages = await api.getConversationHistory();
     await loadSettings();
     renderHistory();
@@ -979,6 +1204,7 @@ export const initializeChat = async ({
     historyPanel.hidden = true;
     memoryPanel.hidden = true;
     debugPanel.hidden = true;
+    widgetsPanel.hidden = true;
     settingsPanel.hidden = true;
     if (wasSettingsOpen && panelExpanded) setPanelExpanded(true, 'chat');
   };
@@ -1615,6 +1841,8 @@ export const initializeChat = async ({
   const setCharacterResearchBusy = (busy: boolean): void => {
     searchCharacterButton.disabled = busy;
     cancelCharacterSearchButton.hidden = !busy;
+    characterResearchProgress.hidden = !busy;
+    characterSearch.setAttribute('aria-busy', busy ? 'true' : 'false');
     for (const button of characterSearchCandidates.querySelectorAll('button')) {
       button.disabled = busy;
     }
@@ -1650,10 +1878,12 @@ export const initializeChat = async ({
           if (candidate.sourceWork) {
             loreSourceWorkInput.value = candidate.sourceWork;
             await loadGlossaryStatus(candidate.sourceWork);
+            void syncWorkGlossarySeparately(candidate.sourceWork, true);
           }
           const requestId = createRequestId('character_draft');
           activeCharacterResearchId = requestId;
           setCharacterResearchBusy(true);
+          characterResearchProgress.setAttribute('aria-label', '正在发散查找并整理角色资料');
           characterSearchStatus.textContent = `正在围绕“${candidate.name}”发散查找身份、背景、关系和台词资料，再生成扮演设定…`;
           try {
             const result = await api.buildCharacterDraft({
@@ -1728,6 +1958,43 @@ export const initializeChat = async ({
       : '';
   };
 
+  const syncWorkGlossarySeparately = async (
+    sourceWork: string,
+    automatic: boolean,
+  ): Promise<void> => {
+    if (!api) return;
+    const work = sourceWork.normalize('NFKC').trim();
+    if (!work) return;
+    const workKey = work.toLocaleLowerCase();
+    if (
+      activeGlossarySyncWork === workKey ||
+      (automatic && automaticallyRequestedGlossaryWorks.has(workKey))
+    ) {
+      return;
+    }
+    activeGlossarySyncWork = workKey;
+    if (automatic) automaticallyRequestedGlossaryWorks.add(workKey);
+    syncGlossaryButton.disabled = true;
+    glossaryStatus.textContent = `正在单独联网搜索“${work}”的社区词库；不会占用角色整理的模型上下文…`;
+    try {
+      const result = await api.syncWorkGlossary({ sourceWork: work });
+      glossaryStatus.textContent = result.message;
+      if (result.ok && loreSourceWorkInput.value.trim() === work) {
+        await loadGlossaryStatus(work);
+      } else if (!result.ok && automatic) {
+        automaticallyRequestedGlossaryWorks.delete(workKey);
+      }
+    } catch {
+      glossaryStatus.textContent = '作品词库联网同步失败；角色资料查找仍可继续。';
+      if (automatic) automaticallyRequestedGlossaryWorks.delete(workKey);
+    } finally {
+      if (activeGlossarySyncWork === workKey) {
+        activeGlossarySyncWork = undefined;
+        syncGlossaryButton.disabled = !loreSourceWorkInput.value.trim();
+      }
+    }
+  };
+
   const runCharacterSearch = async (): Promise<void> => {
     if (!api || activeCharacterResearchId) return;
     const name = characterNameInput.value.trim();
@@ -1741,7 +2008,7 @@ export const initializeChat = async ({
         title: '联网查找角色',
         message: sourceWork ? `查找“${name}”（${sourceWork}）？` : `查找“${name}”？`,
         details:
-          '角色名和已填写的作品名会发送给公开资料站点；作品留空时会从候选页正文识别并回填。查找结果只会生成本地草稿，点击总设置的“保存”后才会生效。',
+          '角色名和已填写的作品名会发送给公开资料站点；作品留空时会从候选页正文识别。作品词库会作为另一条独立网络任务同步，不与角色整理共用模型上下文。查找结果只会生成本地草稿，点击总设置的“保存”后才会生效。',
         confirmLabel: '开始查找',
       }))
     ) {
@@ -1750,8 +2017,10 @@ export const initializeChat = async ({
     const requestId = createRequestId('character_search');
     activeCharacterResearchId = requestId;
     setCharacterResearchBusy(true);
+    characterResearchProgress.setAttribute('aria-label', '正在查询公开角色资料');
     characterSearchCandidates.replaceChildren();
     characterSearchStatus.textContent = '正在查询公开角色资料…';
+    if (sourceWork) void syncWorkGlossarySeparately(sourceWork, true);
     try {
       const result = await api.searchCharacters({
         requestId,
@@ -1764,6 +2033,13 @@ export const initializeChat = async ({
         return;
       }
       renderCharacterCandidates(result.candidates);
+      const inferredGlossaryWork = resolveAutomaticGlossarySourceWork(
+        sourceWork,
+        result.candidates,
+      );
+      if (!sourceWork && inferredGlossaryWork) {
+        void syncWorkGlossarySeparately(inferredGlossaryWork, true);
+      }
     } catch {
       if (activeCharacterResearchId === requestId) {
         characterSearchStatus.textContent = '联网查询失败，请检查网络后重试。';
@@ -1776,9 +2052,121 @@ export const initializeChat = async ({
     }
   };
 
+  const clearInputOverlayTimers = (): void => {
+    for (const timer of inputOverlayReleaseTimers.values()) window.clearTimeout(timer);
+    inputOverlayReleaseTimers.clear();
+    if (mouseDirectionTimer !== undefined) window.clearTimeout(mouseDirectionTimer);
+    mouseDirectionTimer = undefined;
+  };
+
+  const displayInputOverlay = (settings: DesktopIntegrationSettings, active: boolean): void => {
+    clearInputOverlayTimers();
+    inputOverlayKeyElements.clear();
+    inputOverlayKeys.replaceChildren();
+    for (const key of settings.inputOverlayKeys) {
+      const element = document.createElement('kbd');
+      element.className = 'input-overlay__key';
+      element.textContent = key;
+      element.dataset.key = key;
+      inputOverlayKeyElements.set(key, element);
+      inputOverlayKeys.append(element);
+    }
+    for (const element of mouseButtons.values()) element.classList.remove('is-active');
+    mouseDirection.textContent = '•';
+    inputOverlayMouse.hidden = !settings.inputOverlayMouseEnabled;
+    inputOverlay.hidden = !settings.inputOverlayEnabled || !active;
+  };
+
+  const scheduleInputRelease = (id: string, release: () => void): void => {
+    const previous = inputOverlayReleaseTimers.get(id);
+    if (previous !== undefined) window.clearTimeout(previous);
+    inputOverlayReleaseTimers.set(
+      id,
+      window.setTimeout(() => {
+        release();
+        inputOverlayReleaseTimers.delete(id);
+      }, 1_500),
+    );
+  };
+
+  const handleDesktopInputActivity = (event: DesktopInputActivityEvent): void => {
+    if (inputOverlay.hidden) return;
+    if (event.type === 'key') {
+      const element = inputOverlayKeyElements.get(event.key);
+      if (!element) return;
+      const timerId = `key:${event.key}`;
+      element.classList.toggle('is-active', event.pressed);
+      if (event.pressed) {
+        scheduleInputRelease(timerId, () => element.classList.remove('is-active'));
+      } else {
+        const timer = inputOverlayReleaseTimers.get(timerId);
+        if (timer !== undefined) window.clearTimeout(timer);
+        inputOverlayReleaseTimers.delete(timerId);
+      }
+      return;
+    }
+    if (event.type === 'mouse-button') {
+      const element = mouseButtons.get(event.button);
+      if (!element) return;
+      const timerId = `mouse:${event.button}`;
+      element.classList.toggle('is-active', event.pressed);
+      if (event.pressed) {
+        scheduleInputRelease(timerId, () => element.classList.remove('is-active'));
+      } else {
+        const timer = inputOverlayReleaseTimers.get(timerId);
+        if (timer !== undefined) window.clearTimeout(timer);
+        inputOverlayReleaseTimers.delete(timerId);
+      }
+      return;
+    }
+    const glyphs = {
+      up: '↑',
+      'up-right': '↗',
+      right: '→',
+      'down-right': '↘',
+      down: '↓',
+      'down-left': '↙',
+      left: '←',
+      'up-left': '↖',
+    } as const;
+    mouseDirection.textContent = glyphs[event.direction];
+    mouseDirection.classList.add('is-active');
+    if (mouseDirectionTimer !== undefined) window.clearTimeout(mouseDirectionTimer);
+    mouseDirectionTimer = window.setTimeout(() => {
+      mouseDirection.textContent = '•';
+      mouseDirection.classList.remove('is-active');
+      mouseDirectionTimer = undefined;
+    }, 160);
+  };
+
+  const disposeDesktopInputActivity = api?.onDesktopInputActivity(handleDesktopInputActivity);
+
+  const displayMediaOverlay = (desktopStatus: DesktopIntegrationStatus): void => {
+    const visible =
+      desktopStatus.settings.mediaControlEnabled &&
+      desktopStatus.media.supported &&
+      Boolean(desktopStatus.media.title);
+    mediaOverlay.hidden = !visible;
+    mediaTrack.textContent = [desktopStatus.media.title, desktopStatus.media.artist]
+      .filter(Boolean)
+      .join(' — ');
+    mediaTrack.title = mediaTrack.textContent;
+    playPauseMediaOverlayButton.textContent = desktopStatus.media.playing ? '⏸' : '▶';
+    for (const button of [
+      previousMediaOverlayButton,
+      playPauseMediaOverlayButton,
+      nextMediaOverlayButton,
+    ]) {
+      button.disabled = !mediaControlsAvailable || mediaCommandInFlight;
+    }
+  };
+
   const displayDesktopIntegrationStatus = (desktopStatus: DesktopIntegrationStatus): void => {
     globalShortcutInput.checked = desktopStatus.settings.globalShortcutsEnabled;
     mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
+    inputOverlayEnabledInput.checked = desktopStatus.settings.inputOverlayEnabled;
+    inputOverlayMouseInput.checked = desktopStatus.settings.inputOverlayMouseEnabled;
+    inputOverlayKeysInput.value = desktopStatus.settings.inputOverlayKeys.join(', ');
     visibilityShortcutInput.value = desktopStatus.settings.visibilityShortcut;
     stopGenerationShortcutInput.value = desktopStatus.settings.stopGenerationShortcut;
     mediaControlsAvailable =
@@ -1786,6 +2174,24 @@ export const initializeChat = async ({
     previousMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
     playPauseMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
     nextMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
+    for (const definition of desktopWidgetRegistry.list()) {
+      const card = widgetCards.get(definition.id);
+      if (!card) continue;
+      const state = definition.getCardState(desktopStatus);
+      card.toggleButton.textContent = state.label;
+      card.toggleButton.title = state.enabled
+        ? `关闭${definition.title}`
+        : `按默认设置启用${definition.title}`;
+      card.toggleButton.classList.toggle('is-active', state.active);
+    }
+    widgetOrder = [...desktopStatus.settings.widgetOrder];
+    const overlays: Record<DesktopWidgetId, HTMLElement> = {
+      input: inputOverlay,
+      media: mediaOverlay,
+    };
+    for (const widget of widgetOrder) {
+      desktopOverlayStack.append(overlays[widget]);
+    }
     const shortcutMessage = desktopStatus.settings.globalShortcutsEnabled
       ? desktopStatus.shortcutRegistered
         ? desktopStatus.stopGenerationShortcutRegistered
@@ -1795,11 +2201,35 @@ export const initializeChat = async ({
       : '窗口隐藏快捷键未启用';
     const mediaMessage = desktopStatus.settings.mediaControlEnabled
       ? desktopStatus.media.supported
-        ? '系统媒体控制已启用'
+        ? desktopStatus.media.title
+          ? `${desktopStatus.media.playing === true ? '正在播放' : desktopStatus.media.playing === false ? '已暂停' : '当前媒体'}：${desktopStatus.media.title}${desktopStatus.media.artist ? ` — ${desktopStatus.media.artist}` : ''}`
+          : '系统媒体控制已启用；当前未检测到可显示的曲目信息'
         : '当前系统不支持媒体控制'
       : '系统媒体控制未启用';
-    desktopIntegrationStatus.textContent = `${shortcutMessage}；${mediaMessage}。`;
+    const inputMessage = desktopStatus.settings.inputOverlayEnabled
+      ? desktopStatus.inputOverlayActive
+        ? `输入显示已开启（${desktopStatus.settings.inputOverlayKeys.join('、')}）`
+        : '输入显示启动失败；当前不会监听键盘或鼠标'
+      : '输入显示未启用';
+    displayInputOverlay(desktopStatus.settings, desktopStatus.inputOverlayActive);
+    displayMediaOverlay(desktopStatus);
+    desktopIntegrationStatus.textContent = `${shortcutMessage}。`;
+    widgetsStatus.textContent = `${mediaMessage}；${inputMessage}。`;
   };
+
+  const refreshMediaStatus = async (): Promise<void> => {
+    if (!api || mediaStatusRefreshInFlight) return;
+    mediaStatusRefreshInFlight = true;
+    try {
+      displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
+    } catch {
+      // The media widget is optional; keep the last safe state when refresh fails.
+    } finally {
+      mediaStatusRefreshInFlight = false;
+    }
+  };
+
+  const mediaStatusRefreshTimer = window.setInterval(() => void refreshMediaStatus(), 5_000);
 
   const loadSettings = async (): Promise<void> => {
     if (!api) {
@@ -1920,35 +2350,83 @@ export const initializeChat = async ({
 
   const saveDesktopIntegrationSettings = async (): Promise<void> => {
     if (!api) return;
+    const inputKeys = inputOverlayKeysInput.value
+      .split(/[,，\n]+/u)
+      .map((key) => key.trim())
+      .filter(Boolean);
+    const widgetEnabled: Record<DesktopWidgetId, boolean> = {
+      input: inputOverlayEnabledInput.checked,
+      media: mediaControlInput.checked,
+    };
+    widgetOrder = widgetOrder.filter((widget) => widgetEnabled[widget]);
+    for (const widget of ['input', 'media'] as const) {
+      if (widgetEnabled[widget] && !widgetOrder.includes(widget)) widgetOrder.push(widget);
+    }
     const requestedSettings = {
       globalShortcutsEnabled: globalShortcutInput.checked,
       mediaControlEnabled: mediaControlInput.checked,
+      inputOverlayEnabled: inputOverlayEnabledInput.checked,
+      inputOverlayMouseEnabled: inputOverlayMouseInput.checked,
+      inputOverlayKeys: inputKeys,
+      widgetOrder,
       visibilityShortcut: visibilityShortcutInput.value.trim(),
       stopGenerationShortcut: stopGenerationShortcutInput.value.trim(),
     };
     globalShortcutInput.disabled = true;
     mediaControlInput.disabled = true;
+    inputOverlayEnabledInput.disabled = true;
+    inputOverlayMouseInput.disabled = true;
+    inputOverlayKeysInput.disabled = true;
+    for (const card of widgetCards.values()) card.toggleButton.disabled = true;
     visibilityShortcutInput.disabled = true;
     stopGenerationShortcutInput.disabled = true;
     desktopIntegrationStatus.textContent = '正在应用桌面快捷操作设置…';
+    widgetsStatus.textContent = '正在应用小组件设置…';
     try {
       await api.setDesktopIntegrationSettings({ settings: requestedSettings });
       displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
     } catch {
-      const failureMessage = '桌面快捷操作设置保存失败，请重试。';
+      const failureMessage = '桌面与小组件设置保存失败，请重试。';
       try {
         displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
         desktopIntegrationStatus.textContent = `${failureMessage}${desktopIntegrationStatus.textContent}`;
+        widgetsStatus.textContent = `${failureMessage}${widgetsStatus.textContent}`;
       } catch {
         desktopIntegrationStatus.textContent = failureMessage;
+        widgetsStatus.textContent = failureMessage;
       }
     } finally {
       globalShortcutInput.disabled = false;
       mediaControlInput.disabled = false;
+      inputOverlayEnabledInput.disabled = false;
+      inputOverlayMouseInput.disabled = false;
+      inputOverlayKeysInput.disabled = false;
+      for (const card of widgetCards.values()) card.toggleButton.disabled = false;
       visibilityShortcutInput.disabled = false;
       stopGenerationShortcutInput.disabled = false;
     }
   };
+
+  const toggleWidget = async (widget: DesktopWidgetId): Promise<void> => {
+    if (!api) return;
+    const enabled =
+      widget === 'input' ? inputOverlayEnabledInput.checked : mediaControlInput.checked;
+    for (const card of widgetCards.values()) card.toggleButton.disabled = true;
+    widgetsStatus.textContent = enabled ? '正在关闭小组件…' : '正在启用小组件…';
+    try {
+      await api.setDesktopWidgetEnabled({ widgetId: widget, enabled: !enabled });
+      displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
+    } catch {
+      widgetsStatus.textContent = '小组件状态切换失败，请重试。';
+    } finally {
+      for (const card of widgetCards.values()) card.toggleButton.disabled = false;
+    }
+  };
+  for (const definition of desktopWidgetRegistry.list()) {
+    widgetCards
+      .get(definition.id)
+      ?.toggleButton.addEventListener('click', () => void toggleWidget(definition.id));
+  }
 
   clearLoreButton.addEventListener('click', () => {
     clearLoreEditor();
@@ -1975,38 +2453,44 @@ export const initializeChat = async ({
         return;
       }
       syncGlossaryButton.disabled = true;
-      glossaryStatus.textContent = '正在联网搜索并核对多个公开来源…';
-      const result = await api.syncWorkGlossary({ sourceWork });
-      glossaryStatus.textContent = result.message;
-      if (result.ok) await loadGlossaryStatus(sourceWork);
-      else syncGlossaryButton.disabled = false;
+      await syncWorkGlossarySeparately(sourceWork, false);
     })();
   });
+  const mediaControlButtons = [
+    previousMediaButton,
+    playPauseMediaButton,
+    nextMediaButton,
+    previousMediaOverlayButton,
+    playPauseMediaOverlayButton,
+    nextMediaOverlayButton,
+  ];
   for (const [button, command] of [
     [previousMediaButton, 'previous'],
     [playPauseMediaButton, 'play-pause'],
     [nextMediaButton, 'next'],
+    [previousMediaOverlayButton, 'previous'],
+    [playPauseMediaOverlayButton, 'play-pause'],
+    [nextMediaOverlayButton, 'next'],
   ] as const) {
     button.addEventListener('click', () => {
       void (async () => {
         if (!api || mediaCommandInFlight) return;
         mediaCommandInFlight = true;
-        previousMediaButton.disabled = true;
-        playPauseMediaButton.disabled = true;
-        nextMediaButton.disabled = true;
-        desktopIntegrationStatus.textContent = '正在控制当前媒体会话…';
+        for (const control of mediaControlButtons) control.disabled = true;
+        widgetsStatus.textContent = '正在控制当前媒体会话…';
         try {
           const handled = await api.sendMediaCommand({ command });
-          desktopIntegrationStatus.textContent = handled
+          widgetsStatus.textContent = handled
             ? '媒体指令已发送到当前活动会话。'
             : '当前没有可控制的活动媒体会话，未执行操作。';
         } catch {
-          desktopIntegrationStatus.textContent = '媒体控制失败，桌宠和聊天仍可继续。';
+          widgetsStatus.textContent = '媒体控制失败，桌宠和聊天仍可继续。';
         } finally {
           mediaCommandInFlight = false;
-          previousMediaButton.disabled = !mediaControlsAvailable;
-          playPauseMediaButton.disabled = !mediaControlsAvailable;
-          nextMediaButton.disabled = !mediaControlsAvailable;
+          for (const control of mediaControlButtons) {
+            control.disabled = !mediaControlsAvailable;
+          }
+          await refreshMediaStatus();
         }
       })();
     });
@@ -2015,6 +2499,15 @@ export const initializeChat = async ({
     void saveDesktopIntegrationSettings();
   });
   mediaControlInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
+  inputOverlayEnabledInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
+  inputOverlayMouseInput.addEventListener('change', () => {
+    void saveDesktopIntegrationSettings();
+  });
+  inputOverlayKeysInput.addEventListener('change', () => {
     void saveDesktopIntegrationSettings();
   });
   visibilityShortcutInput.addEventListener('change', () => {
@@ -2073,6 +2566,22 @@ export const initializeChat = async ({
     debugPanel.hidden = !willOpen;
     if (willOpen) renderContextDebug();
   });
+  widgetsButton.addEventListener('click', () => {
+    const willOpen = widgetsPanel.hidden;
+    closeDrawers();
+    widgetsPanel.hidden = !willOpen;
+    setPanelExpanded(true, 'chat');
+    if (willOpen) showWidgetView('catalog');
+    if (willOpen && api) {
+      widgetsStatus.textContent = '正在读取小组件状态…';
+      void api
+        .getDesktopIntegrationStatus()
+        .then(displayDesktopIntegrationStatus)
+        .catch(() => {
+          widgetsStatus.textContent = '无法读取小组件状态，聊天仍可继续。';
+        });
+    }
+  });
   settingsButton.addEventListener('click', () => {
     const willOpen = settingsPanel.hidden;
     closeDrawers();
@@ -2086,9 +2595,10 @@ export const initializeChat = async ({
   closeHistoryButton.addEventListener('click', closeDrawers);
   closeMemoryButton.addEventListener('click', closeDrawers);
   closeDebugButton.addEventListener('click', closeDrawers);
+  closeWidgetsButton.addEventListener('click', closeDrawers);
   closeSettingsButton.addEventListener('click', closeDrawers);
   launcherButton.addEventListener('click', () => {
-    showOpeningLineIfReady();
+    void showOpeningLineIfReady();
     setPanelExpanded(true, 'chat');
   });
   collapseButton.addEventListener('click', () => {
@@ -2334,6 +2844,7 @@ export const initializeChat = async ({
     }
     closeDrawers();
     activeRequestId = createRequestId('chat');
+    openingLineGeneration += 1;
     activeReply = '';
     input.value = '';
     subtitle.hidden = false;
@@ -2366,9 +2877,16 @@ export const initializeChat = async ({
 
   if (api) {
     try {
-      [messages] = await Promise.all([api.getConversationHistory(), loadSettings()]);
+      const [loadedMessages, loadedMemories] = await Promise.all([
+        api.getConversationHistory(),
+        api.listMemories().catch(() => []),
+        loadSettings(),
+      ]);
+      messages = loadedMessages;
+      memoryRecords = loadedMemories;
       renderHistory();
       updateIdentity();
+      void showOpeningLineIfReady();
     } catch {
       subtitle.hidden = false;
       subtitle.textContent = '无法读取本地对话设置。';
@@ -2381,7 +2899,7 @@ export const initializeChat = async ({
 
   const handleCharacterLoaded = (): void => {
     updateIdentity();
-    showOpeningLineIfReady();
+    void showOpeningLineIfReady();
   };
   window.addEventListener('deskpet:character-loaded', handleCharacterLoaded);
 
@@ -2390,10 +2908,14 @@ export const initializeChat = async ({
       void api.cancelCharacterResearch({ requestId: activeCharacterResearchId });
     }
     disposeConversationListener?.();
+    disposeDesktopInputActivity?.();
+    clearInputOverlayTimers();
+    window.clearInterval(mediaStatusRefreshTimer);
     loreEditorResizeObserver.disconnect();
     windowScaleSync?.dispose();
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
     shell.remove();
+    desktopOverlayStack.remove();
   };
 };

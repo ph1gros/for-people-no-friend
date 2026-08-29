@@ -4,8 +4,10 @@ import { app, globalShortcut, net, protocol, safeStorage, type Tray } from 'elec
 
 import { CharacterPackageService } from './character/character-package-service';
 import { CharacterResearchService } from './character/character-research-service';
+import { SafeDiagnosticLog } from './diagnostics/safe-diagnostic-log';
 import { ConversationRuntime } from './conversation/conversation-runtime';
 import { DesktopIntegrationService } from './desktop/desktop-integration-service';
+import { NativeInputActivityMonitor } from './desktop/native-input-activity-monitor';
 import { WindowsMediaController } from './desktop/windows-media-controller';
 import { WorkGlossaryService } from './glossary/work-glossary-service';
 import { registerIpcHandlers } from './ipc/register-ipc-handlers';
@@ -22,8 +24,13 @@ import { ProviderConfigStore } from './storage/provider-config-store';
 import { createDeskpetTray } from './tray/create-tray';
 import { WindowManager } from './windows/window-manager';
 import { resolveBundledModelRoot } from './windows/window-assets';
+import { IPC_CHANNELS } from '../shared/ipc';
 
-app.setName('For People No Friend');
+const PRODUCT_NAME = 'For People No Friend';
+const WINDOWS_APP_USER_MODEL_ID = 'com.ph1gros.forpeoplenofriend';
+
+app.setName(PRODUCT_NAME);
+if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'deskpet-model',
@@ -76,7 +83,11 @@ if (!hasSingleInstanceLock) {
     });
     database = new DeskpetDatabase(userDataPath);
     const secrets = new SecretStore(userDataPath, safeStorage);
-    modelRuntime = new ModelRuntime(secrets, providerConfiguration);
+    modelRuntime = new ModelRuntime(
+      secrets,
+      providerConfiguration,
+      new SafeDiagnosticLog(userDataPath),
+    );
     memoryService = new MemoryService(
       database,
       modelRuntime,
@@ -103,6 +114,13 @@ if (!hasSingleInstanceLock) {
       () => windowManager?.toggleVisibility(),
       new WindowsMediaController(),
       () => conversationRuntime?.cancelAll(),
+      new NativeInputActivityMonitor(),
+      (event) => {
+        const window = windowManager?.getWindow();
+        if (window && !window.isDestroyed() && !window.webContents.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.desktopInputActivity, event);
+        }
+      },
     );
     await desktopIntegrations.initialize();
     registerIpcHandlers(

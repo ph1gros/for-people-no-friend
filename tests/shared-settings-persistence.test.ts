@@ -35,6 +35,10 @@ describe('shared settings persistence contract', () => {
     await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
       globalShortcutsEnabled: true,
       mediaControlEnabled: false,
+      inputOverlayEnabled: false,
+      inputOverlayMouseEnabled: true,
+      inputOverlayKeys: ['W', 'A', 'S', 'D'],
+      widgetOrder: [],
       visibilityShortcut: '\\',
       stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
@@ -54,6 +58,10 @@ describe('shared settings persistence contract', () => {
     await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
       globalShortcutsEnabled: true,
       mediaControlEnabled: false,
+      inputOverlayEnabled: false,
+      inputOverlayMouseEnabled: true,
+      inputOverlayKeys: ['W', 'A', 'S', 'D'],
+      widgetOrder: [],
       visibilityShortcut: 'Ctrl+Shift+]',
       stopGenerationShortcut: 'Ctrl+Shift+Delete',
     });
@@ -88,12 +96,20 @@ describe('shared settings persistence contract', () => {
     await new DesktopIntegrationStore(directory).set({
       globalShortcutsEnabled: true,
       mediaControlEnabled: true,
+      inputOverlayEnabled: true,
+      inputOverlayMouseEnabled: true,
+      inputOverlayKeys: ['W', 'A', 'S', 'D', 'Space'],
+      widgetOrder: ['media', 'input'],
       visibilityShortcut: 'Ctrl+Shift+]',
       stopGenerationShortcut: 'Ctrl+Alt+Backspace',
     });
     await expect(new DesktopIntegrationStore(directory).get()).resolves.toEqual({
       globalShortcutsEnabled: true,
       mediaControlEnabled: true,
+      inputOverlayEnabled: true,
+      inputOverlayMouseEnabled: true,
+      inputOverlayKeys: ['W', 'A', 'S', 'D', 'Space'],
+      widgetOrder: ['media', 'input'],
       visibilityShortcut: 'Ctrl+Shift+]',
       stopGenerationShortcut: 'Ctrl+Alt+Backspace',
     });

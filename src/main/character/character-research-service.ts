@@ -46,6 +46,7 @@ interface CharacterSourceDefinition {
 
 interface CandidateRecord {
   candidate: CharacterResearchCandidate;
+  requestedName: string;
   source?: CharacterSourceDefinition;
   pageId?: number;
   title: string;
@@ -193,6 +194,7 @@ const SUPPLEMENTAL_HOSTS = [
   'youtube.com',
   'youtu.be',
   'nicovideo.jp',
+  'evageeks.org',
 ] as const;
 const DIALOGUE_MARKER =
   /(台词|臺詞|语音|語音|对白|對白|名言|セリフ|ボイス|quotes?|voice\s*lines?)/iu;
@@ -276,7 +278,10 @@ const isLikelyDisambiguationPage = (title: string, name: string, description: st
   const variants = description.match(
     new RegExp(`${escapeRegExp(name.trim())}\\s*[（(][^）)]{1,100}[）)]`, 'giu'),
   );
-  return (variants?.length ?? 0) >= 2;
+  if ((variants?.length ?? 0) >= 2) return true;
+  const repeatedNames = description.match(new RegExp(escapeRegExp(name.trim()), 'giu'));
+  const referencedWorks = description.match(/《[^《》\n]{1,120}》/gu);
+  return (repeatedNames?.length ?? 0) >= 3 && (referencedWorks?.length ?? 0) >= 2;
 };
 
 const isPlausibleCharacterCandidateTitle = (title: string, name: string): boolean => {
@@ -291,6 +296,17 @@ const isPlausibleCharacterCandidateTitle = (title: string, name: string): boolea
     return false;
   }
   if (normalizedTitle === normalizedName) return true;
+  if (
+    normalizedTitle.includes(normalizedName) &&
+    (/[·・]/u.test(title) ||
+      (/^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]{3,12}$/u.test(title) &&
+        normalizedTitle.endsWith(normalizedName) &&
+        [...normalizedTitle].length - [...normalizedName].length >= 1 &&
+        [...normalizedTitle].length - [...normalizedName].length <= 4)) &&
+    !/(的|之)(?:道具|信物|技能|皮肤|模型|列表)/u.test(title)
+  ) {
+    return true;
+  }
   if (!normalizedTitle.startsWith(normalizedName)) return false;
 
   // Alternate encyclopedia titles may append a work or site label, for example
@@ -364,6 +380,7 @@ const describeWebSource = (url: URL): { label: string; priority: number } => {
   if (matches('biligame.com')) return { label: 'BWIKI', priority: 43 };
   if (matches('huijiwiki.com')) return { label: '灰机 Wiki', priority: 42 };
   if (matches('gamekee.com')) return { label: 'GameKee Wiki', priority: 41 };
+  if (matches('evageeks.org')) return { label: '作品专题 Wiki', priority: 40 };
   if (matches('moegirl.org.cn')) return { label: '萌娘百科', priority: 35 };
   if (matches('baike.baidu.com')) return { label: '百度百科', priority: 34 };
   if (matches('wikipedia.org')) return { label: 'Wikipedia', priority: 30 };
@@ -371,18 +388,89 @@ const describeWebSource = (url: URL): { label: string; priority: number } => {
 };
 
 const selectRelevantText = (text: string, characterName: string, kind: WebSearchResult['kind']) => {
-  const normalized = text.replace(/\s+/g, ' ').trim();
   const markers =
     kind === 'dialogue'
       ? [characterName, '台词', '语音', '对白', '名言', 'セリフ', 'ボイス']
       : kind === 'address'
         ? [characterName, '称呼', '叫法', '玩家', '主角', '呼び方', '主人公', 'プレイヤー']
         : [characterName, '身份', '背景', '性格', '关系', '角色'];
-  const positions = markers
-    .map((marker) => normalized.toLowerCase().indexOf(marker.toLowerCase()))
-    .filter((position) => position >= 0);
-  const focus = positions.length > 0 ? Math.min(...positions) : 0;
-  return normalized.slice(Math.max(0, focus - 250), focus + 2_250);
+  return selectEvidenceText(text, markers, 2_500);
+};
+
+const PROFILE_EVIDENCE_MARKERS = [
+  '性格',
+  '人格',
+  '人物关系',
+  '重要关系',
+  '关系',
+  '称呼',
+  '说话方式',
+  '语言风格',
+  '口头禅',
+  '台词',
+  '对白',
+  '语音',
+  'personality',
+  'relationships',
+  'relations',
+  'speech',
+  'quotes',
+  'voice lines',
+] as const;
+
+const selectEvidenceText = (text: string, markers: readonly string[], maximum: number): string => {
+  const cleaned = text
+    .replace(/\r\n?/gu, '\n')
+    .replace(/[ \t]+/gu, ' ')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim();
+  if (cleaned.length <= maximum) return cleaned;
+
+  const normalized = cleaned.toLowerCase();
+  const ranges: Array<{ start: number; end: number }> = [
+    { start: 0, end: Math.min(cleaned.length, Math.max(160, Math.floor(maximum * 0.2))) },
+  ];
+  for (const marker of markers) {
+    const normalizedMarker = marker.toLowerCase();
+    let searchFrom = 0;
+    let matches = 0;
+    while (matches < 3) {
+      const position = normalized.indexOf(normalizedMarker, searchFrom);
+      if (position < 0) break;
+      ranges.push({
+        start: Math.max(0, position - 160),
+        end: Math.min(cleaned.length, position + Math.max(500, Math.floor(maximum * 0.34))),
+      });
+      searchFrom = position + normalizedMarker.length;
+      matches += 1;
+    }
+  }
+
+  const merged = ranges
+    .sort((left, right) => left.start - right.start)
+    .reduce<Array<{ start: number; end: number }>>((result, range) => {
+      const previous = result.at(-1);
+      if (previous && range.start <= previous.end + 80) {
+        previous.end = Math.max(previous.end, range.end);
+      } else {
+        result.push({ ...range });
+      }
+      return result;
+    }, []);
+  return merged
+    .map(({ start, end }) => cleaned.slice(start, end).trim())
+    .filter(Boolean)
+    .join('\n\n[…相关章节…]\n\n')
+    .slice(0, maximum);
+};
+
+const deduplicateResearchPages = (pages: ResearchPage[]): ResearchPage[] => {
+  const byUrl = new Map<string, ResearchPage>();
+  for (const page of pages) {
+    const existing = byUrl.get(page.url);
+    if (!existing || page.extract.length > existing.extract.length) byUrl.set(page.url, page);
+  }
+  return [...byUrl.values()];
 };
 
 const sourceMatchesWork = (source: CharacterSourceDefinition, sourceWork: string): boolean => {
@@ -606,7 +694,7 @@ const selectSourceText = (pages: Array<{ title: string; extract: string }>): str
                 ? 300
                 : 500
         : Math.floor(MAX_SOURCE_TEXT_CHARACTERS / Math.max(1, pages.length));
-      const usefulText = page.extract
+      const normalizedExtract = page.extract
         .split(/\n\s*\n|\n(?=[A-Z][^\n]{0,50}:)/u)
         .map((part) => part.replace(/[ \t]+/g, ' ').trim())
         .filter(
@@ -614,8 +702,14 @@ const selectSourceText = (pages: Array<{ title: string; extract: string }>): str
             part.length >= 4 &&
             !/^(navigation|this article|operator\s+file|干员信息|目录|导航)\b/iu.test(part),
         )
-        .join('\n\n')
-        .slice(0, pageBudget);
+        .join('\n\n');
+      const usefulText = selectEvidenceText(
+        normalizedExtract,
+        /\/(file|dialogue|语音记录)$/iu.test(page.title) || DIALOGUE_MARKER.test(page.title)
+          ? ['台词', '对白', '语音', '称呼', 'dialogue', 'quotes', 'voice lines']
+          : PROFILE_EVIDENCE_MARKERS,
+        pageBudget,
+      );
       return usefulText ? `[source_${index + 1}] ${page.title}\n${usefulText}` : '';
     })
     .filter(Boolean)
@@ -695,26 +789,34 @@ export class CharacterResearchService {
       if (!record) {
         throw new Error('The selected character candidate has expired.');
       }
-      const [pages, supplementalPages] = await Promise.all([
+      const [pages, supplementalPages, crossSourcePages] = await Promise.all([
         this.fetchPages(record, signal),
         this.discoverSupplementalPages(record, signal).catch((error) => {
           if (signal.aborted) throw error;
           return [];
         }),
+        this.fetchCrossSourcePages(record, signal).catch((error) => {
+          if (signal.aborted) throw error;
+          return [];
+        }),
       ]);
-      const allPages = [...pages, ...supplementalPages];
-      if (allPages.length === 0) {
+      const selectedPages = deduplicateResearchPages([
+        ...pages,
+        ...supplementalPages,
+        ...crossSourcePages,
+      ]).slice(0, 8);
+      if (selectedPages.length === 0) {
         throw new Error('The selected character page is unavailable.');
       }
       const retrievedAt = Date.now();
-      const sources = allPages.slice(0, 8).map((page, index) => ({
+      const sources = selectedPages.map((page, index) => ({
         id: `source_${index + 1}`,
         title: page.title,
         url: page.url,
         siteName: page.siteName,
         retrievedAt,
       }));
-      const sourceText = selectSourceText(allPages);
+      const sourceText = selectSourceText(selectedPages);
       const fallback: Omit<CharacterLore, 'sources'> = {
         canonicalName: record.candidate.name,
         aliases: [],
@@ -867,7 +969,7 @@ export class CharacterResearchService {
       formatversion: '2',
       list: 'search',
       srsearch: query,
-      srlimit: '5',
+      srlimit: '8',
       srnamespace: '0',
     }).toString();
     const body = await this.fetchJson<MediaWikiSearchResponse>(url, source, signal);
@@ -912,7 +1014,15 @@ export class CharacterResearchService {
       });
       const candidate: CharacterResearchCandidate = {
         id: candidateId,
-        name: inferredWork && normalize(title) !== normalizedName ? name.trim() : title,
+        name:
+          normalize(title) !== normalizedName &&
+          isPlausibleCharacterCandidateTitle(title, name) &&
+          !parentheticalWorkForTitle(title, name, sourceWork) &&
+          !delimitedWorkForTitle(title, name)
+            ? title
+            : inferredWork && normalize(title) !== normalizedName
+              ? name.trim()
+              : title,
         sourceWork: inferredWork,
         description,
         sourceName: source.label,
@@ -935,6 +1045,7 @@ export class CharacterResearchService {
           score,
           record: {
             candidate,
+            requestedName: name.trim(),
             source,
             pageId: item.pageid,
             title,
@@ -1027,6 +1138,7 @@ export class CharacterResearchService {
                 ? `精确页面正文识别作品“${inferredWork}”`
                 : '精确页面与角色名匹配',
         },
+        requestedName: name.trim(),
         source,
         pageId: page.pageid,
         title,
@@ -1150,6 +1262,7 @@ export class CharacterResearchService {
           score: sourceDetails.priority * 10 - index * 2,
           record: {
             candidate,
+            requestedName: name.trim(),
             title: result.title,
             webResult: result,
             expiresAt: Date.now() + CANDIDATE_TTL_MS,
@@ -1356,6 +1469,26 @@ export class CharacterResearchService {
     return [...byTitle.values()].sort(
       (left, right) => Number(right.title === record.title) - Number(left.title === record.title),
     );
+  }
+
+  private async fetchCrossSourcePages(
+    record: CandidateRecord,
+    signal: AbortSignal,
+  ): Promise<ResearchPage[]> {
+    const sources = SOURCES.filter(
+      (source) => source.workHints.length === 0 && source.id !== record.source?.id,
+    );
+    const settled = await Promise.allSettled(
+      sources.map(async (source) => {
+        const [searched, exact] = await Promise.all([
+          this.searchSource(source, record.requestedName, record.candidate.sourceWork, signal),
+          this.lookupExactSource(source, record.requestedName, record.candidate.sourceWork, signal),
+        ]);
+        const best = exact ?? searched.sort((left, right) => right.score - left.score)[0];
+        return best ? this.fetchPages(best.record, signal) : [];
+      }),
+    );
+    return settled.flatMap((result) => (result.status === 'fulfilled' ? result.value : []));
   }
 
   private async fetchParsedPage(

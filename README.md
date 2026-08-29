@@ -29,7 +29,9 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
 - 作品名留空时从精确角色资料页识别并在确认候选后自动回填
+- 再次启动同一人格且已有对话时，由当前模型用最近几轮和相关已确认记忆生成一句简短关联开场；新人格、切换人格或无历史时使用角色卡默认开场
 - 仅在桌宠窗口被选中时生效的可配置显示/隐藏与停止生成快捷键
+- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；媒体悬浮条显示当前曲目及上一首、播放/暂停、下一首，输入展示按用户白名单显示按键（默认 WASD），并可显示鼠标三键和移动方向。现有组件使用[仓库内类型化注册器](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)，便于开发者或编码 AI 安全增加新组件，不在客户端加载外部插件
 
 ## 当前不包含
 
@@ -58,7 +60,7 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - V1.2 / M6：双版本各自完成带来源角色生成、资料检索、隔离与安全回退
 - V1.3：Live2D 深化角色表现、短期连续性、可信记忆与模型提供商支持
 - V1.4：版本化角色包、混合记忆、可选 Embedding/向量/关系索引，以及本地/远端模型透明协作
-- V1.5：受限快捷键、媒体播放控制、时间/空闲事件和声明式扩展接口
+- V1.5：受限快捷键、Windows 媒体控制、本机输入展示、角色连续开场和仓库内小组件代码接口
 - V1.6：本地/远端 ASR、TTS、VAD、打断、字幕与角色口型/说话动画
 - 后续：更多渲染路线、只读视觉与受控 Agent 能力
 
@@ -74,19 +76,49 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 | [RoleLLM](https://aclanthology.org/2024.findings-acl.878/)                  | 角色资料、情境知识、表达风格分层与固定角色评测               |
 | [Soullink Emotion SDK](https://github.com/nanlingyin/soullink-emotion-sdk)  | 连续情绪、动作分层、模型校准与表现失败回退                   |
 | [BongoCat](https://github.com/ayangweb/BongoCat)                            | 透明桌宠交互、输入事件到动作的映射、自定义模型与离线运行     |
+| [OBS Input Overlay](https://github.com/univrsal/input-overlay)              | 可配置按键与鼠标状态叠层的交互和布局                         |
 | [EchoBot](https://github.com/KdaiP/EchoBot)                                 | Roleplay、Decision、Agent 分层、会话管理、模型接入与语音边界 |
 | [ZcChat2](https://github.com/Zao-chen/ZcChat2)                              | 表情、动作和粒子组合、角色资产组织、流式文本与语音演出       |
 | [Live2D Cubism Web Framework](https://github.com/Live2D/CubismWebFramework) | Cubism 模型加载、Motion、Expression、参数语义与资源生命周期  |
 
 更具体的采用与拒绝范围见 [开发路线中的开发参考](docs/POST_V1_ROADMAP.md#开发参考)。
 
+## 版本记录
+
+今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
+
+### V1.5.0
+
+**完成了什么**
+
+- 增加可配置的窗口显示/隐藏与停止生成快捷键，所有输入在 Main Process 再校验。
+- 增加 Windows 当前媒体会话读取与上一首、播放/暂停、下一首控制，并修复网易云音乐控制回退和中文曲名乱码。
+- 增加默认关闭的 WASD、自选按键、鼠标三键与八方向输入展示；不保存按键正文、坐标或输入历史。
+- 将输入展示和听歌控制整理为可独立启停、按开启顺序紧密排列的小组件，并提供仓库内类型化扩展指南。
+- 改进角色联网查找、关系字段补整和独立作品词库同步；再次启动已有历史的同一人格时，可生成一句承接近期对话与已确认记忆的短开场。
+- 统一应用、任务管理器和托盘图标与名称；Windows 便携包继续使用 ASAR，并只解包本机输入钩子的必要预编译文件以控制路径长度。
+
+**使用了什么**
+
+- Electron、TypeScript、Vite、Vitest、SQLite 与 Live2D 运行时继续组成桌面、界面、测试、记忆和角色表现基础。
+- Windows Global System Media Transport Controls 与固定系统媒体键回退负责媒体状态和三种受限控制。
+- `uiohook-napi` 只在用户明确开启输入展示时读取白名单按键、鼠标按键和粗粒度移动方向。
+- 角色查找继续由 Main Process 访问允许的公开资料源；模型结构化整理、作品词库同步和启动开场使用彼此独立且有界的任务。
+
+**参考了什么**
+
+- BongoCat：输入状态与桌宠交互的可视化思路。
+- OBS Input Overlay：可配置按键、鼠标状态和紧凑横向叠层布局。
+- AIRI、my-neuro、SillyTavern：上下文生命周期、长期陪伴、角色卡和连续对话的组织方式。
+- Live2D Cubism Web Framework：模型、Motion、Expression 与资源生命周期边界。
+
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环；V1.3 完成 Live2D 表现、短期情绪连续性和模型提供商增强；V1.4 完成角色包、角色库、上下文角色扮演、混合记忆、可选外部索引和本地/远端模型协作。V1.5 已开始完善聚焦窗口内的可配置快捷键、停止生成和 Windows 媒体控制边界，尚未完成临时静音、粗粒度活动事件和主动反应。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环；V1.3 完成 Live2D 表现、短期情绪连续性和模型提供商增强；V1.4 完成角色包、角色库、上下文角色扮演、混合记忆、可选外部索引和本地/远端模型协作。V1.5 已完善聚焦窗口内的可配置快捷键、停止生成、Windows 媒体控制、默认关闭的 WASD/自选按键和鼠标活动展示，以及供开发者或编码 AI 使用的小组件代码注册器；输入到 Live2D 动作的映射只在模型提供对应 Motion 或 Expression 时作为可选增强。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[V1.4b Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4b) 提供 Windows x64 免安装包，并使用 ASAR 避免 Windows 解压路径过长。[V1.4.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4.0) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.5.0 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5.0) 提供 Windows x64 免安装包，并使用 ASAR 避免 Windows 解压路径过长。[V1.4b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.4b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
@@ -119,6 +151,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 - [V1.3 Live2D 表现标准](docs/V1_3_LIVE2D_PERFORMANCE_STANDARD.md)
 - [V1.3 AIRI / SillyTavern 成熟方案对照](docs/V1_3_AIRI_SILLYTAVERN_ADOPTION.md)
 - [V1.4 角色包与模型协作计划](docs/V1_4_CHARACTER_PACKAGE_AND_MODEL_ROUTING.md)
+- [V1.5 小组件代码扩展指南](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)
 - [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
@@ -142,4 +175,4 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 - Live2D 第三方模型文件默认不提交；明确取得再分发许可的示例须附作者、来源和使用边界。
 - 对话数据默认只保存在本机。
 - 示例角色包只包含公开资料、来源和公开作品词库，不包含用户对话、长期记忆、摘要或本机模型配置。
-- 第一版不请求截图、全局键盘监听、桌面控制或代码执行权限。
+- 不请求截图、桌面控制或代码执行权限；可选输入展示默认关闭，只接收用户白名单按键与粗粒度鼠标状态，不保存或联网发送输入历史。

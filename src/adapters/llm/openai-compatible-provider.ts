@@ -28,6 +28,8 @@ export interface OpenAICompatibleProviderOptions {
   providerId?: string;
   displayName?: string;
   requireApiKey?: boolean;
+  supportsJsonOutput?: boolean;
+  disableThinkingForStructuredOutput?: boolean;
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
 }
@@ -95,7 +97,10 @@ export class OpenAICompatibleProvider implements LlmProvider {
   }
 
   public listCapabilities(): ReadonlySet<ProviderCapability> {
-    return new Set<ProviderCapability>(['streaming']);
+    return new Set<ProviderCapability>([
+      'streaming',
+      ...(this.options.supportsJsonOutput ? (['structured-output'] as const) : []),
+    ]);
   }
 
   public async *streamChat(
@@ -105,7 +110,7 @@ export class OpenAICompatibleProvider implements LlmProvider {
   ): AsyncIterable<ChatEvent> {
     validateModelSelection(selection, this.id);
     validateChatRequest(request, this.id);
-    if (request.responseSchema !== undefined) {
+    if (request.responseSchema !== undefined && !this.options.supportsJsonOutput) {
       throw new ConfigurationError(
         'Structured output is not enabled for this compatibility provider.',
         this.id,
@@ -145,6 +150,13 @@ export class OpenAICompatibleProvider implements LlmProvider {
             ...request.messages,
           ],
           stream: true,
+          ...(request.responseSchema !== undefined && this.options.supportsJsonOutput
+            ? { response_format: { type: 'json_object' as const } }
+            : {}),
+          ...(request.responseSchema !== undefined &&
+          this.options.disableThinkingForStructuredOutput
+            ? { thinking: { type: 'disabled' as const } }
+            : {}),
           ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
           ...(request.maxOutputTokens !== undefined ? { max_tokens: request.maxOutputTokens } : {}),
         }),

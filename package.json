@@ -1,7 +1,7 @@
 {
   "name": "for-people-no-friend",
   "productName": "For People No Friend",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "private": true,
   "description": "A local-first Windows AI character companion built with Electron, TypeScript, and Vite.",
   "main": "dist-electron/main/index.js",
@@ -48,11 +48,18 @@
     "@anthropic-ai/sdk": "^0.120.0",
     "fflate": "0.8.3",
     "pixi.js": "8.13.1",
+    "uiohook-napi": "1.5.5",
     "untitled-pixi-live2d-engine": "1.3.5"
   },
   "build": {
     "appId": "com.ph1gros.forpeoplenofriend",
-    "asar": true,
+    "asar": {
+      "smartUnpack": false
+    },
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/uiohook-napi/prebuilds/win32-x64/**/*"
+    ],
     "directories": {
       "output": "release"
     },
@@ -60,6 +67,7 @@
       "dist/**/*",
       "dist-electron/**/*",
       "assets/**/*",
+      "build/icon.png",
       "package.json",
       "!**/*.map",
       "!**/*.d.ts",

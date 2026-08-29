@@ -24,6 +24,7 @@ import {
 import {
   parseMediaCommandInput,
   parseSetDesktopIntegrationSettingsInput,
+  parseSetDesktopWidgetEnabledInput,
   type DesktopIntegrationStatus,
 } from '../../shared/desktop-integration-ipc';
 import { IPC_CHANNELS } from '../../shared/ipc';
@@ -217,6 +218,10 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return runModelOperation(() => conversations.clearHistory());
   });
+  ipcMain.handle(IPC_CHANNELS.generateContextualOpeningLine, (event) => {
+    requireTrustedSender(event, windows);
+    return conversations.generateContextualOpeningLine();
+  });
   ipcMain.handle(IPC_CHANNELS.startConversation, (event, input: unknown) => {
     requireTrustedSender(event, windows);
     const sender = event.sender;
@@ -363,6 +368,7 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
+      conversations.cancelOpeningLine();
       await characterPackages.activate(parseCharacterIdInput(input).characterId);
     }, '角色切换失败。');
   });
@@ -370,6 +376,7 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
+      conversations.cancelOpeningLine();
       await characterPackages.remove(parseCharacterIdInput(input).characterId);
     }, '角色删除失败。');
   });
@@ -537,11 +544,16 @@ export const registerIpcHandlers = (
             settings: {
               globalShortcutsEnabled: false,
               mediaControlEnabled: false,
+              inputOverlayEnabled: false,
+              inputOverlayMouseEnabled: true,
+              inputOverlayKeys: ['W', 'A', 'S', 'D'],
+              widgetOrder: [],
               visibilityShortcut: '\\',
               stopGenerationShortcut: 'Ctrl+Shift+Delete',
             },
             shortcutRegistered: false,
             stopGenerationShortcutRegistered: false,
+            inputOverlayActive: false,
             media: { supported: false },
           };
     },
@@ -550,6 +562,11 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     const { settings } = parseSetDesktopIntegrationSettingsInput(input);
     await desktopIntegrations?.setSettings(settings);
+  });
+  ipcMain.handle(IPC_CHANNELS.setDesktopWidgetEnabled, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { widgetId, enabled } = parseSetDesktopWidgetEnabledInput(input);
+    await desktopIntegrations?.setWidgetEnabled(widgetId, enabled);
   });
   ipcMain.handle(IPC_CHANNELS.sendMediaCommand, (event, input: unknown) => {
     requireTrustedSender(event, windows);

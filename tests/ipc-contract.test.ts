@@ -36,6 +36,7 @@ describe('IPC whitelist', () => {
       'conversation:setCharacterProfile',
       'conversation:getHistory',
       'conversation:clearHistory',
+      'conversation:generateOpeningLine',
       'conversation:start',
       'conversation:cancel',
       'conversation:event',
@@ -70,7 +71,9 @@ describe('IPC whitelist', () => {
       'window:setChatPanelExpanded',
       'desktop:getIntegrationStatus',
       'desktop:setIntegrationSettings',
+      'desktop:setWidgetEnabled',
       'desktop:sendMediaCommand',
+      'desktop:inputActivity',
     ]);
   });
 

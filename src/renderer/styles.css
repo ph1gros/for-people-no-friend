@@ -70,6 +70,181 @@ body {
   height: 100%;
 }
 
+.desktop-overlay-stack {
+  position: absolute;
+  z-index: 8;
+  top: clamp(
+    8px,
+    calc(var(--visible-frame-top, 0px) + var(--visible-frame-height, calc(100% - 16px)) + 2px),
+    calc(100% - 68px)
+  );
+  left: var(--visible-frame-left, 14px);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: flex-start;
+  width: calc(100% - var(--visible-frame-left, 14px) - 8px);
+  pointer-events: none;
+}
+
+.input-overlay {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: 100%;
+  padding: 7px 8px;
+  color: rgb(247 243 255 / 84%);
+  border: 1px solid rgb(225 211 255 / 24%);
+  border-radius: 10px;
+  background: rgb(22 20 34 / 58%);
+  box-shadow: 0 7px 20px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.input-overlay[hidden] {
+  display: none;
+}
+
+.input-overlay > small {
+  color: rgb(225 211 255 / 54%);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.input-overlay__keys {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.input-overlay__keys::-webkit-scrollbar {
+  display: none;
+}
+
+.input-overlay__key,
+.input-overlay__mouse-button,
+.input-overlay__direction {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  box-sizing: border-box;
+  padding-inline: 4px;
+  color: rgb(250 248 255 / 75%);
+  font:
+    700 9px/1 ui-monospace,
+    'Cascadia Mono',
+    monospace;
+  border: 1px solid rgb(225 211 255 / 24%);
+  border-radius: 6px;
+  background: rgb(50 42 68 / 52%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 5%);
+  transition:
+    color 70ms ease,
+    border-color 70ms ease,
+    background 70ms ease,
+    transform 70ms ease;
+}
+
+.media-overlay {
+  display: grid;
+  gap: 5px;
+  box-sizing: border-box;
+  width: min(260px, 100%);
+  padding: 7px 8px;
+  color: rgb(247 243 255 / 88%);
+  border: 1px solid rgb(225 211 255 / 24%);
+  border-radius: 10px;
+  background: rgb(22 20 34 / 64%);
+  box-shadow: 0 7px 20px rgb(0 0 0 / 18%);
+  backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.media-overlay[hidden] {
+  display: none;
+}
+
+.media-overlay__controls {
+  display: grid;
+  grid-template-columns: repeat(3, 26px) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+}
+
+.media-overlay__control {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  color: rgb(250 248 255 / 90%);
+  font-size: 11px;
+  border: 1px solid rgb(225 211 255 / 24%);
+  border-radius: 6px;
+  background: rgb(69 54 94 / 58%);
+  cursor: pointer;
+}
+
+.media-overlay__control:hover:not(:disabled) {
+  border-color: rgb(205 169 255 / 72%);
+  background: rgb(139 84 219 / 72%);
+}
+
+.media-overlay__control:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.media-overlay__track {
+  overflow: hidden;
+  min-width: 0;
+  color: rgb(225 211 255 / 68%);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-overlay__key.is-active,
+.input-overlay__mouse-button.is-active,
+.input-overlay__direction.is-active {
+  color: #fff;
+  border-color: rgb(205 169 255 / 86%);
+  background: rgb(139 84 219 / 88%);
+  box-shadow: 0 0 10px rgb(139 84 219 / 42%);
+  transform: translateY(1px) scale(0.96);
+}
+
+.input-overlay__mouse {
+  display: grid;
+  grid-template-columns: repeat(3, 14px);
+  gap: 3px;
+}
+
+.input-overlay__mouse[hidden] {
+  display: none;
+}
+
+.input-overlay__mouse-button {
+  min-width: 14px;
+  height: 13px;
+  padding: 0;
+  font-size: 7px;
+}
+
+.input-overlay__direction {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 17px;
+  font-size: 12px;
+}
+
 .model-loading,
 .model-error {
   box-sizing: border-box;
@@ -411,6 +586,160 @@ select {
   margin-right: auto;
 }
 
+.widgets-panel__content {
+  display: grid;
+  gap: 7px;
+  height: auto;
+  max-height: calc(100vh - 132px);
+  padding-right: 1px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.widgets-panel {
+  inset: 50px 8px auto;
+  max-height: calc(100% - 58px);
+  padding: 12px;
+  border-radius: 16px;
+}
+
+.widgets-panel .chat-drawer__header {
+  margin-bottom: 8px;
+}
+
+.widget-catalog {
+  display: grid;
+  gap: 5px;
+}
+
+.widget-catalog-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  padding: 7px 8px;
+  color: rgb(250 248 255 / 94%);
+  text-align: left;
+  border: 1px solid rgb(190 158 241 / 22%);
+  border-radius: 10px;
+  background: rgb(111 76 166 / 10%);
+}
+
+.widget-catalog-card:hover {
+  border-color: rgb(192 156 255 / 52%);
+  background: rgb(139 99 205 / 18%);
+}
+
+.widget-catalog-card__icon {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  color: #dbc8ff;
+  font-size: 13px;
+  border: 1px solid rgb(205 177 255 / 22%);
+  border-radius: 8px;
+  background: rgb(72 53 102 / 48%);
+}
+
+.widget-catalog-card__copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.widget-catalog-card__copy strong {
+  font-size: 11px;
+}
+
+.widget-catalog-card__copy small {
+  overflow: hidden;
+  color: rgb(220 209 238 / 62%);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-catalog-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.widget-catalog-card__status,
+.widget-catalog-card__settings {
+  padding: 2px 4px;
+  color: rgb(224 214 239 / 64%);
+  font-size: 7px;
+  border: 1px solid rgb(225 211 255 / 16%);
+  border-radius: 6px;
+  background: rgb(55 43 75 / 42%);
+  cursor: pointer;
+}
+
+.widget-catalog-card__settings {
+  color: rgb(231 219 249 / 82%);
+}
+
+.widget-catalog-card__status:hover:not(:disabled),
+.widget-catalog-card__settings:hover:not(:disabled) {
+  color: #fff;
+  border-color: rgb(196 157 255 / 52%);
+  background: rgb(133 82 207 / 38%);
+}
+
+.widget-catalog-card__status.is-active {
+  color: #eadfff;
+  border-color: rgb(196 157 255 / 42%);
+  background: rgb(133 82 207 / 30%);
+}
+
+.widget-detail {
+  display: grid;
+  gap: 10px;
+  padding: 11px;
+  border: 1px solid rgb(190 158 241 / 22%);
+  border-radius: 10px;
+  background: rgb(111 76 166 / 10%);
+}
+
+.widget-detail[hidden] {
+  display: none;
+}
+
+.widget-detail__header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.widget-detail__header strong {
+  font-size: 12px;
+}
+
+.widget-detail__header input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0 0 0 auto;
+  accent-color: #b98cff;
+}
+
+.widget-detail .settings-field {
+  margin-bottom: 0;
+}
+
+.widget-media-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.widgets-panel__status {
+  margin-bottom: 0;
+}
+
 .history-list {
   height: calc(100% - 38px);
   padding-right: 4px;
@@ -503,6 +832,31 @@ select {
   margin-bottom: 10px;
   color: rgb(229 219 245 / 72%);
   font-size: 11px;
+}
+
+.settings-toggle-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 3px;
+  color: rgb(255 255 255 / 92%);
+  cursor: pointer;
+}
+
+.settings-toggle-heading strong {
+  margin-right: auto;
+}
+
+.settings-toggle-heading input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #b98cff;
+}
+
+.settings-toggle-hint {
+  display: block;
+  margin-bottom: 9px;
 }
 
 .settings-field input,
@@ -880,6 +1234,39 @@ select option:checked {
   display: grid;
   gap: 7px;
   margin-bottom: 7px;
+}
+
+.character-research-progress {
+  display: block;
+  width: 100%;
+  height: 5px;
+  margin: 1px 0 9px;
+  overflow: hidden;
+  appearance: none;
+  border: 0;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    rgb(122 83 183 / 20%) 0%,
+    rgb(207 177 255 / 82%) 48%,
+    rgb(122 83 183 / 20%) 100%
+  );
+  background-size: 180% 100%;
+  animation: character-research-scan 1.25s ease-in-out infinite;
+}
+
+.character-research-progress[hidden] {
+  display: none;
+}
+
+@keyframes character-research-scan {
+  0% {
+    background-position: 100% 0;
+  }
+
+  100% {
+    background-position: -100% 0;
+  }
 }
 
 .character-candidate {

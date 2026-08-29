@@ -17,12 +17,15 @@ import type {
   ConversationConfiguration,
   ConversationEvent,
   ConversationMessage,
+  ContextualOpeningLineResult,
   StartConversationInput,
   StartConversationResult,
 } from './conversation-ipc';
 import type {
+  DesktopInputActivityEvent,
   DesktopIntegrationStatus,
   MediaCommandInput,
+  SetDesktopWidgetEnabledInput,
   SetDesktopIntegrationSettingsInput,
 } from './desktop-integration-ipc';
 import type {
@@ -73,6 +76,7 @@ export const IPC_CHANNELS = {
   setCharacterProfile: 'conversation:setCharacterProfile',
   getConversationHistory: 'conversation:getHistory',
   clearConversationHistory: 'conversation:clearHistory',
+  generateContextualOpeningLine: 'conversation:generateOpeningLine',
   startConversation: 'conversation:start',
   cancelConversation: 'conversation:cancel',
   conversationEvent: 'conversation:event',
@@ -107,7 +111,9 @@ export const IPC_CHANNELS = {
   setChatPanelExpanded: 'window:setChatPanelExpanded',
   getDesktopIntegrationStatus: 'desktop:getIntegrationStatus',
   setDesktopIntegrationSettings: 'desktop:setIntegrationSettings',
+  setDesktopWidgetEnabled: 'desktop:setWidgetEnabled',
   sendMediaCommand: 'desktop:sendMediaCommand',
+  desktopInputActivity: 'desktop:inputActivity',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -134,6 +140,7 @@ export interface DeskpetApi {
   setCharacterProfile(profile: CharacterProfile): Promise<ModelOperationResult>;
   getConversationHistory(): Promise<ConversationMessage[]>;
   clearConversationHistory(): Promise<ModelOperationResult>;
+  generateContextualOpeningLine(): Promise<ContextualOpeningLineResult | undefined>;
   startConversation(input: StartConversationInput): Promise<StartConversationResult>;
   cancelConversation(input: CancelConversationInput): Promise<boolean>;
   onConversationEvent(listener: (event: ConversationEvent) => void): () => void;
@@ -170,5 +177,7 @@ export interface DeskpetApi {
   setChatPanelExpanded(input: SetChatPanelExpandedInput): Promise<void>;
   getDesktopIntegrationStatus(): Promise<DesktopIntegrationStatus>;
   setDesktopIntegrationSettings(input: SetDesktopIntegrationSettingsInput): Promise<void>;
+  setDesktopWidgetEnabled(input: SetDesktopWidgetEnabledInput): Promise<void>;
   sendMediaCommand(input: MediaCommandInput): Promise<boolean>;
+  onDesktopInputActivity(listener: (event: DesktopInputActivityEvent) => void): () => void;
 }

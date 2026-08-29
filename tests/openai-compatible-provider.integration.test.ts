@@ -85,17 +85,23 @@ describe('OpenAICompatibleProvider integration', () => {
 
   it('supports a fixed DeepSeek identity without exposing a configurable base URL', async () => {
     let requestPath = '';
+    let requestBody: unknown;
     server = await startFakeHttpServer((request, response) => {
-      requestPath = request.url ?? '';
-      response.writeHead(200, { 'content-type': 'text/event-stream' });
-      response.end(
-        'data: {"choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
-      );
+      void (async () => {
+        requestPath = request.url ?? '';
+        requestBody = await readJsonBody(request);
+        response.writeHead(200, { 'content-type': 'text/event-stream' });
+        response.end(
+          'data: {"choices":[{"delta":{"content":"{\\"ok\\":true}"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        );
+      })();
     });
     const provider = new OpenAICompatibleProvider({
       providerId: 'deepseek',
       displayName: 'DeepSeek',
       requireApiKey: true,
+      supportsJsonOutput: true,
+      disableThinkingForStructuredOutput: true,
       getConfiguration: async () => ({
         baseUrl: `${server?.baseUrl}`,
         apiKey: 'fake-deepseek-key',
@@ -104,15 +110,24 @@ describe('OpenAICompatibleProvider integration', () => {
 
     expect(provider.id).toBe('deepseek');
     expect(provider.displayName).toBe('DeepSeek');
+    expect(provider.listCapabilities('deepseek-v4-flash')).toContain('structured-output');
     await expect(
       collect(
         provider.streamChat(
-          { systemPrompt: '', messages: [{ role: 'user', content: 'Hello' }] },
+          {
+            systemPrompt: 'Return JSON.',
+            messages: [{ role: 'user', content: 'Hello' }],
+            responseSchema: { type: 'object' },
+          },
           { providerId: 'deepseek', modelId: 'deepseek-v4-flash' },
         ),
       ),
-    ).resolves.toContainEqual({ type: 'text-delta', text: 'OK' });
+    ).resolves.toContainEqual({ type: 'text-delta', text: '{"ok":true}' });
     expect(requestPath).toBe('/chat/completions');
+    expect(requestBody).toMatchObject({
+      response_format: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+    });
   });
 
   it('requires a key for providers that do not support anonymous local access', async () => {

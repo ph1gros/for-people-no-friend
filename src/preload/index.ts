@@ -16,9 +16,11 @@ import {
   type ConversationConfiguration,
   type StartConversationInput,
 } from '../shared/conversation-ipc';
-import type {
-  MediaCommandInput,
-  SetDesktopIntegrationSettingsInput,
+import {
+  parseDesktopInputActivityEvent,
+  type MediaCommandInput,
+  type SetDesktopWidgetEnabledInput,
+  type SetDesktopIntegrationSettingsInput,
 } from '../shared/desktop-integration-ipc';
 import { type DeskpetApi, IPC_CHANNELS } from '../shared/ipc';
 import type {
@@ -105,6 +107,10 @@ const deskpetApi: DeskpetApi = Object.freeze({
   clearConversationHistory: () =>
     ipcRenderer.invoke(IPC_CHANNELS.clearConversationHistory) as ReturnType<
       DeskpetApi['clearConversationHistory']
+    >,
+  generateContextualOpeningLine: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.generateContextualOpeningLine) as ReturnType<
+      DeskpetApi['generateContextualOpeningLine']
     >,
   startConversation: (input: StartConversationInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.startConversation, input) as ReturnType<
@@ -242,10 +248,25 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.setDesktopIntegrationSettings, input) as ReturnType<
       DeskpetApi['setDesktopIntegrationSettings']
     >,
+  setDesktopWidgetEnabled: (input: SetDesktopWidgetEnabledInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setDesktopWidgetEnabled, input) as ReturnType<
+      DeskpetApi['setDesktopWidgetEnabled']
+    >,
   sendMediaCommand: (input: MediaCommandInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.sendMediaCommand, input) as ReturnType<
       DeskpetApi['sendMediaCommand']
     >,
+  onDesktopInputActivity: (listener: Parameters<DeskpetApi['onDesktopInputActivity']>[0]) => {
+    const wrapped = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+      try {
+        listener(parseDesktopInputActivityEvent(value));
+      } catch {
+        // Ignore malformed Main-to-Renderer input activity events.
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.desktopInputActivity, wrapped);
+    return () => ipcRenderer.removeListener(IPC_CHANNELS.desktopInputActivity, wrapped);
+  },
 });
 
 contextBridge.exposeInMainWorld('deskpet', deskpetApi);

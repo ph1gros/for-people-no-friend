@@ -1,7 +1,6 @@
 export const DESKTOP_ACTIONS = [
   'toggle-visibility',
   'stop-generation',
-  'toggle-mute',
   'media-play-pause',
   'media-next',
   'media-previous',
@@ -76,8 +75,8 @@ export const validateShortcutBindings = (
 export interface ExtensionCapabilityManifest {
   version: 1;
   id: string;
-  kind: 'provider' | 'character-source' | 'performance-map' | 'media' | 'shortcut';
-  permissions: Array<'network' | 'media-control' | 'global-shortcut'>;
+  kind: 'provider' | 'character-source' | 'performance-map' | 'media' | 'shortcut' | 'widget';
+  permissions: Array<'network' | 'media-control' | 'global-shortcut' | 'input-activity'>;
   timeoutMs: number;
 }
 
@@ -88,8 +87,8 @@ export const validateExtensionCapabilityManifest = (
     throw new Error('The extension capability manifest is invalid.');
   }
   const record = value as Record<string, unknown>;
-  const kinds = ['provider', 'character-source', 'performance-map', 'media', 'shortcut'];
-  const permissions = ['network', 'media-control', 'global-shortcut'];
+  const kinds = ['provider', 'character-source', 'performance-map', 'media', 'shortcut', 'widget'];
+  const permissions = ['network', 'media-control', 'global-shortcut', 'input-activity'];
   if (
     record.version !== 1 ||
     typeof record.id !== 'string' ||
@@ -97,7 +96,7 @@ export const validateExtensionCapabilityManifest = (
     typeof record.kind !== 'string' ||
     !kinds.includes(record.kind) ||
     !Array.isArray(record.permissions) ||
-    record.permissions.length > 3 ||
+    record.permissions.length > 4 ||
     !record.permissions.every(
       (permission) => typeof permission === 'string' && permissions.includes(permission),
     ) ||

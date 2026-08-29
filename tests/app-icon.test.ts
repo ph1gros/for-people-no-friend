@@ -4,6 +4,17 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('application icon assets', () => {
+  it('sets the Windows shell identity before the application becomes ready', () => {
+    const mainSource = readFileSync(resolve('src/main/index.ts'), 'utf8');
+
+    expect(mainSource).toContain("const PRODUCT_NAME = 'For People No Friend';");
+    expect(mainSource).toContain(
+      "const WINDOWS_APP_USER_MODEL_ID = 'com.ph1gros.forpeoplenofriend';",
+    );
+    expect(mainSource).toContain('app.setName(PRODUCT_NAME);');
+    expect(mainSource).toContain('app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID)');
+  });
+
   it('keeps the supplied source and provides a square runtime PNG', () => {
     const source = readFileSync(resolve('build/icon-source.jpg'));
     const png = readFileSync(resolve('build/icon.png'));
