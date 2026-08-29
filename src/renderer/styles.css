@@ -83,8 +83,18 @@ body {
   flex-direction: column;
   gap: 0;
   align-items: flex-start;
-  width: calc(100% - var(--visible-frame-left, 14px) - 8px);
+  width: min(
+    var(--visible-frame-width, calc(100% - var(--visible-frame-left, 14px) - 8px)),
+    calc(100% - var(--visible-frame-left, 14px) - 8px)
+  );
   pointer-events: none;
+}
+
+.chat-expanded .desktop-overlay-stack {
+  width: min(
+    var(--visible-frame-width, calc(50% - var(--visible-frame-left, 14px) - 4px)),
+    calc(50% - var(--visible-frame-left, 14px) - 4px)
+  );
 }
 
 .input-overlay {
@@ -122,6 +132,7 @@ body {
   gap: 4px;
   min-width: 0;
   overflow-x: auto;
+  overscroll-behavior-inline: contain;
   scrollbar-width: none;
 }
 

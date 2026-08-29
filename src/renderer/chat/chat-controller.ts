@@ -2102,6 +2102,7 @@ export const initializeChat = async ({
       const timerId = `key:${event.key}`;
       element.classList.toggle('is-active', event.pressed);
       if (event.pressed) {
+        element.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         scheduleInputRelease(timerId, () => element.classList.remove('is-active'));
       } else {
         const timer = inputOverlayReleaseTimers.get(timerId);

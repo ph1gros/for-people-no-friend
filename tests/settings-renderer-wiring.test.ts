@@ -54,7 +54,10 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toContain('.input-overlay__key.is-active');
     expect(styles).toContain('.input-overlay__direction.is-active');
     expect(styles).toMatch(
-      /\.desktop-overlay-stack\s*\{[^}]*width:\s*calc\(100% - var\(--visible-frame-left, 14px\) - 8px\);/su,
+      /\.desktop-overlay-stack\s*\{[^}]*width:\s*min\([^}]*var\(--visible-frame-width,[^}]*calc\(100% - var\(--visible-frame-left, 14px\) - 8px\)/su,
+    );
+    expect(styles).toMatch(
+      /\.chat-expanded \.desktop-overlay-stack\s*\{[^}]*width:\s*min\([^}]*calc\(50% - var\(--visible-frame-left, 14px\) - 4px\)/su,
     );
     expect(styles).toMatch(
       /\.input-overlay\s*\{[^}]*width:\s*max-content;[^}]*max-width:\s*100%;/su,
@@ -62,6 +65,8 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(
       /\.input-overlay__keys\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/su,
     );
+    expect(styles).toContain('overscroll-behavior-inline: contain;');
+    expect(source).toContain("element.scrollIntoView({ block: 'nearest', inline: 'nearest' });");
   });
 
   it('organizes input and media controls as extensible widget catalog cards', () => {

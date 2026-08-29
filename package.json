@@ -1,7 +1,7 @@
 {
   "name": "for-people-no-friend",
   "productName": "For People No Friend",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "private": true,
   "description": "A local-first Windows AI character companion built with Electron, TypeScript, and Vite.",
   "main": "dist-electron/main/index.js",
