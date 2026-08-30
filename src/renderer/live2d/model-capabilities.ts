@@ -6,6 +6,7 @@ export interface Live2DModelCapabilityReport {
   missingStateMotions: string[];
   missingActionMotions: string[];
   missingExpressions: string[];
+  lipSyncParameter?: string;
   summary: string;
 }
 
@@ -51,8 +52,11 @@ export const inspectLive2DModelCapabilities = (
     missingStateMotions,
     missingActionMotions,
     missingExpressions,
+    ...(manifest.controls.lipSync
+      ? { lipSyncParameter: manifest.controls.lipSync.mouthOpenParameter }
+      : {}),
     summary: missing
-      ? `Live2D 已读取，但有 ${missing} 项映射在模型中不存在，将按安全规则回退。`
-      : `Live2D 能力已核对：${motionGroups.length} 个动作组，${expressionIds.length} 个表情。`,
+      ? `Live2D 已读取，但有 ${missing} 项映射在模型中不存在，将按安全规则回退。${manifest.controls.lipSync ? ' 已声明音频口型参数。' : ' 未声明音频口型参数。'}`
+      : `Live2D 能力已核对：${motionGroups.length} 个动作组，${expressionIds.length} 个表情；${manifest.controls.lipSync ? '音频口型已映射' : '未声明音频口型'}。`,
   };
 };

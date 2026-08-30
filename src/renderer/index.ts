@@ -4,6 +4,10 @@ import {
   type LoadedCharacter,
 } from './live2d/character-runtime';
 import { initializeChat } from './chat/chat-controller';
+import type { CharacterPresentationPort } from '../core/presentation/character-presentation';
+import type { CharacterDisplayMode } from '../shared/character-display-ipc';
+import { ViewerExPresentationClient } from './viewerex/viewerex-presentation-client';
+import { VTubeStudioPresentationClient } from './vtube-studio/vtube-studio-presentation-client';
 
 const app = document.querySelector<HTMLElement>('#app');
 
@@ -18,6 +22,7 @@ dragHandle.setAttribute('aria-label', '拖动桌宠窗口');
 const characterHost = document.createElement('main');
 characterHost.className = 'character-host';
 characterHost.setAttribute('aria-live', 'polite');
+characterHost.hidden = true;
 
 const renderLoading = (): void => {
   app.classList.add('character-is-loading');
@@ -33,6 +38,13 @@ const renderLoading = (): void => {
 
 let character: LoadedCharacter | undefined;
 let loadSequence = 0;
+let displayMode: CharacterDisplayMode = 'off';
+const viewerExPresentation = window.deskpet
+  ? new ViewerExPresentationClient(window.deskpet)
+  : undefined;
+const vTubeStudioPresentation = window.deskpet
+  ? new VTubeStudioPresentationClient(window.deskpet)
+  : undefined;
 
 const startCharacter = async (): Promise<boolean> => {
   const sequence = ++loadSequence;
@@ -60,11 +72,39 @@ const startCharacter = async (): Promise<boolean> => {
   }
 };
 
+const applyDisplayMode = async (mode: CharacterDisplayMode): Promise<void> => {
+  displayMode = mode;
+  app.dataset.characterDisplayMode = mode;
+  if (mode !== 'live2d') {
+    loadSequence += 1;
+    character?.dispose();
+    character = undefined;
+    characterHost.replaceChildren();
+    characterHost.hidden = true;
+    window.dispatchEvent(new Event('deskpet:character-display-changed'));
+    if (mode === 'vtube-studio') await vTubeStudioPresentation?.setState('idle');
+    return;
+  }
+  characterHost.hidden = false;
+  await startCharacter();
+};
+
+const getPresentation = (): CharacterPresentationPort | undefined =>
+  displayMode === 'live2d'
+    ? character?.presentation
+    : displayMode === 'viewerex'
+      ? viewerExPresentation
+      : displayMode === 'vtube-studio'
+        ? vTubeStudioPresentation
+        : undefined;
+
 app.append(dragHandle, characterHost);
 let disposeChat: (() => void) | undefined;
 void initializeChat({
   root: app,
   getCharacter: () => character,
+  getPresentation,
+  onDisplayModeChanged: (mode) => void applyDisplayMode(mode),
 }).then((dispose) => {
   disposeChat = dispose;
 });
@@ -76,5 +116,6 @@ window.addEventListener(
   },
   { once: true },
 );
-void startCharacter();
-window.addEventListener('deskpet:reload-character', () => void startCharacter());
+window.addEventListener('deskpet:reload-character', () => {
+  if (displayMode === 'live2d') void startCharacter();
+});

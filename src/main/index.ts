@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url';
+import path from 'node:path';
 
-import { app, globalShortcut, net, protocol, safeStorage, type Tray } from 'electron';
+import { app, globalShortcut, net, protocol, safeStorage, screen, type Tray } from 'electron';
 
 import { CharacterPackageService } from './character/character-package-service';
 import { CharacterResearchService } from './character/character-research-service';
@@ -15,6 +16,8 @@ import { ModelRuntime } from './llm/model-runtime';
 import { MemoryService } from './memory/memory-service';
 import { SecretStore } from './security/secret-store';
 import { CharacterProfileStore } from './storage/character-profile-store';
+import { KITTEN_CHARACTER_PROFILE } from '../core/conversation/character-profile';
+import { CharacterDisplayConfigStore } from './storage/character-display-config-store';
 import { CharacterKnowledgeStore } from './storage/character-knowledge-store';
 import { ConversationStore } from './storage/conversation-store';
 import { DeskpetDatabase } from './storage/deskpet-database';
@@ -25,6 +28,23 @@ import { createDeskpetTray } from './tray/create-tray';
 import { WindowManager } from './windows/window-manager';
 import { resolveBundledModelRoot } from './windows/window-assets';
 import { IPC_CHANNELS } from '../shared/ipc';
+import { OpenAICompatibleSpeechAdapter } from '../adapters/speech/openai-compatible-tts';
+import { OpenAICompatibleTranscriptionAdapter } from '../adapters/speech/openai-compatible-asr';
+import { SpeechService } from './speech/speech-service';
+import { LocalSpeechAssetService } from './speech/local-speech-asset-service';
+import { BundledSpeechRuntime } from './speech/bundled-speech-runtime';
+import { BundledVTubeModelInstaller } from './vtube-studio/bundled-vtube-model-installer';
+import { SpeechConfigStore } from './storage/speech-config-store';
+import { ViewerExConfigStore } from './storage/viewerex-config-store';
+import { ViewerExService } from './viewerex/viewerex-service';
+import { VTubeStudioConfigStore } from './storage/vtube-studio-config-store';
+import { VTubeStudioService } from './vtube-studio/vtube-studio-service';
+import { VTubeStudioSpoutOverlay } from './vtube-studio/vtube-studio-spout-overlay';
+import { Live2DModelImportService } from './live2d/live2d-model-import-service';
+import { cursorProximityToArea, normalizeCursorToWorkArea } from './ipc/global-tracking';
+import { AssistantToolService } from './assistant/assistant-tool-service';
+import { AssistantWorkspaceStore } from './storage/assistant-workspace-store';
+import { DesktopLayoutStore } from './storage/desktop-layout-store';
 
 const PRODUCT_NAME = 'For People No Friend';
 const WINDOWS_APP_USER_MODEL_ID = 'com.ph1gros.forpeoplenofriend';
@@ -53,27 +73,44 @@ if (!hasSingleInstanceLock) {
   let tray: Tray | undefined;
   let desktopIntegrations: DesktopIntegrationService | undefined;
   let characterPackages: CharacterPackageService | undefined;
+  let live2DModelImports: Live2DModelImportService | undefined;
+  let speechService: SpeechService | undefined;
+  let localSpeechAssets: LocalSpeechAssetService | undefined;
+  let bundledSpeechRuntime: BundledSpeechRuntime | undefined;
+  let bundledVTubeModel: BundledVTubeModelInstaller | undefined;
+  let viewerExService: ViewerExService | undefined;
+  let vTubeStudioService: VTubeStudioService | undefined;
+  let vTubeStudioSpoutOverlay: VTubeStudioSpoutOverlay | undefined;
+  let characterDisplayConfiguration: CharacterDisplayConfigStore | undefined;
+  let assistantTools: AssistantToolService | undefined;
+  let desktopLayout: DesktopLayoutStore | undefined;
 
   app.on('second-instance', () => windowManager?.show());
 
   void app.whenReady().then(async () => {
     windowManager = new WindowManager();
+    vTubeStudioSpoutOverlay = new VTubeStudioSpoutOverlay(() => windowManager?.getWindow());
     const userDataPath = app.getPath('userData');
+    desktopLayout = new DesktopLayoutStore(userDataPath);
     const providerConfiguration = new ProviderConfigStore(userDataPath);
-    const characterProfiles = new CharacterProfileStore(userDataPath);
+    const characterProfiles = new CharacterProfileStore(userDataPath, KITTEN_CHARACTER_PROFILE);
+    characterDisplayConfiguration = new CharacterDisplayConfigStore(userDataPath);
     characterPackages = new CharacterPackageService(
       userDataPath,
       characterProfiles,
       app.getVersion(),
       resolveBundledModelRoot(__dirname),
     );
+    live2DModelImports = new Live2DModelImportService(userDataPath, characterProfiles);
     protocol.handle('deskpet-model', async (request) => {
       try {
         const url = new URL(request.url);
         if (url.hostname !== 'active' || request.method !== 'GET')
           return new Response(null, { status: 404 });
         const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
-        const assetPath = await characterPackages?.resolveActiveAsset(relativePath);
+        const assetPath =
+          (await live2DModelImports?.resolveActiveAsset(relativePath)) ??
+          (await characterPackages?.resolveActiveAsset(relativePath));
         return assetPath
           ? net.fetch(pathToFileURL(assetPath).toString())
           : new Response(null, { status: 404 });
@@ -88,6 +125,50 @@ if (!hasSingleInstanceLock) {
       providerConfiguration,
       new SafeDiagnosticLog(userDataPath),
     );
+    bundledSpeechRuntime = new BundledSpeechRuntime(
+      path.join(process.resourcesPath, 'voice-runtime'),
+    );
+    bundledVTubeModel = new BundledVTubeModelInstaller(
+      path.join(process.resourcesPath, 'character-suite', 'vtube-model'),
+      [
+        path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'Steam'),
+        path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Steam'),
+      ],
+    );
+    speechService = new SpeechService(
+      new SpeechConfigStore(userDataPath),
+      secrets,
+      new OpenAICompatibleSpeechAdapter({
+        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      }),
+      new OpenAICompatibleTranscriptionAdapter({
+        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      }),
+      (text, signal) => modelRuntime!.translateSpeechToJapanese(text, signal),
+      () => bundledSpeechRuntime!.ensureRunning(),
+    );
+    localSpeechAssets = new LocalSpeechAssetService(
+      path.join(app.getAppPath(), 'data'),
+      app.isPackaged
+        ? path.join(process.resourcesPath, 'voice-runtime', 'voice', 'ireina')
+        : undefined,
+    );
+    viewerExService = new ViewerExService(new ViewerExConfigStore(userDataPath));
+    vTubeStudioService = new VTubeStudioService(
+      new VTubeStudioConfigStore(userDataPath),
+      secrets,
+      undefined,
+      () => {
+        const window = windowManager?.getWindow();
+        if (!window) return undefined;
+        const bounds = window.getBounds();
+        const cursor = screen.getCursorScreenPoint();
+        return {
+          ...normalizeCursorToWorkArea(cursor, screen.getDisplayMatching(bounds).workArea),
+          proximity: cursorProximityToArea(cursor, bounds),
+        };
+      },
+    );
     memoryService = new MemoryService(
       database,
       modelRuntime,
@@ -100,6 +181,11 @@ if (!hasSingleInstanceLock) {
       modelRuntime,
     );
     workGlossary = new WorkGlossaryService(userDataPath, (input, init) => net.fetch(input, init));
+    assistantTools = new AssistantToolService(
+      modelRuntime,
+      new AssistantWorkspaceStore(userDataPath),
+      (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    );
     conversationRuntime = new ConversationRuntime(
       modelRuntime,
       characterProfiles,
@@ -107,6 +193,7 @@ if (!hasSingleInstanceLock) {
       memoryService,
       workGlossary,
       new CharacterKnowledgeStore(database),
+      assistantTools,
     );
     desktopIntegrations = new DesktopIntegrationService(
       new DesktopIntegrationStore(userDataPath),
@@ -123,6 +210,13 @@ if (!hasSingleInstanceLock) {
       },
     );
     await desktopIntegrations.initialize();
+    const initialSpeechStatus = await speechService.getStatus();
+    await desktopIntegrations.setPushToTalkKey(
+      initialSpeechStatus.settings.inputEnabled &&
+        initialSpeechStatus.settings.inputMode === 'manual'
+        ? initialSpeechStatus.settings.pushToTalkKey
+        : undefined,
+    );
     registerIpcHandlers(
       windowManager,
       modelRuntime,
@@ -133,6 +227,16 @@ if (!hasSingleInstanceLock) {
       workGlossary,
       desktopIntegrations,
       characterPackages,
+      live2DModelImports,
+      speechService,
+      viewerExService,
+      vTubeStudioService,
+      characterDisplayConfiguration,
+      (mode) => vTubeStudioSpoutOverlay?.setMode(mode),
+      assistantTools,
+      desktopLayout,
+      localSpeechAssets,
+      bundledVTubeModel,
     );
     const mainWindow = windowManager.create();
     desktopIntegrations.setShortcutWindowFocused(mainWindow.isFocused());
@@ -154,6 +258,7 @@ if (!hasSingleInstanceLock) {
     desktopIntegrations = undefined;
     protocol.unhandle('deskpet-model');
     characterPackages = undefined;
+    live2DModelImports = undefined;
     conversationRuntime?.dispose();
     conversationRuntime = undefined;
     memoryService?.dispose();
@@ -162,6 +267,20 @@ if (!hasSingleInstanceLock) {
     characterResearch = undefined;
     modelRuntime?.dispose();
     modelRuntime = undefined;
+    speechService?.dispose();
+    speechService = undefined;
+    bundledSpeechRuntime?.dispose();
+    bundledSpeechRuntime = undefined;
+    bundledVTubeModel = undefined;
+    viewerExService?.dispose();
+    viewerExService = undefined;
+    vTubeStudioService?.dispose();
+    vTubeStudioService = undefined;
+    vTubeStudioSpoutOverlay?.dispose();
+    vTubeStudioSpoutOverlay = undefined;
+    characterDisplayConfiguration = undefined;
+    assistantTools = undefined;
+    desktopLayout = undefined;
     database?.close();
     database = undefined;
     windowManager?.prepareToQuit();

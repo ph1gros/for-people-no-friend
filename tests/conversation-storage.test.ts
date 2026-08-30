@@ -8,7 +8,10 @@ import {
   DEFAULT_CHARACTER_PROFILE,
   KALTSIT_CHARACTER_PROFILE,
 } from '../src/core/conversation/character-profile';
-import { CharacterProfileStore } from '../src/main/storage/character-profile-store';
+import {
+  CharacterProfileStore,
+  LEGACY_KITTEN_PERSONA,
+} from '../src/main/storage/character-profile-store';
 import { ConversationStore } from '../src/main/storage/conversation-store';
 
 describe('M4 local conversation storage', () => {
@@ -111,6 +114,45 @@ describe('M4 local conversation storage', () => {
     const profile = await new CharacterProfileStore(directory).get();
     expect(profile.memoryNamespace).toMatch(/^character-[a-f0-9]{24}$/u);
     expect(profile.memoryNamespace).not.toBe('character-kaltsit');
+  });
+
+  it('gently extends the original kitten card with one restrained drowsy behavior', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-kitten-migration-'));
+    await writeFile(
+      path.join(directory, 'character-profiles.live2d.v1.json'),
+      JSON.stringify({
+        version: 2,
+        activeProfileId: 'kitten',
+        profiles: [
+          {
+            ...DEFAULT_CHARACTER_PROFILE,
+            id: 'kitten',
+            name: '小猫',
+            personaPrompt: LEGACY_KITTEN_PERSONA,
+            memoryNamespace: 'character-kitten',
+            lore: {
+              canonicalName: '小猫',
+              aliases: [],
+              sourceWork: '',
+              identity: '桌面搭档',
+              personality: '安静、敏锐。',
+              background: '',
+              relationships: [],
+              speechStyle: '语气简短自然。',
+              sampleLines: [],
+              roleplayExamples: [],
+              sources: [],
+            },
+          },
+        ],
+      }),
+      'utf8',
+    );
+
+    const profile = await new CharacterProfileStore(directory).get();
+    expect(profile.personaPrompt).toContain('长时间没有互动');
+    expect(profile.lore?.sampleLines).toContain('我只是闭会儿眼……才不是在等你。');
+    expect(profile.lore?.roleplayExamples).toHaveLength(1);
   });
 
   it('keeps the Live2D profile separate from the GIF Version profile file', async () => {

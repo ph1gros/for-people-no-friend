@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { validateCharacterPackageManifest } from '../src/core/character/character-package';
 import { DEFAULT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
+import { parseCreateLocalCharacterInput } from '../src/shared/character-package-ipc';
 
 const valid = {
   version: 1,
@@ -31,5 +32,11 @@ describe('character package manifest', () => {
         attribution: [{ ...valid.attribution[0], url: 'https://user:pass@example.com' }],
       }),
     ).toThrow();
+  });
+
+  it('validates and trims a local character name at the Main boundary', () => {
+    expect(parseCreateLocalCharacterInput({ name: '  小猫  ' })).toEqual({ name: '小猫' });
+    expect(() => parseCreateLocalCharacterInput({ name: '' })).toThrow();
+    expect(() => parseCreateLocalCharacterInput({ name: '猫'.repeat(81) })).toThrow();
   });
 });

@@ -33,6 +33,10 @@ export interface CharacterIdInput {
   characterId: string;
 }
 
+export interface CreateLocalCharacterInput {
+  name: string;
+}
+
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const PREVIEW_ID_PATTERN = /^[a-f0-9-]{36}$/;
 
@@ -62,4 +66,15 @@ export const parseCharacterIdInput = (value: unknown): CharacterIdInput => {
     throw new Error('The character id is invalid.');
   }
   return { characterId };
+};
+
+export const parseCreateLocalCharacterInput = (value: unknown): CreateLocalCharacterInput => {
+  const name =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>).name
+      : undefined;
+  if (typeof name !== 'string' || name.trim().length === 0 || name.length > 80) {
+    throw new Error('The local character name is invalid.');
+  }
+  return { name: name.trim() };
 };

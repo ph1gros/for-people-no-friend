@@ -280,6 +280,44 @@ describe('desktop integration boundaries', () => {
     expect(stops).toBe(3);
   });
 
+  it('keeps the native key monitor bounded to the selected push-to-talk key without enabling the input widget', async () => {
+    const starts: Array<{ inputOverlayKeys: string[]; inputOverlayMouseEnabled: boolean }> = [];
+    const forwarded: unknown[] = [];
+    const service = new DesktopIntegrationService(
+      {
+        get: async () => desktopSettings(),
+        set: async () => undefined,
+      } as unknown as DesktopIntegrationStore,
+      { register: () => true, unregister: () => undefined },
+      () => undefined,
+      undefined,
+      undefined,
+      {
+        start: async (settings, emit) => {
+          starts.push({
+            inputOverlayKeys: [...settings.inputOverlayKeys],
+            inputOverlayMouseEnabled: settings.inputOverlayMouseEnabled,
+          });
+          emit({ type: 'key', key: 'F8', pressed: true });
+          return true;
+        },
+        stop: () => undefined,
+      },
+      (event) => forwarded.push(event),
+    );
+
+    await service.initialize();
+    await service.setPushToTalkKey('F8');
+    expect(starts).toEqual([
+      {
+        inputOverlayKeys: ['W', 'A', 'S', 'D', 'F8'],
+        inputOverlayMouseEnabled: false,
+      },
+    ]);
+    expect(forwarded).toEqual([{ type: 'key', key: 'F8', pressed: true }]);
+    await expect(service.getStatus()).resolves.toMatchObject({ inputOverlayActive: false });
+  });
+
   it('routes enabled media actions through the bounded controller and blocks them when disabled', async () => {
     let settings = desktopSettings();
     const sent: string[] = [];

@@ -6,7 +6,7 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-当前仓库是 **Live2D Version**，以凯尔希作为完整 Live2D 示例；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+当前仓库是 **Live2D Version**。V1.6 新安装默认使用原创角色“小猫”，可以选择内嵌 Live2D、ViewerEX 或 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
 Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
@@ -28,6 +28,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - 带场景、情绪、触发条件、角色态度和来源的情境对话示例
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
+- 中文文字回复、流式分句、日语 TTS、有序播放、停声与 Live2D/VTube Studio 表现联动
+- 说话就输出、精准小猫、手动录音三种中文语音输入模式；2 秒内连续语句合并后重新思考
+- 已验证的 Style-Bert-VITS2 ONNX 本机运行方案，优先 DirectML、失败回退 CPU；因音色授权待确认，公开包暂不携带伊雷娜权重
+- VTube Studio 官方 Plugin API 适配、固定 Steam 启动入口、当前模型清单与表情预览，以及为已获授权模型预留的有界安装入口
+- 工作模式、受限文件拖入、网页查找与本机文件/代码协助；敏感操作仍需明确批准
 - 作品名留空时从精确角色资料页识别并在确认候选后自动回填
 - 再次启动同一人格且已有对话时，由当前模型用最近几轮和相关已确认记忆生成一句简短关联开场；新人格、切换人格或无历史时使用角色卡默认开场
 - 仅在桌宠窗口被选中时生效的可配置显示/隐藏与停止生成快捷键
@@ -35,13 +40,12 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 ## 当前不包含
 
-- ASR、TTS、声音克隆和实时打断
+- 未经授权的声音克隆、训练原始录音和公开模型再分发
 - 直播、弹幕和主播控制台
 - Qdrant、语义 Embedding、Neo4j 和独立 Python 记忆服务
 - 独立画像模型 API Key
-- 屏幕视觉和桌面控制
-- Agent、MCP、任意工具调用、游戏陪玩和插件市场
-- 本地模型训练或微调
+- 无边界屏幕监控、任意桌面控制、任意命令或第三方插件市场
+- 随主程序打包的 39GB 声音训练环境；训练工具保持独立并要求确认音源授权
 
 ## 开发路线
 
@@ -61,7 +65,7 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - V1.3：Live2D 深化角色表现、短期连续性、可信记忆与模型提供商支持
 - V1.4：版本化角色包、混合记忆、可选 Embedding/向量/关系索引，以及本地/远端模型透明协作
 - V1.5：受限快捷键、Windows 媒体控制、本机输入展示、角色连续开场和仓库内小组件代码接口
-- V1.6：本地/远端 ASR、TTS、VAD、打断、字幕与角色口型/说话动画
+- V1.6：本地/远端 ASR、TTS、VAD、打断、字幕、角色口型、VTube Studio、工作模式与便携角色套装
 - 后续：更多渲染路线、只读视觉与受控 Agent 能力
 
 ## 开发参考
@@ -86,6 +90,26 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 ## 版本记录
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
+
+### V1.6.0
+
+**完成了什么**
+
+- 增加中文显示、日语朗读的流式语音主干；默认伊雷娜语速 `0.90`、音量 `60%`，句间与结尾停顿按自然听感重新校准。
+- 增加说话就输出、精准小猫、手动录音三种中文输入；2 秒内续句合并后重新思考，繁忙时使用最多四句的有界队列。
+- 增加内嵌 Live2D、ViewerEX、VTube Studio 三种互斥显示方式，以及眨眼、鼠标追踪、随机待机、犯困点头、慢闭眼和消息唤醒。
+- 增加原创“小猫”角色卡、工作模式、文件拖入工作区、网页查找和受限本机文件/代码工具。
+- 已完成本地 ONNX 日语语音运行时与有界 VTube 模型安装器；当前公开包不包含授权待确认的伊雷娜权重和小黑猫模型，二者只保存在用户私人备份中。
+
+**使用了什么**
+
+- Electron Main 继续保管密钥、网络、文件、Steam 启动、外部显示和语音进程；Preload 只暴露窄方法，Renderer 所有输入均在 Main 再验证。
+- Style-Bert-VITS2 2.7.0 JP-Extra、ONNX Runtime DirectML/CPU 与本地日语 BERT 负责离线朗读；原始训练素材和训练环境不随包。
+- VTube Studio 官方 Plugin API 负责读取模型公开清单并注入有限参数；VTube Studio 本体仍由 Steam 提供。
+
+**复现与调教**
+
+完整角色卡、语音训练成品、语速停顿、监听模式、VTube 参数、休息动作、迁移步骤、授权边界和新电脑验收见 [V1.6 小猫角色、伊雷娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)。
 
 ### V1.5b（程序版本 1.5.2）
 
@@ -136,11 +160,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完成可信长期记忆、角色资料和情境对话增强；V1.2 完成 Live2D 角色资料库、陪伴连续性、作品社区词库、安全检索与共享设置同步闭环；V1.3 完成 Live2D 表现、短期情绪连续性和模型提供商增强；V1.4 完成角色包、角色库、上下文角色扮演、混合记忆、可选外部索引和本地/远端模型协作。V1.5 已完善聚焦窗口内的可配置快捷键、停止生成、Windows 媒体控制、默认关闭的 WASD/自选按键和鼠标活动展示，以及供开发者或编码 AI 使用的小组件代码注册器；输入到 Live2D 动作的映射只在模型提供对应 Motion 或 Expression 时作为可选增强。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1.5 完成可信记忆、角色资料与角色包、模型协作、Live2D 表现、快捷键、媒体控制和小组件。V1.6 已完成声音主干、三种中文输入、工作模式、显示方式重构、VTube Studio 官方 API 适配和便携角色套装。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[V1.5b Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 提供 Windows x64 免安装包，并使用 ASAR 避免 Windows 解压路径过长。[V1.5.0 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5.0) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+V1.6 将提供 Windows x64 免安装包，并可配合 [Steam VTube Studio](https://store.steampowered.com/app/1325860/VTube_Studio/) 使用。当前公开包不会包含授权待确认的小黑猫模型和伊雷娜音色；确认公开再分发权后再决定是否增加独立资源资产。[V1.5b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
@@ -174,13 +198,18 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1 完�
 - [V1.3 AIRI / SillyTavern 成熟方案对照](docs/V1_3_AIRI_SILLYTAVERN_ADOPTION.md)
 - [V1.4 角色包与模型协作计划](docs/V1_4_CHARACTER_PACKAGE_AND_MODEL_ROUTING.md)
 - [V1.5 小组件代码扩展指南](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)
+- [V1.6 声音与实时对话基线](docs/V1_6_SPEECH_FOUNDATION.md)
+- [V1.6 VTube Studio 适配边界](docs/V1_6_VTUBE_STUDIO_ADAPTER.md)
+- [V1.6 VTube Studio 模型调教参考](docs/V1_6_VTUBE_STUDIO_MODEL_ADAPTATION_GUIDE.md)
+- [V1.6 小猫角色、伊雷娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)
+- [V1.6 Release 说明](docs/V1_6_RELEASE_NOTES.md)
 - [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
 ## 角色与表现资源
 
-主线新安装默认使用凯尔希资料卡和“工作凯尔希”Live2D 运行素材。启用方法与完整许可边界见 [本地 Live2D 兼容模型](assets/models/README.md)。
+V1.6 新安装默认使用原创“小猫”资料卡。内嵌 Live2D 仍保留已获许可的“工作凯尔希”示例；VTube Studio 随包模型和伊雷娜音色只有在公开再分发权已经核验时才能进入 Release。启用方法、迁移步骤与许可边界见 [V1.6 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md) 和 [本地 Live2D 兼容模型](assets/models/README.md)。
 
 两个独立项目共享角色资料学习、长期记忆和安全边界，但不是同一个程序里的两套皮肤，也不提供跨版本角色运行时互切：本仓库专注 Live2D 的完整表现能力，[GIF Version](https://github.com/ph1gros/for-people-no-friend-gif) 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
 

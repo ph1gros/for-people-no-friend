@@ -82,6 +82,23 @@ describe('character package service', () => {
     expect(blocked.conflict).toBe('blocked');
   });
 
+  it('clears every inactive local role and package while preserving the active role', async () => {
+    const { service, profiles } = await createService();
+    const preview = await service.preview(createCharacterPackageArchive(manifest, new Map()));
+    await service.confirmImport(preview.previewId, false);
+    await profiles.add({
+      ...DEFAULT_CHARACTER_PROFILE,
+      id: 'local-extra',
+      name: '额外角色',
+      memoryNamespace: 'character-local-extra',
+    });
+
+    await expect(service.clearInactive()).resolves.toBe(2);
+    expect((await profiles.get()).id).toBe('test-role');
+    expect((await service.list()).map(({ profile }) => profile.id)).toEqual(['test-role']);
+    expect((await service.list())[0]?.imported).toBe(true);
+  });
+
   it('exports the bundled current Live2D runtime assets but not Cubism executable code', async () => {
     const directory = await mkdtemp(path.join(tmpdir(), 'fpnf-character-package-'));
     temporaryDirectories.push(directory);

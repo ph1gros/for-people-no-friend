@@ -263,6 +263,37 @@ export class CharacterPackageService {
     await rm(path.join(this.packagesRoot, installed.packageId), { recursive: true, force: true });
   }
 
+  public async clearInactive(): Promise<number> {
+    const [active, profiles, registry] = await Promise.all([
+      this.profiles.get(),
+      this.profiles.list(),
+      this.loadRegistry(),
+    ]);
+    const removedIds = new Set(profiles.filter(({ id }) => id !== active.id).map(({ id }) => id));
+    if (removedIds.size === 0) return 0;
+    const removedPackages = registry.packages.filter(({ characterId }) =>
+      removedIds.has(characterId),
+    );
+    const retainedRegistry: PackageRegistry = {
+      version: 1,
+      packages: registry.packages.filter(({ characterId }) => !removedIds.has(characterId)),
+    };
+    await this.saveRegistry(retainedRegistry);
+    try {
+      await this.profiles.retainOnlyActive();
+    } catch (error) {
+      await this.saveRegistry(registry).catch(() => undefined);
+      throw error;
+    }
+    this.pending.clear();
+    await Promise.all(
+      removedPackages.map(({ packageId }) =>
+        rm(path.join(this.packagesRoot, packageId), { recursive: true, force: true }),
+      ),
+    );
+    return removedIds.size;
+  }
+
   public async exportActive(): Promise<{ fileName: string; bytes: Uint8Array }> {
     const [profile, registry] = await Promise.all([this.profiles.get(), this.loadRegistry()]);
     const installed = registry.packages.find((item) => item.characterId === profile.id);

@@ -25,6 +25,8 @@ export interface StartConversationInput {
   requestId: string;
   message: string;
   availableActions: string[];
+  assistantMode: boolean;
+  wakeFromDrowsy?: boolean;
 }
 
 export interface ConversationContextDebug {
@@ -51,6 +53,14 @@ export type ConversationEvent =
   | { requestId: string; type: 'started'; userMessage: ConversationMessage }
   | { requestId: string; type: 'context-debug'; debug: ConversationContextDebug }
   | { requestId: string; type: 'text-delta'; text: string }
+  | { requestId: string; type: 'tool-status'; label: string }
+  | {
+      requestId: string;
+      type: 'tool-approval';
+      approvalId: string;
+      title: string;
+      description: string;
+    }
   | { requestId: string; type: 'completed'; assistantMessage: ConversationMessage }
   | { requestId: string; type: 'cancelled'; assistantMessage?: ConversationMessage }
   | { requestId: string; type: 'error'; error: PublicLlmError };
@@ -76,13 +86,17 @@ export const parseStartConversationInput = (value: unknown): StartConversationIn
   }
   const message = 'message' in value ? value.message : undefined;
   const actions = 'availableActions' in value ? value.availableActions : undefined;
+  const assistantMode = 'assistantMode' in value ? value.assistantMode : false;
+  const wakeFromDrowsy = 'wakeFromDrowsy' in value ? value.wakeFromDrowsy : false;
   if (
     typeof message !== 'string' ||
     message.trim().length === 0 ||
     message.length > 8_000 ||
     !Array.isArray(actions) ||
     actions.length > 64 ||
-    !actions.every((action) => typeof action === 'string' && ACTION_PATTERN.test(action))
+    !actions.every((action) => typeof action === 'string' && ACTION_PATTERN.test(action)) ||
+    typeof assistantMode !== 'boolean' ||
+    typeof wakeFromDrowsy !== 'boolean'
   ) {
     throw new Error('The conversation request is invalid.');
   }
@@ -90,6 +104,8 @@ export const parseStartConversationInput = (value: unknown): StartConversationIn
     requestId: parseRequestId('requestId' in value ? value.requestId : undefined),
     message: message.trim(),
     availableActions: [...new Set(actions)],
+    assistantMode,
+    wakeFromDrowsy,
   };
 };
 
@@ -238,6 +254,34 @@ export const parseConversationEvent = (value: unknown): ConversationEvent | unde
     }
     if (value.type === 'text-delta' && 'text' in value && typeof value.text === 'string') {
       return { requestId, type: 'text-delta', text: value.text.slice(0, 32_768) };
+    }
+    if (
+      value.type === 'tool-status' &&
+      'label' in value &&
+      typeof value.label === 'string' &&
+      value.label.length <= 200
+    ) {
+      return { requestId, type: 'tool-status', label: value.label };
+    }
+    if (
+      value.type === 'tool-approval' &&
+      'approvalId' in value &&
+      typeof value.approvalId === 'string' &&
+      REQUEST_ID_PATTERN.test(value.approvalId) &&
+      'title' in value &&
+      typeof value.title === 'string' &&
+      value.title.length <= 200 &&
+      'description' in value &&
+      typeof value.description === 'string' &&
+      value.description.length <= 1_000
+    ) {
+      return {
+        requestId,
+        type: 'tool-approval',
+        approvalId: value.approvalId,
+        title: value.title,
+        description: value.description,
+      };
     }
     if (
       value.type === 'started' &&

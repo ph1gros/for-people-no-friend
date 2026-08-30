@@ -12,6 +12,8 @@ import { DesktopIntegrationStore } from '../src/main/storage/desktop-integration
 import { ProviderConfigStore } from '../src/main/storage/provider-config-store';
 import { WorkGlossaryStore } from '../src/main/storage/work-glossary-store';
 import { WindowStateStore } from '../src/main/windows/window-state';
+import { SpeechConfigStore } from '../src/main/storage/speech-config-store';
+import { DEFAULT_SPEECH_SETTINGS } from '../src/shared/speech-ipc';
 
 describe('shared settings persistence contract', () => {
   let directory: string | undefined;
@@ -19,6 +21,36 @@ describe('shared settings persistence contract', () => {
   afterEach(async () => {
     if (directory) await rm(directory, { recursive: true, force: true });
     directory = undefined;
+  });
+
+  it('migrates legacy default speech speeds to 0.9 and preserves new explicit values', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-speech-settings-'));
+    await writeFile(
+      path.join(directory, 'speech.v1.json'),
+      JSON.stringify({
+        version: 1,
+        settings: { ...DEFAULT_SPEECH_SETTINGS, speed: 1, volume: 0.45 },
+      }),
+      'utf8',
+    );
+
+    await expect(new SpeechConfigStore(directory).get()).resolves.toMatchObject({
+      speed: 0.9,
+      volume: 0.45,
+    });
+
+    await writeFile(
+      path.join(directory, 'speech.v1.json'),
+      JSON.stringify({
+        version: 2,
+        settings: { ...DEFAULT_SPEECH_SETTINGS, speed: 0.95, volume: 0.45 },
+      }),
+      'utf8',
+    );
+    await expect(new SpeechConfigStore(directory).get()).resolves.toMatchObject({ speed: 0.9 });
+
+    await new SpeechConfigStore(directory).set({ ...DEFAULT_SPEECH_SETTINGS, speed: 0.95 });
+    await expect(new SpeechConfigStore(directory).get()).resolves.toMatchObject({ speed: 0.95 });
   });
 
   it('migrates older desktop settings to both default shortcuts', async () => {
@@ -112,6 +144,28 @@ describe('shared settings persistence contract', () => {
       widgetOrder: ['media', 'input'],
       visibilityShortcut: 'Ctrl+Shift+]',
       stopGenerationShortcut: 'Ctrl+Alt+Backspace',
+    });
+
+    await new SpeechConfigStore(directory).set({
+      enabled: true,
+      providerId: 'openai-compatible',
+      baseUrl: 'http://127.0.0.1:8000/v1',
+      modelId: 'fake-tts-model',
+      voiceId: 'fake-voice',
+      language: 'zh-CN',
+      responseFormat: 'wav',
+      speed: 1.05,
+      volume: 0.42,
+      inputMode: 'half',
+      pushToTalkKey: 'F10',
+    });
+    await expect(new SpeechConfigStore(directory).get()).resolves.toMatchObject({
+      enabled: true,
+      modelId: 'fake-tts-model',
+      voiceId: 'fake-voice',
+      volume: 0.42,
+      inputMode: 'half',
+      pushToTalkKey: 'F10',
     });
 
     const profiles = new CharacterProfileStore(directory);

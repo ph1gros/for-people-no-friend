@@ -5,7 +5,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { ChatEvent, ChatRequest, ModelSelection } from '../src/core/llm/contracts';
-import { ConversationRuntime } from '../src/main/conversation/conversation-runtime';
+import {
+  ConversationRuntime,
+  DROWSY_WAKE_PREFIX,
+} from '../src/main/conversation/conversation-runtime';
 import {
   adaptLegacyCharacterLore,
   createCharacterLoreRevision,
@@ -19,6 +22,7 @@ import { CharacterKnowledgeStore } from '../src/main/storage/character-knowledge
 import { ConversationStore } from '../src/main/storage/conversation-store';
 import { DeskpetDatabase } from '../src/main/storage/deskpet-database';
 import type { ConversationEvent } from '../src/shared/conversation-ipc';
+import type { AssistantToolService } from '../src/main/assistant/assistant-tool-service';
 
 describe('conversation runtime integration', () => {
   let directory: string | undefined;
@@ -101,7 +105,12 @@ describe('conversation runtime integration', () => {
     const events: ConversationEvent[] = [];
     const completed = new Promise<void>((resolve) => {
       const result = runtime.start(
-        { requestId: 'chat_1', message: '你好', availableActions: ['wave'] },
+        {
+          requestId: 'chat_1',
+          message: '你好',
+          availableActions: ['wave'],
+          wakeFromDrowsy: true,
+        },
         (event) => {
           events.push(event);
           if (event.type === 'completed' || event.type === 'error') {
@@ -118,7 +127,7 @@ describe('conversation runtime integration', () => {
         .filter((event) => event.type === 'text-delta')
         .map((event) => ('text' in event ? event.text : ''))
         .join(''),
-    ).toBe('流式回复');
+    ).toBe(`${DROWSY_WAKE_PREFIX}\n流式回复`);
     expect(capturedRequest?.messages).toEqual([{ role: 'user', content: '你好' }]);
     expect(capturedRequest?.systemPrompt).toContain('wave');
     expect(capturedRequest?.systemPrompt).toContain('用户此前谈过宠物');
@@ -131,13 +140,91 @@ describe('conversation runtime integration', () => {
       expect.objectContaining({ role: 'user', content: '你好', status: 'complete' }),
       expect.objectContaining({
         role: 'assistant',
-        content: '流式回复',
+        content: `${DROWSY_WAKE_PREFIX}\n流式回复`,
         emotion: 'happy',
         action: 'wave',
         inputTokens: 12,
         outputTokens: 8,
       }),
     ]);
+    database.close();
+  });
+
+  it('pauses a work-mode file write for a visible approval and resumes after Main validates it', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-assistant-approval-'));
+    const selection: ModelSelection = { providerId: 'openai-compatible', modelId: 'fake-model' };
+    const models = {
+      getConversationConfiguration: async () => ({ selection }),
+    } as unknown as ModelRuntime;
+    const tools = {
+      run: async (
+        _input: unknown,
+        callbacks: {
+          onStatus(label: string): void;
+          requestApproval(input: {
+            approvalId: string;
+            title: string;
+            description: string;
+          }): Promise<boolean>;
+        },
+      ) => {
+        callbacks.onStatus('准备修改文件…');
+        const approved = await callbacks.requestApproval({
+          approvalId: 'write_test_1',
+          title: '允许写入？',
+          description: 'code.ts',
+        });
+        return {
+          reply: {
+            text: approved ? '文件已经修改。' : '文件写入已取消。',
+            emotion: 'neutral' as const,
+          },
+          inputTokens: 5,
+          outputTokens: 3,
+        };
+      },
+    } as unknown as AssistantToolService;
+    const database = new DeskpetDatabase(directory);
+    const runtime = new ConversationRuntime(
+      models,
+      new CharacterProfileStore(directory),
+      new ConversationStore(database),
+      undefined,
+      undefined,
+      undefined,
+      tools,
+    );
+    const events: ConversationEvent[] = [];
+
+    await new Promise<void>((resolve) => {
+      runtime.start(
+        {
+          requestId: 'chat_tool_approval',
+          message: '修改 code.ts',
+          availableActions: [],
+          assistantMode: true,
+        },
+        (event) => {
+          events.push(event);
+          if (event.type === 'tool-approval') {
+            expect(runtime.resolveToolApproval(event.requestId, event.approvalId, true)).toBe(true);
+          }
+          if (event.type === 'completed' || event.type === 'error') resolve();
+        },
+      );
+    });
+
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'tool-status', label: '准备修改文件…' }),
+        expect.objectContaining({ type: 'tool-approval', approvalId: 'write_test_1' }),
+        expect.objectContaining({
+          type: 'completed',
+          assistantMessage: expect.objectContaining({ content: '文件已经修改。' }),
+        }),
+      ]),
+    );
+    expect(runtime.resolveToolApproval('chat_tool_approval', 'write_test_1', true)).toBe(false);
     database.close();
   });
 
@@ -208,6 +295,7 @@ describe('conversation runtime integration', () => {
     ]);
     expect(capturedRequest?.systemPrompt).toContain('用户最近在照顾宠物团子');
     expect(capturedRequest?.systemPrompt).toContain('不要逐字复述历史');
+    expect(capturedRequest?.systemPrompt).toContain('必须使用自然简体中文');
     expect(await history.list(100, KALTSIT_CHARACTER_PROFILE.memoryNamespace)).toHaveLength(2);
     expect(await runtime.generateContextualOpeningLine()).toBeUndefined();
     expect(invocations).toBe(1);

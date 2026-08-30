@@ -1,3 +1,4 @@
+import type { CharacterPresentationPort } from '../../core/presentation/character-presentation';
 import type {
   CharacterEmotion,
   CharacterState,
@@ -47,7 +48,7 @@ export interface PerformanceTimingPolicy {
 }
 
 export const DEFAULT_PERFORMANCE_TIMING: Readonly<PerformanceTimingPolicy> = Object.freeze({
-  actionTimeoutMs: 12_000,
+  actionTimeoutMs: 10_000,
   actionCooldownMs: 1_200,
   recoveryDelayMs: 0,
 });
@@ -199,11 +200,40 @@ export class TrackingChannel {
   }
 }
 
-export class Live2DPerformanceController {
+export class LipSyncChannel {
+  private value = 0;
+
+  public constructor(
+    private readonly driver: Live2DDriver,
+    private readonly enabled: boolean,
+    private readonly gain: number,
+  ) {}
+
+  public update(level: number): void {
+    if (!this.enabled || !Number.isFinite(level)) {
+      this.reset();
+      return;
+    }
+    const gated = level <= 0.025 ? 0 : (level - 0.025) / 0.975;
+    const target = Math.max(0, Math.min(1, gated * this.gain));
+    const smoothing = target >= this.value ? 0.68 : 0.24;
+    this.value += (target - this.value) * smoothing;
+    if (this.value < 0.005) this.value = 0;
+    this.driver.setLipSync(this.value);
+  }
+
+  public reset(): void {
+    this.value = 0;
+    this.driver.setLipSync(0);
+  }
+}
+
+export class Live2DPerformanceController implements CharacterPresentationPort {
   public readonly state: StateChannel;
   public readonly action: ActionChannel;
   public readonly emotion: EmotionChannel;
   public readonly tracking: TrackingChannel;
+  public readonly lipSync: LipSyncChannel;
   private readonly emotionActions: Live2DControlMap['emotionActions'];
 
   public constructor(
@@ -218,6 +248,11 @@ export class Live2DPerformanceController {
     this.emotion = new EmotionChannel(driver, controls.emotions);
     this.emotionActions = controls.emotionActions;
     this.tracking = new TrackingChannel(driver);
+    this.lipSync = new LipSyncChannel(
+      driver,
+      Boolean(controls.lipSync),
+      controls.lipSync?.gain ?? 1,
+    );
   }
 
   public async respond(emotion: CharacterEmotion, requestedAction?: string): Promise<void> {
@@ -226,11 +261,24 @@ export class Live2DPerformanceController {
     if (action) void this.action.enqueue(action);
   }
 
+  public setState(state: CharacterState): Promise<boolean> {
+    return this.state.set(state);
+  }
+
+  public updateSpeechLevel(level: number): void {
+    this.lipSync.update(level);
+  }
+
+  public resetSpeech(): void {
+    this.lipSync.reset();
+  }
+
   public async start(): Promise<void> {
     await Promise.all([this.state.restore(), this.emotion.set('neutral')]);
   }
 
   public destroy(): void {
+    this.lipSync.reset();
     this.driver.destroy();
   }
 }

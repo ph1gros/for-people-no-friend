@@ -104,6 +104,9 @@ describe('conversation context assembly', () => {
     expect(casualPrompt).toContain('必须遵循的角色说话方式：自信而有舞台感');
     expect(casualPrompt).toContain('自然采用上述称呼、语气、句式和措辞');
     expect(casualPrompt).toContain('角色本人而不是角色资料解说员');
+    expect(casualPrompt).toContain('text 默认必须使用自然、清楚的简体中文');
+    expect(casualPrompt).toContain('语音层会单独转换');
+    expect(casualPrompt).not.toContain('text 都必须只用自然日语回应');
     expect(casualPrompt).toContain('不替用户决定行动');
     expect(casualPrompt).toContain('一次只给出当前角色的一次回应');
     expect(casualPrompt).toContain('禁止只在通用答案的开头或结尾添加角色称呼');

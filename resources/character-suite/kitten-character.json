@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "id": "kitten",
+  "name": "小猫",
+  "memoryNamespace": "character-kitten",
+  "display": "VTube Studio / FPNF-Kitten",
+  "textLanguage": "zh-CN",
+  "speechLanguage": "ja-JP",
+  "note": "V1.6 新安装已内置同一份原创角色卡；此文件用于迁移核对，不包含对话、记忆、API Key 或本机路径。"
+}

@@ -1,9 +1,15 @@
 import type { CharacterProfile } from '../core/conversation/character-profile';
 import type {
+  CharacterDisplayMode,
+  CharacterDisplayModeResult,
+  SetCharacterDisplayModeInput,
+} from './character-display-ipc';
+import type {
   CharacterIdInput,
   CharacterLibraryEntry,
   CharacterPackageFileResult,
   ConfirmCharacterPackageImportInput,
+  CreateLocalCharacterInput,
 } from './character-package-ipc';
 import type {
   BuildCharacterDraftInput,
@@ -28,6 +34,7 @@ import type {
   SetDesktopWidgetEnabledInput,
   SetDesktopIntegrationSettingsInput,
 } from './desktop-integration-ipc';
+import type { DesktopLayoutSettings, SetDesktopLayoutSettingsInput } from './desktop-layout-ipc';
 import type {
   ConfirmMemoryCandidateInput,
   MergeMemoryCandidatesInput,
@@ -54,10 +61,49 @@ import type {
 } from './model-ipc';
 import type { SetChatPanelExpandedInput, SetWindowScaleInput } from './window-ipc';
 import type {
+  CancelSpeechInput,
+  SetSpeechSecretInput,
+  SetSpeechSettingsInput,
+  SpeechOperationResult,
+  SpeechStatus,
+  SpeechSynthesisInput,
+  SpeechSynthesisResult,
+  SpeechTranscriptionInput,
+  SpeechTranscriptionResult,
+} from './speech-ipc';
+import type {
   WorkGlossaryInput,
   WorkGlossaryStatus,
   WorkGlossarySyncResult,
 } from './work-glossary-ipc';
+import type {
+  SetViewerExSettingsInput,
+  ViewerExOperationResult,
+  ViewerExPresentationInput,
+  ViewerExStatus,
+} from './viewerex-ipc';
+import type {
+  SetVTubeStudioSettingsInput,
+  VTubeStudioInspectResult,
+  VTubeStudioExpressionPreviewInput,
+  VTubeStudioOperationResult,
+  VTubeStudioPresentationInput,
+  VTubeStudioStatus,
+} from './vtube-studio-ipc';
+import type { Live2DModelImportResult } from './live2d-model-ipc';
+import type {
+  ConfirmAuthorizedVoiceUseInput,
+  Live2DModelExportResult,
+  LocalAssetOperationResult,
+  LocalSpeechAssetStatus,
+} from './local-asset-ipc';
+import type {
+  AssistantToolStatus,
+  AssistantWorkspaceResult,
+  ImportDroppedWorkspaceFilesInput,
+  ImportDroppedWorkspaceFilesResult,
+  ResolveAssistantToolApprovalInput,
+} from './assistant-tools-ipc';
 
 export const IPC_CHANNELS = {
   getAppVersion: 'app:getVersion',
@@ -80,16 +126,26 @@ export const IPC_CHANNELS = {
   startConversation: 'conversation:start',
   cancelConversation: 'conversation:cancel',
   conversationEvent: 'conversation:event',
+  getAssistantToolStatus: 'assistant:getToolStatus',
+  selectAssistantWorkspace: 'assistant:selectWorkspace',
+  importDroppedWorkspaceFiles: 'assistant:importDroppedWorkspaceFiles',
+  resolveAssistantToolApproval: 'assistant:resolveToolApproval',
   searchCharacters: 'character:search',
   buildCharacterDraft: 'character:buildDraft',
   cancelCharacterResearch: 'character:cancelResearch',
   listCharacters: 'character:list',
+  createLocalCharacter: 'character:createLocal',
+  clearInactiveCharacters: 'character:clearInactive',
   previewCharacterPackage: 'character:previewPackage',
   confirmCharacterPackageImport: 'character:confirmPackageImport',
   exportActiveCharacterPackage: 'character:exportActivePackage',
   activateCharacter: 'character:activate',
   removeCharacter: 'character:remove',
   getActiveCharacterModelManifest: 'character:getActiveModelManifest',
+  importLive2DModel: 'live2d:importModel',
+  exportActiveLive2DModel: 'live2d:exportActiveModel',
+  getCharacterDisplayMode: 'characterDisplay:getMode',
+  setCharacterDisplayMode: 'characterDisplay:setMode',
   getWorkGlossaryStatus: 'glossary:getStatus',
   syncWorkGlossary: 'glossary:sync',
   getMemorySettings: 'memory:getSettings',
@@ -109,11 +165,35 @@ export const IPC_CHANNELS = {
   setWindowScale: 'window:setScale',
   windowScaleChanged: 'window:scaleChanged',
   setChatPanelExpanded: 'window:setChatPanelExpanded',
+  getDesktopLayoutSettings: 'window:getDesktopLayoutSettings',
+  setDesktopLayoutSettings: 'window:setDesktopLayoutSettings',
   getDesktopIntegrationStatus: 'desktop:getIntegrationStatus',
   setDesktopIntegrationSettings: 'desktop:setIntegrationSettings',
   setDesktopWidgetEnabled: 'desktop:setWidgetEnabled',
   sendMediaCommand: 'desktop:sendMediaCommand',
   desktopInputActivity: 'desktop:inputActivity',
+  getSpeechStatus: 'speech:getStatus',
+  setSpeechSettings: 'speech:setSettings',
+  setSpeechSecret: 'speech:setSecret',
+  deleteSpeechSecret: 'speech:deleteSecret',
+  synthesizeSpeech: 'speech:synthesize',
+  transcribeSpeech: 'speech:transcribe',
+  cancelSpeech: 'speech:cancel',
+  getLocalSpeechAssetStatus: 'speechAssets:getStatus',
+  exportLocalVoice: 'speechAssets:exportVoice',
+  openSpeechTrainingSources: 'speechAssets:openTrainingSources',
+  launchSpeechTrainer: 'speechAssets:launchTrainer',
+  getViewerExStatus: 'viewerex:getStatus',
+  setViewerExSettings: 'viewerex:setSettings',
+  presentInViewerEx: 'viewerex:present',
+  getVTubeStudioStatus: 'vtubeStudio:getStatus',
+  launchVTubeStudio: 'vtubeStudio:launchSteam',
+  installBundledVTubeStudioModel: 'vtubeStudio:installBundledModel',
+  setVTubeStudioSettings: 'vtubeStudio:setSettings',
+  authorizeVTubeStudio: 'vtubeStudio:authorize',
+  inspectVTubeStudio: 'vtubeStudio:inspect',
+  previewVTubeStudioExpression: 'vtubeStudio:previewExpression',
+  presentInVTubeStudio: 'vtubeStudio:present',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
@@ -144,10 +224,18 @@ export interface DeskpetApi {
   startConversation(input: StartConversationInput): Promise<StartConversationResult>;
   cancelConversation(input: CancelConversationInput): Promise<boolean>;
   onConversationEvent(listener: (event: ConversationEvent) => void): () => void;
+  getAssistantToolStatus(): Promise<AssistantToolStatus>;
+  selectAssistantWorkspace(): Promise<AssistantWorkspaceResult>;
+  importDroppedWorkspaceFiles(
+    input: ImportDroppedWorkspaceFilesInput,
+  ): Promise<ImportDroppedWorkspaceFilesResult>;
+  resolveAssistantToolApproval(input: ResolveAssistantToolApprovalInput): Promise<boolean>;
   searchCharacters(input: SearchCharactersInput): Promise<CharacterSearchResult>;
   buildCharacterDraft(input: BuildCharacterDraftInput): Promise<CharacterDraftResult>;
   cancelCharacterResearch(input: CancelCharacterResearchInput): Promise<boolean>;
   listCharacters(): Promise<CharacterLibraryEntry[]>;
+  createLocalCharacter(input: CreateLocalCharacterInput): Promise<ModelOperationResult>;
+  clearInactiveCharacters(): Promise<ModelOperationResult>;
   previewCharacterPackage(): Promise<CharacterPackageFileResult>;
   confirmCharacterPackageImport(
     input: ConfirmCharacterPackageImportInput,
@@ -156,6 +244,10 @@ export interface DeskpetApi {
   activateCharacter(input: CharacterIdInput): Promise<ModelOperationResult>;
   removeCharacter(input: CharacterIdInput): Promise<ModelOperationResult>;
   getActiveCharacterModelManifest(): Promise<string | undefined>;
+  importLive2DModel(): Promise<Live2DModelImportResult>;
+  exportActiveLive2DModel(): Promise<Live2DModelExportResult>;
+  getCharacterDisplayMode(): Promise<CharacterDisplayMode>;
+  setCharacterDisplayMode(input: SetCharacterDisplayModeInput): Promise<CharacterDisplayModeResult>;
   getWorkGlossaryStatus(input: WorkGlossaryInput): Promise<WorkGlossaryStatus>;
   syncWorkGlossary(input: WorkGlossaryInput): Promise<WorkGlossarySyncResult>;
   getMemorySettings(): Promise<MemorySettings>;
@@ -175,9 +267,37 @@ export interface DeskpetApi {
   setWindowScale(input: SetWindowScaleInput): Promise<number>;
   onWindowScaleChanged(listener: (scale: number) => void): () => void;
   setChatPanelExpanded(input: SetChatPanelExpandedInput): Promise<void>;
+  getDesktopLayoutSettings(): Promise<DesktopLayoutSettings>;
+  setDesktopLayoutSettings(input: SetDesktopLayoutSettingsInput): Promise<DesktopLayoutSettings>;
   getDesktopIntegrationStatus(): Promise<DesktopIntegrationStatus>;
   setDesktopIntegrationSettings(input: SetDesktopIntegrationSettingsInput): Promise<void>;
   setDesktopWidgetEnabled(input: SetDesktopWidgetEnabledInput): Promise<void>;
   sendMediaCommand(input: MediaCommandInput): Promise<boolean>;
   onDesktopInputActivity(listener: (event: DesktopInputActivityEvent) => void): () => void;
+  getSpeechStatus(): Promise<SpeechStatus>;
+  setSpeechSettings(input: SetSpeechSettingsInput): Promise<SpeechOperationResult>;
+  setSpeechSecret(input: SetSpeechSecretInput): Promise<SpeechOperationResult>;
+  deleteSpeechSecret(): Promise<SpeechOperationResult>;
+  synthesizeSpeech(input: SpeechSynthesisInput): Promise<SpeechSynthesisResult>;
+  transcribeSpeech(input: SpeechTranscriptionInput): Promise<SpeechTranscriptionResult>;
+  cancelSpeech(input: CancelSpeechInput): Promise<boolean>;
+  getLocalSpeechAssetStatus(): Promise<LocalSpeechAssetStatus>;
+  exportLocalVoice(): Promise<LocalAssetOperationResult>;
+  openSpeechTrainingSources(
+    input: ConfirmAuthorizedVoiceUseInput,
+  ): Promise<LocalAssetOperationResult>;
+  launchSpeechTrainer(input: ConfirmAuthorizedVoiceUseInput): Promise<LocalAssetOperationResult>;
+  getViewerExStatus(): Promise<ViewerExStatus>;
+  setViewerExSettings(input: SetViewerExSettingsInput): Promise<ViewerExOperationResult>;
+  presentInViewerEx(input: ViewerExPresentationInput): Promise<boolean>;
+  getVTubeStudioStatus(): Promise<VTubeStudioStatus>;
+  launchVTubeStudio(): Promise<VTubeStudioOperationResult>;
+  installBundledVTubeStudioModel(): Promise<VTubeStudioOperationResult>;
+  setVTubeStudioSettings(input: SetVTubeStudioSettingsInput): Promise<VTubeStudioOperationResult>;
+  authorizeVTubeStudio(): Promise<VTubeStudioOperationResult>;
+  inspectVTubeStudio(): Promise<VTubeStudioInspectResult>;
+  previewVTubeStudioExpression(
+    input: VTubeStudioExpressionPreviewInput,
+  ): Promise<VTubeStudioOperationResult>;
+  presentInVTubeStudio(input: VTubeStudioPresentationInput): Promise<boolean>;
 }

@@ -76,13 +76,13 @@ describe('window state', () => {
   it('resizes around the current window center', () => {
     expect(resizeStateAroundCenter({ version: 5, x: 100, y: 100, scale: 1 }, 1.5)).toEqual({
       version: 5,
-      x: 10,
-      y: -30,
-      scale: 1.5,
+      x: 64,
+      y: 48,
+      scale: 1.2,
     });
   });
 
-  it('keeps the Live2D stage height while adding a separate side chat panel', () => {
+  it('keeps chat beside Live2D and gives settings a dedicated large layout', () => {
     expect(stateToBounds({ version: 5, x: 120, y: 80, scale: 0.85 }, true)).toEqual({
       x: 120,
       y: 80,
@@ -98,8 +98,8 @@ describe('window state', () => {
     expect(stateToBounds({ version: 5, x: 120, y: 80, scale: 0.85 }, true, true)).toEqual({
       x: 120,
       y: 80,
-      width: 612,
-      height: 442,
+      width: 935,
+      height: 646,
     });
   });
 

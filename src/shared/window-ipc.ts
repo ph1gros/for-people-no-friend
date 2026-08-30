@@ -1,5 +1,5 @@
 export const MIN_WINDOW_SCALE = 0.65;
-export const MAX_WINDOW_SCALE = 1.5;
+export const MAX_WINDOW_SCALE = 1.2;
 
 export interface SetWindowScaleInput {
   scale: number;

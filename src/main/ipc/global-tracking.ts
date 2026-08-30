@@ -10,6 +10,17 @@ export interface ScreenArea extends ScreenPoint {
 
 const clamp = (value: number): number => Math.min(1, Math.max(-1, value));
 
+export const cursorProximityToArea = (
+  cursor: ScreenPoint,
+  area: ScreenArea,
+  nearbyDistance = 48,
+): number => {
+  const distanceX = Math.max(area.x - cursor.x, 0, cursor.x - (area.x + area.width));
+  const distanceY = Math.max(area.y - cursor.y, 0, cursor.y - (area.y + area.height));
+  const distance = Math.hypot(distanceX, distanceY);
+  return Math.max(0, Math.min(1, 1 - distance / Math.max(1, nearbyDistance)));
+};
+
 export const normalizeCursorToWorkArea = (
   cursor: ScreenPoint,
   workArea: ScreenArea,

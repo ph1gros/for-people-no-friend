@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import type { CharacterPresentationPort } from '../src/core/presentation/character-presentation';
 import type {
   Live2DControlMap,
   Live2DDriver,
@@ -50,6 +51,10 @@ class FakeDriver implements Live2DDriver {
     this.calls.push('tracking:reset');
   }
 
+  public setLipSync(value: number): void {
+    this.calls.push(`lip:${value.toFixed(3)}`);
+  }
+
   public destroy(): void {
     this.calls.push('destroy');
   }
@@ -61,6 +66,28 @@ const nextTurn = async (): Promise<void> => {
 };
 
 describe('Live2D performance channels', () => {
+  it('drives character behavior through a renderer-neutral presentation port', async () => {
+    const driver = new FakeDriver();
+    const presentation: CharacterPresentationPort = new Live2DPerformanceController(driver, {
+      ...controls,
+      lipSync: { mouthOpenParameter: 'ParamMouthOpenY', gain: 1 },
+    });
+
+    await presentation.setState('thinking');
+    await presentation.respond('happy', 'wave');
+    presentation.updateSpeechLevel(0.5);
+    presentation.resetSpeech();
+
+    expect(driver.calls).toEqual([
+      'state:Thinking',
+      'emotion:smile',
+      'action:Wave',
+      expect.stringMatching(/^lip:0\.[23]/u),
+      'lip:0.000',
+    ]);
+    driver.actionResolvers.shift()?.(true);
+  });
+
   it('queues actions FIFO and restores the latest state after the queue', async () => {
     const driver = new FakeDriver();
     const controller = new Live2DPerformanceController(driver, controls);
@@ -94,7 +121,7 @@ describe('Live2D performance channels', () => {
     const controller = new Live2DPerformanceController(
       driver,
       controls,
-      { actionTimeoutMs: 12_000, actionCooldownMs: 1_200, recoveryDelayMs: 0 },
+      { actionTimeoutMs: 10_000, actionCooldownMs: 1_200, recoveryDelayMs: 0 },
       () => now,
     );
 
@@ -173,5 +200,19 @@ describe('Live2D performance channels', () => {
 
     expect(driver.tracking).toEqual([{ x: 1, y: -1 }]);
     expect(driver.calls).toContain('tracking:reset');
+  });
+
+  it('drives only an explicitly declared mouth parameter and resets safely', () => {
+    const driver = new FakeDriver();
+    const controller = new Live2DPerformanceController(driver, {
+      ...controls,
+      lipSync: { mouthOpenParameter: 'ParamMouthOpenY', gain: 1.2 },
+    });
+
+    controller.lipSync.update(0.5);
+    controller.lipSync.update(Number.NaN);
+
+    expect(driver.calls[0]).toMatch(/^lip:0\.[34]/u);
+    expect(driver.calls[1]).toBe('lip:0.000');
   });
 });

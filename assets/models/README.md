@@ -10,6 +10,8 @@ M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。`
 4. 使用其他模型时，将本目录的 `model.example.json` 复制为 `assets/models/local/model.json`，按模型实际的文件名、Motion Group 和 Expression Id 修改映射。
 5. 运行 `pnpm dev`。如果模型或 Core 缺失，桌宠窗口会显示错误和“重新加载”按钮；补齐文件后无需重启即可重试。
 
+普通用户也可以在“角色与显示方式 → 纯 Live2D”中点击“导入 Live2D 模型”，直接选择模型目录里的 `.model3.json`。程序会复制该文件实际引用的纹理、动作、表情、物理和音频资源，并把它设为当前角色的显示模型；未引用文件、脚本、远程资源和越过模型目录的路径不会导入。直接导入不会猜测动作、情绪或口型映射，需要这些能力时仍应使用完整的 FPNF 角色包或经过检查的 `model.json`。
+
 `assets/models/local/` 中只有获准收录的 `kaltsit-work/` 示例会进入 Git；用户自己的模型、`model.json` 和 Cubism Core 仍保持忽略。不要在其中保存 API Key、密钥或其他隐私数据。
 
 ## 当前本机参考模型
@@ -28,6 +30,17 @@ M2 使用 Cubism 5 runtime 加载 Cubism 3、4、5 的 `.model3.json` 模型。`
 眨眼和呼吸由模型 `Groups`/参数与 runtime 自动驱动。循环待机 Motion 不会阻止自动眨眼。`states`、`actions`、`emotions` 只填写模型真实存在的映射；缺失动作会安全返回失败，缺失情绪会回退到 `neutral`。
 
 如果模型没有 Expression，但有能表达情绪的一次性 Motion，可以增加 `emotionActions`，把标准情绪映射到 `actions` 中已经声明的动作名。显式回复动作优先；没有显式动作时才使用情绪动作。凯尔希示例会把 `angry` 映射到 `annoyed`、`sad` 映射到 `sigh`。映射到不存在的动作会拒绝加载，文字聊天仍可安全回退。
+
+V1.6 的音频口型必须由模型清单显式声明，未声明时只播放声音，不猜测或写入任意模型参数：
+
+```json
+"lipSync": {
+  "mouthOpenParameter": "ParamMouthOpenY",
+  "gain": 1
+}
+```
+
+`mouthOpenParameter` 只接受有限长度的 Cubism 参数 ID，`gain` 允许 0.1 至 3。播放结束、取消、解码失败或角色卸载时都会立即归零；不存在该参数时模型运行时会忽略口型，文字与音频仍保持可用。
 
 部分模型使用一个参数切换身体、服装或部件。例如模型要求 `ParamshentiZ` 始终为 `1`，可在清单顶层填写：
 

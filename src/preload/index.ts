@@ -1,9 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import type { CharacterProfile } from '../core/conversation/character-profile';
+import type { SetCharacterDisplayModeInput } from '../shared/character-display-ipc';
 import type {
   CharacterIdInput,
   ConfirmCharacterPackageImportInput,
+  CreateLocalCharacterInput,
 } from '../shared/character-package-ipc';
 import type {
   BuildCharacterDraftInput,
@@ -22,6 +24,7 @@ import {
   type SetDesktopWidgetEnabledInput,
   type SetDesktopIntegrationSettingsInput,
 } from '../shared/desktop-integration-ipc';
+import type { SetDesktopLayoutSettingsInput } from '../shared/desktop-layout-ipc';
 import { type DeskpetApi, IPC_CHANNELS } from '../shared/ipc';
 import type {
   ConfirmMemoryCandidateInput,
@@ -45,6 +48,26 @@ import {
   type SetWindowScaleInput,
 } from '../shared/window-ipc';
 import type { WorkGlossaryInput } from '../shared/work-glossary-ipc';
+import {
+  parseSpeechSynthesisResult,
+  parseSpeechTranscriptionResult,
+  type CancelSpeechInput,
+  type SetSpeechSecretInput,
+  type SetSpeechSettingsInput,
+  type SpeechSynthesisInput,
+  type SpeechTranscriptionInput,
+} from '../shared/speech-ipc';
+import type { SetViewerExSettingsInput, ViewerExPresentationInput } from '../shared/viewerex-ipc';
+import type {
+  SetVTubeStudioSettingsInput,
+  VTubeStudioExpressionPreviewInput,
+  VTubeStudioPresentationInput,
+} from '../shared/vtube-studio-ipc';
+import type {
+  ImportDroppedWorkspaceFilesInput,
+  ResolveAssistantToolApprovalInput,
+} from '../shared/assistant-tools-ipc';
+import type { ConfirmAuthorizedVoiceUseInput } from '../shared/local-asset-ipc';
 
 const deskpetApi: DeskpetApi = Object.freeze({
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.getAppVersion) as Promise<string>,
@@ -130,6 +153,22 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.on(IPC_CHANNELS.conversationEvent, wrapped);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.conversationEvent, wrapped);
   },
+  getAssistantToolStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getAssistantToolStatus) as ReturnType<
+      DeskpetApi['getAssistantToolStatus']
+    >,
+  selectAssistantWorkspace: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.selectAssistantWorkspace) as ReturnType<
+      DeskpetApi['selectAssistantWorkspace']
+    >,
+  importDroppedWorkspaceFiles: (input: ImportDroppedWorkspaceFilesInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.importDroppedWorkspaceFiles, input) as ReturnType<
+      DeskpetApi['importDroppedWorkspaceFiles']
+    >,
+  resolveAssistantToolApproval: (input: ResolveAssistantToolApprovalInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.resolveAssistantToolApproval, input) as ReturnType<
+      DeskpetApi['resolveAssistantToolApproval']
+    >,
   searchCharacters: (input: SearchCharactersInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.searchCharacters, input) as ReturnType<
       DeskpetApi['searchCharacters']
@@ -144,6 +183,14 @@ const deskpetApi: DeskpetApi = Object.freeze({
     >,
   listCharacters: () =>
     ipcRenderer.invoke(IPC_CHANNELS.listCharacters) as ReturnType<DeskpetApi['listCharacters']>,
+  createLocalCharacter: (input: CreateLocalCharacterInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.createLocalCharacter, input) as ReturnType<
+      DeskpetApi['createLocalCharacter']
+    >,
+  clearInactiveCharacters: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.clearInactiveCharacters) as ReturnType<
+      DeskpetApi['clearInactiveCharacters']
+    >,
   previewCharacterPackage: () =>
     ipcRenderer.invoke(IPC_CHANNELS.previewCharacterPackage) as ReturnType<
       DeskpetApi['previewCharacterPackage']
@@ -167,6 +214,22 @@ const deskpetApi: DeskpetApi = Object.freeze({
   getActiveCharacterModelManifest: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getActiveCharacterModelManifest) as ReturnType<
       DeskpetApi['getActiveCharacterModelManifest']
+    >,
+  importLive2DModel: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.importLive2DModel) as ReturnType<
+      DeskpetApi['importLive2DModel']
+    >,
+  exportActiveLive2DModel: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.exportActiveLive2DModel) as ReturnType<
+      DeskpetApi['exportActiveLive2DModel']
+    >,
+  getCharacterDisplayMode: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getCharacterDisplayMode) as ReturnType<
+      DeskpetApi['getCharacterDisplayMode']
+    >,
+  setCharacterDisplayMode: (input: SetCharacterDisplayModeInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setCharacterDisplayMode, input) as ReturnType<
+      DeskpetApi['setCharacterDisplayMode']
     >,
   getWorkGlossaryStatus: (input: WorkGlossaryInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.getWorkGlossaryStatus, input) as ReturnType<
@@ -240,6 +303,14 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.setChatPanelExpanded, input) as ReturnType<
       DeskpetApi['setChatPanelExpanded']
     >,
+  getDesktopLayoutSettings: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getDesktopLayoutSettings) as ReturnType<
+      DeskpetApi['getDesktopLayoutSettings']
+    >,
+  setDesktopLayoutSettings: (input: SetDesktopLayoutSettingsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setDesktopLayoutSettings, input) as ReturnType<
+      DeskpetApi['setDesktopLayoutSettings']
+    >,
   getDesktopIntegrationStatus: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getDesktopIntegrationStatus) as ReturnType<
       DeskpetApi['getDesktopIntegrationStatus']
@@ -267,6 +338,84 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.on(IPC_CHANNELS.desktopInputActivity, wrapped);
     return () => ipcRenderer.removeListener(IPC_CHANNELS.desktopInputActivity, wrapped);
   },
+  getSpeechStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getSpeechStatus) as ReturnType<DeskpetApi['getSpeechStatus']>,
+  setSpeechSettings: (input: SetSpeechSettingsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setSpeechSettings, input) as ReturnType<
+      DeskpetApi['setSpeechSettings']
+    >,
+  setSpeechSecret: (input: SetSpeechSecretInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setSpeechSecret, input) as ReturnType<
+      DeskpetApi['setSpeechSecret']
+    >,
+  deleteSpeechSecret: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.deleteSpeechSecret) as ReturnType<
+      DeskpetApi['deleteSpeechSecret']
+    >,
+  synthesizeSpeech: async (input: SpeechSynthesisInput) =>
+    parseSpeechSynthesisResult(await ipcRenderer.invoke(IPC_CHANNELS.synthesizeSpeech, input)),
+  transcribeSpeech: async (input: SpeechTranscriptionInput) =>
+    parseSpeechTranscriptionResult(await ipcRenderer.invoke(IPC_CHANNELS.transcribeSpeech, input)),
+  cancelSpeech: (input: CancelSpeechInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.cancelSpeech, input) as ReturnType<DeskpetApi['cancelSpeech']>,
+  getLocalSpeechAssetStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getLocalSpeechAssetStatus) as ReturnType<
+      DeskpetApi['getLocalSpeechAssetStatus']
+    >,
+  exportLocalVoice: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.exportLocalVoice) as ReturnType<DeskpetApi['exportLocalVoice']>,
+  openSpeechTrainingSources: (input: ConfirmAuthorizedVoiceUseInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.openSpeechTrainingSources, input) as ReturnType<
+      DeskpetApi['openSpeechTrainingSources']
+    >,
+  launchSpeechTrainer: (input: ConfirmAuthorizedVoiceUseInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.launchSpeechTrainer, input) as ReturnType<
+      DeskpetApi['launchSpeechTrainer']
+    >,
+  getViewerExStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getViewerExStatus) as ReturnType<
+      DeskpetApi['getViewerExStatus']
+    >,
+  setViewerExSettings: (input: SetViewerExSettingsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setViewerExSettings, input) as ReturnType<
+      DeskpetApi['setViewerExSettings']
+    >,
+  presentInViewerEx: (input: ViewerExPresentationInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.presentInViewerEx, input) as ReturnType<
+      DeskpetApi['presentInViewerEx']
+    >,
+  getVTubeStudioStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getVTubeStudioStatus) as ReturnType<
+      DeskpetApi['getVTubeStudioStatus']
+    >,
+  launchVTubeStudio: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.launchVTubeStudio) as ReturnType<
+      DeskpetApi['launchVTubeStudio']
+    >,
+  installBundledVTubeStudioModel: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.installBundledVTubeStudioModel) as ReturnType<
+      DeskpetApi['installBundledVTubeStudioModel']
+    >,
+  setVTubeStudioSettings: (input: SetVTubeStudioSettingsInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.setVTubeStudioSettings, input) as ReturnType<
+      DeskpetApi['setVTubeStudioSettings']
+    >,
+  authorizeVTubeStudio: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.authorizeVTubeStudio) as ReturnType<
+      DeskpetApi['authorizeVTubeStudio']
+    >,
+  inspectVTubeStudio: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.inspectVTubeStudio) as ReturnType<
+      DeskpetApi['inspectVTubeStudio']
+    >,
+  previewVTubeStudioExpression: (input: VTubeStudioExpressionPreviewInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewVTubeStudioExpression, input) as ReturnType<
+      DeskpetApi['previewVTubeStudioExpression']
+    >,
+  presentInVTubeStudio: (input: VTubeStudioPresentationInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.presentInVTubeStudio, input) as ReturnType<
+      DeskpetApi['presentInVTubeStudio']
+    >,
 });
 
 contextBridge.exposeInMainWorld('deskpet', deskpetApi);

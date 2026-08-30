@@ -5,7 +5,7 @@ import type { Rectangle } from 'electron';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 export const DEFAULT_WINDOW_SIZE = Object.freeze({ width: 360, height: 520 });
 export const EXPANDED_WINDOW_SIZE = Object.freeze({ width: 720, height: 520 });
-export const SETTINGS_WINDOW_SIZE = EXPANDED_WINDOW_SIZE;
+export const SETTINGS_WINDOW_SIZE = Object.freeze({ width: 1100, height: 760 });
 export const DEFAULT_WINDOW_SCALE = 0.85;
 export { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 

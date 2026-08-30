@@ -16,6 +16,7 @@
     "emotions": {
       "neutral": "neutral",
       "happy": "smile"
-    }
+    },
+    "lipSync": { "mouthOpenParameter": "ParamMouthOpenY", "gain": 1 }
   }
 }

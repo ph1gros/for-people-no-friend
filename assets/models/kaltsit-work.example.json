@@ -32,6 +32,7 @@
       "surprised": "surprised",
       "shy": "coldSweat",
       "playful": "earWiggle"
-    }
+    },
+    "lipSync": { "mouthOpenParameter": "ParamMouthOpenY", "gain": 1 }
   }
 }

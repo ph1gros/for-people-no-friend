@@ -14,7 +14,21 @@ describe('conversation IPC validation', () => {
         message: ' 你好 ',
         availableActions: ['wave', 'wave'],
       }),
-    ).toEqual({ requestId: 'chat_1', message: '你好', availableActions: ['wave'] });
+    ).toEqual({
+      requestId: 'chat_1',
+      message: '你好',
+      availableActions: ['wave'],
+      assistantMode: false,
+      wakeFromDrowsy: false,
+    });
+    expect(
+      parseStartConversationInput({
+        requestId: 'chat_wake',
+        message: '醒醒',
+        availableActions: [],
+        wakeFromDrowsy: true,
+      }),
+    ).toMatchObject({ wakeFromDrowsy: true });
     expect(
       parseConversationConfiguration({
         selection: { providerId: 'openai-compatible', modelId: ' local-model ' },
@@ -28,6 +42,22 @@ describe('conversation IPC validation', () => {
         requestId: 'chat_1',
         message: 'x'.repeat(8_001),
         availableActions: [],
+      }),
+    ).toThrow();
+    expect(() =>
+      parseStartConversationInput({
+        requestId: 'chat_1',
+        message: 'hello',
+        availableActions: [],
+        assistantMode: 'yes',
+      }),
+    ).toThrow();
+    expect(() =>
+      parseStartConversationInput({
+        requestId: 'chat_1',
+        message: 'hello',
+        availableActions: [],
+        wakeFromDrowsy: 'yes',
       }),
     ).toThrow();
     expect(() =>
@@ -51,5 +81,14 @@ describe('conversation IPC validation', () => {
       type: 'text-delta',
       text: 'x',
     });
+    expect(
+      parseConversationEvent({
+        requestId: 'chat_1',
+        type: 'tool-approval',
+        approvalId: 'write_1',
+        title: '写入？',
+        description: 'code.ts',
+      }),
+    ).toMatchObject({ type: 'tool-approval', approvalId: 'write_1' });
   });
 });

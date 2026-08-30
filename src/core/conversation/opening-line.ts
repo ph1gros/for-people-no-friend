@@ -15,6 +15,7 @@ const LEADING_STAGE_DIRECTION =
 const MAX_OPENING_LINE_CHARACTERS = 280;
 const TERMINAL_PUNCTUATION = /[。！？!?…~～」』”’）)]$/u;
 const INCOMPLETE_TRAILING_PUNCTUATION = /[，,、：:；;—-]$/u;
+const JAPANESE_KANA = /[ぁ-ゖァ-ヺ]/u;
 
 export const sanitizeOpeningLine = (value: string): string | undefined => {
   const withoutStageDirection = value
@@ -22,7 +23,7 @@ export const sanitizeOpeningLine = (value: string): string | undefined => {
     .replace(/^```(?:json)?\s*|\s*```$/giu, '')
     .replace(LEADING_STAGE_DIRECTION, '')
     .trim();
-  if (!withoutStageDirection) return undefined;
+  if (!withoutStageDirection || JAPANESE_KANA.test(withoutStageDirection)) return undefined;
   const characters = Array.from(withoutStageDirection);
   let bounded = characters.slice(0, MAX_OPENING_LINE_CHARACTERS).join('').trim();
   if (characters.length > MAX_OPENING_LINE_CHARACTERS) {

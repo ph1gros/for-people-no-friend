@@ -15,6 +15,10 @@ release/
 .release/
 coverage/
 .vite/
+.tmp-spout2/
+native/vtube-studio-spout/bin/*.pdb
+native/vtube-studio-spout/bin/*Debug.exe
+native/vtube-studio-spout/bin/SpoutLibrary.dll
 
 # Logs and runtime data
 *.log

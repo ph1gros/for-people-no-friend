@@ -4,6 +4,7 @@ import type {
   DesktopIntegrationSettings,
   DesktopIntegrationStatus,
   DesktopWidgetId,
+  InputOverlayKey,
 } from '../../shared/desktop-integration-ipc';
 import type { DesktopIntegrationStore } from '../storage/desktop-integration-store';
 
@@ -14,7 +15,10 @@ export interface GlobalShortcutAdapter {
 
 export interface InputActivityMonitorAdapter {
   start(
-    settings: Pick<DesktopIntegrationSettings, 'inputOverlayKeys' | 'inputOverlayMouseEnabled'>,
+    settings: {
+      inputOverlayKeys: InputOverlayKey[];
+      inputOverlayMouseEnabled: boolean;
+    },
     emit: (event: DesktopInputActivityEvent) => void,
   ): Promise<boolean>;
   stop(): void;
@@ -47,6 +51,7 @@ export class DesktopIntegrationService {
   private shortcutWindowFocused = false;
   private mediaCommandInFlight = false;
   private inputOverlayActive = false;
+  private pushToTalkKey: InputOverlayKey | undefined;
 
   public constructor(
     private readonly store: DesktopIntegrationStore,
@@ -99,6 +104,12 @@ export class DesktopIntegrationService {
         throw new Error('The desktop widget extension is not registered.');
     }
     await this.setSettings(settings);
+  }
+
+  public async setPushToTalkKey(key: InputOverlayKey | undefined): Promise<void> {
+    if (this.pushToTalkKey === key) return;
+    this.pushToTalkKey = key;
+    await this.applyInputOverlay();
   }
 
   public setShortcutWindowFocused(focused: boolean): void {
@@ -180,9 +191,23 @@ export class DesktopIntegrationService {
   private async applyInputOverlay(): Promise<void> {
     this.inputActivity.stop();
     this.inputOverlayActive = false;
-    if (!this.settings.inputOverlayEnabled) return;
-    this.inputOverlayActive = await this.inputActivity
-      .start(this.settings, this.emitInputActivity)
+    if (!this.settings.inputOverlayEnabled && !this.pushToTalkKey) return;
+    const inputOverlayKeys = [
+      ...new Set([
+        ...this.settings.inputOverlayKeys,
+        ...(this.pushToTalkKey ? [this.pushToTalkKey] : []),
+      ]),
+    ];
+    const monitorActive = await this.inputActivity
+      .start(
+        {
+          inputOverlayKeys,
+          inputOverlayMouseEnabled:
+            this.settings.inputOverlayEnabled && this.settings.inputOverlayMouseEnabled,
+        },
+        this.emitInputActivity,
+      )
       .catch(() => false);
+    this.inputOverlayActive = this.settings.inputOverlayEnabled && monitorActive;
   }
 }

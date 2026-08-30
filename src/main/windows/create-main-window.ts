@@ -66,12 +66,54 @@ export const createMainWindow = (state: PersistedWindowState): BrowserWindow => 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
   window.webContents.on('will-navigate', (event) => event.preventDefault());
-  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) =>
-    callback(false),
+  const isTrustedMicrophoneRequest = (
+    requestingWebContents: Electron.WebContents | null,
+    permission: string,
+    requestingUrl: string,
+    mediaTypes?: string[],
+  ): boolean => {
+    if (
+      requestingWebContents !== window.webContents ||
+      permission !== 'media' ||
+      mediaTypes?.length !== 1 ||
+      mediaTypes[0] !== 'audio'
+    ) {
+      return false;
+    }
+    try {
+      const origin = new URL(requestingUrl);
+      if (origin.protocol === 'file:') return true;
+      return Boolean(devServerUrl && origin.origin === new URL(devServerUrl).origin);
+    } catch {
+      return false;
+    }
+  };
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
+  window.webContents.session.setPermissionRequestHandler(
+    (requestingWebContents, permission, callback, details) => {
+      const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined;
+      callback(
+        details.isMainFrame &&
+          isTrustedMicrophoneRequest(
+            requestingWebContents,
+            permission,
+            details.requestingUrl,
+            mediaTypes,
+          ),
+      );
+    },
+  );
+  window.webContents.session.setPermissionCheckHandler(
+    (requestingWebContents, permission, requestingOrigin, details) =>
+      isTrustedMicrophoneRequest(
+        requestingWebContents,
+        permission,
+        requestingOrigin,
+        details.mediaType ? [details.mediaType] : undefined,
+      ),
   );
   window.on('maximize', () => window.unmaximize());
 
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   if (devServerUrl) {
     void window.loadURL(devServerUrl);
   } else {

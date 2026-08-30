@@ -18,6 +18,7 @@ const validManifest = {
     actions: { wave: { group: 'TapBody', index: 1 } },
     emotions: { neutral: 'neutral', happy: 'smile' },
     emotionActions: { angry: 'wave' },
+    lipSync: { mouthOpenParameter: 'ParamMouthOpenY', gain: 1 },
   },
 };
 
@@ -71,6 +72,27 @@ describe('local Live2D model manifest', () => {
   it('rejects non-finite persistent parameter values', () => {
     expect(
       parseLocalModelManifest({ ...validManifest, parameters: { ParamAngleX: Number.NaN } }),
+    ).toBeUndefined();
+  });
+
+  it('rejects unsafe or unbounded lip-sync parameter mappings', () => {
+    expect(
+      parseLocalModelManifest({
+        ...validManifest,
+        controls: {
+          ...validManifest.controls,
+          lipSync: { mouthOpenParameter: '../ParamMouthOpenY', gain: 1 },
+        },
+      }),
+    ).toBeUndefined();
+    expect(
+      parseLocalModelManifest({
+        ...validManifest,
+        controls: {
+          ...validManifest.controls,
+          lipSync: { mouthOpenParameter: 'ParamMouthOpenY', gain: 99 },
+        },
+      }),
     ).toBeUndefined();
   });
 

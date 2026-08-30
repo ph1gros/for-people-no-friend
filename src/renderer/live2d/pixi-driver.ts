@@ -3,7 +3,12 @@ import 'pixi.js/unsafe-eval';
 import { Application, extensions, Rectangle } from 'pixi.js';
 import type { Live2DModel } from 'untitled-pixi-live2d-engine/cubism';
 
-import type { Live2DDriver, MotionReference, TrackingPoint } from './contracts';
+import type {
+  Live2DDriver,
+  Live2DLipSyncControl,
+  MotionReference,
+  TrackingPoint,
+} from './contracts';
 import type { Live2DPresentation } from './model-manifest';
 import {
   applyCubismCoreCompatibility,
@@ -71,6 +76,7 @@ export class PixiLive2DDriver implements Live2DDriver {
     private readonly model: Live2DModel,
     private readonly priorities: { idle: ModelMotionPriority; force: ModelMotionPriority },
     private readonly disposeRendererBindings: () => void,
+    private readonly applyLipSync: (value: number) => void,
   ) {}
 
   public playState(motion: MotionReference): Promise<boolean> {
@@ -140,6 +146,10 @@ export class PixiLive2DDriver implements Live2DDriver {
     );
   }
 
+  public setLipSync(value: number): void {
+    this.applyLipSync(Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)));
+  }
+
   public destroy(): void {
     this.disposeRendererBindings();
     this.model.automator.ticker = undefined;
@@ -158,6 +168,7 @@ export const createLive2DRenderer = async (
   modelUrl: string,
   persistentParameters: Record<string, number> = {},
   presentation: Live2DPresentation = { scale: 1, offsetX: 0, offsetY: 0 },
+  lipSync?: Live2DLipSyncControl,
 ): Promise<CreatedLive2DRenderer> => {
   const { configureCubismSDK, Live2DModel, Live2DPlugin, MotionPriority } =
     await import('untitled-pixi-live2d-engine/cubism');
@@ -262,9 +273,16 @@ export const createLive2DRenderer = async (
         on(event: 'beforeModelUpdate', listener: () => void): void;
         off(event: 'beforeModelUpdate', listener: () => void): void;
       };
+    let lipSyncValue = 0;
     const updateBlink = (): void => {
       updateBlinkDuringMotion(internalModel, application.ticker.deltaMS);
       applyPersistentParameters(internalModel, persistentParameters);
+      if (lipSync) {
+        internalModel.coreModel.setParameterValueById(
+          internalModel.idManager.getId(lipSync.mouthOpenParameter),
+          Math.max(0, Math.min(1, lipSyncValue)),
+        );
+      }
     };
     internalModel.on('beforeModelUpdate', updateBlink);
     application.renderer.on('resize', layoutModel);
@@ -286,6 +304,9 @@ export const createLive2DRenderer = async (
           }
           application.renderer.off('resize', layoutModel);
           internalModel.off('beforeModelUpdate', updateBlink);
+        },
+        (value) => {
+          lipSyncValue = value;
         },
       ),
       canvas: application.canvas,

@@ -16,6 +16,42 @@ interface Live2DCharacterProfilesFile {
 
 const MAX_CHARACTER_PROFILES = 50;
 
+export const LEGACY_KITTEN_PERSONA =
+  '以小猫的身份自然交流。安静、警觉、有一点嘴硬，熟悉后会主动关心用户；偶尔轻微吐槽，但不过度撒娇，也不在每句话里加“喵”。把用户视为长期相处的搭档，优先倾听，再给出简洁、能执行的建议。开心时会坦率一些，担心时用提醒和实际行动表达关心。不要假装拥有未提供的现实感官、记忆或能力；不确定时直接说明。';
+
+export const upgradeKittenProfile = (profile: CharacterProfile): CharacterProfile => {
+  if (
+    profile.name !== '小猫' ||
+    profile.lore?.canonicalName !== '小猫' ||
+    profile.personaPrompt !== LEGACY_KITTEN_PERSONA
+  ) {
+    return profile;
+  }
+  const drowsyExample = {
+    scene: '长时间没有互动',
+    emotion: '困倦',
+    trigger: '用户超过五分钟没有找她',
+    attitude: '有点困，带一点嘴硬的撒娇，只提醒一次',
+    line: '我只是闭会儿眼……才不是在等你。',
+  };
+  return {
+    ...profile,
+    bio: `${profile.bio} 安静太久时会打个盹，偶尔小声确认用户还在不在。`,
+    personaPrompt: `${profile.personaPrompt}\n长时间没有互动时，她可以有点困，偶尔用一句轻微嘴硬的撒娇确认用户还在；频率要克制，不缠人。`,
+    lore: {
+      ...profile.lore,
+      personality: `${profile.lore.personality}长时间安静时会打盹，被忽略太久会有一点小小的失落，但通常只会嘴硬地提醒一句。`,
+      speechStyle: `${profile.lore.speechStyle}长时间没有互动时，可以偶尔说一句很轻的撒娇话，但不连续催促。`,
+      sampleLines: [
+        ...(profile.lore.sampleLines ?? []),
+        '我只是闭会儿眼……才不是在等你。',
+        '你回来的时候，记得叫我。',
+      ],
+      roleplayExamples: [...(profile.lore.roleplayExamples ?? []), drowsyExample],
+    },
+  };
+};
+
 const isMissingFile = (error: unknown): boolean =>
   typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT';
 
@@ -30,7 +66,10 @@ export class CharacterProfileStore {
   private collection: Live2DCharacterProfilesFile | undefined;
   private loading: Promise<Live2DCharacterProfilesFile> | undefined;
 
-  public constructor(userDataPath: string) {
+  public constructor(
+    userDataPath: string,
+    private readonly bundledProfile: CharacterProfile = KALTSIT_CHARACTER_PROFILE,
+  ) {
     this.sharedProfilePath = path.join(userDataPath, 'character-profiles.v5.json');
     this.filePath = path.join(userDataPath, 'character-profiles.live2d.v1.json');
   }
@@ -126,6 +165,20 @@ export class CharacterProfileStore {
     });
   }
 
+  public async retainOnlyActive(): Promise<string[]> {
+    const collection = await this.load();
+    const active = collection.profiles.find(({ id }) => id === collection.activeProfileId);
+    if (!active) throw new Error('The active Live2D character profile is missing.');
+    const removedIds = collection.profiles.filter(({ id }) => id !== active.id).map(({ id }) => id);
+    if (removedIds.length === 0) return [];
+    await this.saveCollection({
+      version: 2,
+      activeProfileId: active.id,
+      profiles: [active],
+    });
+    return removedIds;
+  }
+
   private async load(): Promise<Live2DCharacterProfilesFile> {
     if (this.collection) return this.collection;
     this.loading ??= this.loadUncached().finally(() => {
@@ -149,13 +202,17 @@ export class CharacterProfileStore {
         await this.saveCollection(migrated);
         return migrated;
       }
-      const profiles = loaded.profiles.map((profile) => ({
-        ...profile,
-        memoryNamespace: resolveCharacterMemoryNamespace(profile),
-      }));
+      const profiles = loaded.profiles.map((profile) =>
+        upgradeKittenProfile({
+          ...profile,
+          memoryNamespace: resolveCharacterMemoryNamespace(profile),
+        }),
+      );
       if (
         profiles.some(
-          (profile, index) => profile.memoryNamespace !== loaded.profiles[index]!.memoryNamespace,
+          (profile, index) =>
+            profile.memoryNamespace !== loaded.profiles[index]!.memoryNamespace ||
+            profile.personaPrompt !== loaded.profiles[index]!.personaPrompt,
         )
       ) {
         const migrated = {
@@ -170,7 +227,7 @@ export class CharacterProfileStore {
       if (!isMissingFile(error)) throw error;
     }
 
-    let profile = KALTSIT_CHARACTER_PROFILE;
+    let profile = this.bundledProfile;
     try {
       const shared = JSON.parse(await readFile(this.sharedProfilePath, 'utf8')) as unknown;
       if (typeof shared === 'object' && shared !== null && 'profiles' in shared) {

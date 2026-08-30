@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { normalizeCursorToWorkArea } from '../src/main/ipc/global-tracking';
+import { cursorProximityToArea, normalizeCursorToWorkArea } from '../src/main/ipc/global-tracking';
 
 describe('global cursor tracking', () => {
   const workArea = { x: 100, y: 50, width: 1_600, height: 900 };
@@ -16,5 +16,12 @@ describe('global cursor tracking', () => {
       x: -1,
       y: -1,
     });
+  });
+
+  it('only treats the cursor as nearby at the app boundary', () => {
+    const appArea = { x: 500, y: 200, width: 400, height: 600 };
+    expect(cursorProximityToArea({ x: 700, y: 400 }, appArea)).toBe(1);
+    expect(cursorProximityToArea({ x: 476, y: 400 }, appArea)).toBe(0.5);
+    expect(cursorProximityToArea({ x: 440, y: 400 }, appArea)).toBe(0);
   });
 });

@@ -115,6 +115,22 @@ const parseParameterMap = (value: unknown): Record<string, number> | undefined =
   return result;
 };
 
+const parseLipSync = (value: unknown): Live2DControlMap['lipSync'] | undefined => {
+  if (!isObject(value)) return undefined;
+  if (
+    Object.keys(value).some((key) => key !== 'mouthOpenParameter' && key !== 'gain') ||
+    typeof value.mouthOpenParameter !== 'string' ||
+    !/^[A-Za-z][A-Za-z0-9_]{0,127}$/u.test(value.mouthOpenParameter) ||
+    typeof value.gain !== 'number' ||
+    !Number.isFinite(value.gain) ||
+    value.gain < 0.1 ||
+    value.gain > 3
+  ) {
+    return undefined;
+  }
+  return { mouthOpenParameter: value.mouthOpenParameter, gain: value.gain };
+};
+
 const readBoundedNumber = (
   record: Record<string, unknown>,
   key: string,
@@ -171,6 +187,8 @@ export const parseLocalModelManifest = (value: unknown): LocalModelManifest | un
     value.controls.emotionActions === undefined
       ? undefined
       : parseStringMap<CharacterEmotion>(value.controls.emotionActions, EMOTIONS);
+  const lipSync =
+    value.controls.lipSync === undefined ? undefined : parseLipSync(value.controls.lipSync);
   const parameters =
     value.parameters === undefined ? undefined : parseParameterMap(value.parameters);
   const presentation =
@@ -180,6 +198,7 @@ export const parseLocalModelManifest = (value: unknown): LocalModelManifest | un
     !actions ||
     !emotions ||
     (value.controls.emotionActions !== undefined && !emotionActions) ||
+    (value.controls.lipSync !== undefined && !lipSync) ||
     (value.parameters !== undefined && !parameters) ||
     (value.presentation !== undefined && !presentation)
   ) {
@@ -201,6 +220,7 @@ export const parseLocalModelManifest = (value: unknown): LocalModelManifest | un
       actions: actions as Record<string, MotionReference>,
       emotions,
       ...(emotionActions ? { emotionActions } : {}),
+      ...(lipSync ? { lipSync } : {}),
     },
   };
 };

@@ -3,6 +3,8 @@ coverage/
 dist/
 dist-electron/
 node_modules/
+.tmp-spout2/
+native/vtube-studio-spout/vendor/spout2/
 pnpm-lock.yaml
 
 # Preserve authorized third-party character asset formatting.

@@ -38,5 +38,6 @@ describe('opening line continuity', () => {
     );
     expect(sanitizeOpeningLine('这句话还没有说完，')).toBeUndefined();
     expect(sanitizeOpeningLine('（只是看着你）')).toBeUndefined();
+    expect(sanitizeOpeningLine('……また来たか。今日はどうしたの？')).toBeUndefined();
   });
 });

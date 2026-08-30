@@ -1,13 +1,21 @@
+import { randomUUID } from 'node:crypto';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { app, dialog, ipcMain, screen, type BrowserWindow } from 'electron';
+import { app, dialog, ipcMain, screen, shell, type BrowserWindow } from 'electron';
 
+import {
+  parseSetCharacterDisplayModeInput,
+  type CharacterDisplayMode,
+  type CharacterDisplayModeResult,
+} from '../../shared/character-display-ipc';
 import {
   parseCharacterIdInput,
   parseConfirmCharacterPackageImportInput,
+  parseCreateLocalCharacterInput,
   type CharacterPackageFileResult,
 } from '../../shared/character-package-ipc';
+import { DEFAULT_CHARACTER_PROFILE } from '../../core/conversation/character-profile';
 import {
   parseBuildCharacterDraftInput,
   parseCancelCharacterResearchInput,
@@ -48,17 +56,56 @@ import {
 } from '../../shared/model-ipc';
 import { parseSetChatPanelExpandedInput, parseSetWindowScaleInput } from '../../shared/window-ipc';
 import { parseWorkGlossaryInput } from '../../shared/work-glossary-ipc';
+import {
+  DEFAULT_SPEECH_SETTINGS,
+  parseCancelSpeechInput,
+  parseSetSpeechSecretInput,
+  parseSetSpeechSettingsInput,
+  parseSpeechSynthesisInput,
+  parseSpeechTranscriptionInput,
+  type SpeechStatus,
+} from '../../shared/speech-ipc';
+import {
+  parseSetViewerExSettingsInput,
+  parseViewerExPresentationInput,
+} from '../../shared/viewerex-ipc';
+import {
+  parseVTubeStudioExpressionPreviewInput,
+  parseSetVTubeStudioSettingsInput,
+  parseVTubeStudioPresentationInput,
+} from '../../shared/vtube-studio-ipc';
 import type { CharacterResearchService } from '../character/character-research-service';
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
 import type { ConversationRuntime } from '../conversation/conversation-runtime';
 import type { CharacterPackageService } from '../character/character-package-service';
 import { MAX_CHARACTER_PACKAGE_BYTES } from '../character/character-package-archive';
+import type { Live2DModelImportService } from '../live2d/live2d-model-import-service';
 import type { DesktopIntegrationService } from '../desktop/desktop-integration-service';
 import type { ModelRuntime } from '../llm/model-runtime';
 import type { MemoryService } from '../memory/memory-service';
 import type { CharacterProfileStore } from '../storage/character-profile-store';
+import type { CharacterDisplayConfigStore } from '../storage/character-display-config-store';
+import type { DesktopLayoutStore } from '../storage/desktop-layout-store';
+import {
+  DEFAULT_DESKTOP_LAYOUT_SETTINGS,
+  parseSetDesktopLayoutSettingsInput,
+} from '../../shared/desktop-layout-ipc';
+import type { SpeechService } from '../speech/speech-service';
+import type { ViewerExService } from '../viewerex/viewerex-service';
+import type { VTubeStudioService } from '../vtube-studio/vtube-studio-service';
 import { normalizeCursorToWorkArea } from './global-tracking';
 import { isTrustedIpcSender } from './sender-validation';
+import type { AssistantToolService } from '../assistant/assistant-tool-service';
+import {
+  parseImportDroppedWorkspaceFilesInput,
+  parseResolveAssistantToolApprovalInput,
+} from '../../shared/assistant-tools-ipc';
+import {
+  parseConfirmAuthorizedVoiceUseInput,
+  type LocalAssetOperationResult,
+} from '../../shared/local-asset-ipc';
+import type { LocalSpeechAssetService } from '../speech/local-speech-asset-service';
+import type { BundledVTubeModelInstaller } from '../vtube-studio/bundled-vtube-model-installer';
 
 export interface IpcWindowController {
   getWindow(): BrowserWindow | undefined;
@@ -132,7 +179,76 @@ export const registerIpcHandlers = (
   workGlossary: WorkGlossaryService,
   desktopIntegrations?: DesktopIntegrationService,
   characterPackages?: CharacterPackageService,
+  live2DModelImports?: Live2DModelImportService,
+  speech?: SpeechService,
+  viewerEx?: ViewerExService,
+  vTubeStudio?: VTubeStudioService,
+  characterDisplay?: CharacterDisplayConfigStore,
+  onCharacterDisplayModeChanged?: (mode: CharacterDisplayMode) => void | Promise<void>,
+  assistantTools?: AssistantToolService,
+  desktopLayout?: DesktopLayoutStore,
+  localSpeechAssets?: LocalSpeechAssetService,
+  bundledVTubeModel?: BundledVTubeModelInstaller,
 ): void => {
+  const notifyCharacterDisplayModeChanged = async (mode: CharacterDisplayMode): Promise<void> => {
+    try {
+      await onCharacterDisplayModeChanged?.(mode);
+    } catch (error) {
+      console.warn('Unable to update the character display runtime.', error);
+    }
+  };
+
+  const resolveCharacterDisplayMode = async (): Promise<CharacterDisplayMode> => {
+    const stored = await characterDisplay?.get();
+    if (stored) {
+      await notifyCharacterDisplayModeChanged(stored);
+      return stored;
+    }
+
+    const [viewerStatus, vTubeStudioStatus] = await Promise.all([
+      viewerEx?.getStatus(),
+      vTubeStudio?.getStatus(),
+    ]);
+    const migrated: CharacterDisplayMode = vTubeStudioStatus?.settings.enabled
+      ? 'vtube-studio'
+      : viewerStatus?.settings.enabled
+        ? 'viewerex'
+        : 'off';
+    await characterDisplay?.set(migrated);
+    await notifyCharacterDisplayModeChanged(migrated);
+    return migrated;
+  };
+
+  const applyCharacterDisplayMode = async (
+    mode: CharacterDisplayMode,
+  ): Promise<CharacterDisplayModeResult> => {
+    try {
+      const [viewerStatus, vTubeStudioStatus] = await Promise.all([
+        viewerEx?.getStatus(),
+        vTubeStudio?.getStatus(),
+      ]);
+      if (viewerEx && viewerStatus) {
+        const result = await viewerEx.setSettings({
+          ...viewerStatus.settings,
+          enabled: mode === 'viewerex',
+        });
+        if (!result.ok) return { ok: false, mode, message: result.message };
+      }
+      if (vTubeStudio && vTubeStudioStatus) {
+        const result = await vTubeStudio.setSettings({
+          ...vTubeStudioStatus.settings,
+          enabled: mode === 'vtube-studio',
+        });
+        if (!result.ok) return { ok: false, mode, message: result.message };
+      }
+      await characterDisplay?.set(mode);
+      await notifyCharacterDisplayModeChanged(mode);
+      return { ok: true, mode };
+    } catch {
+      return { ok: false, mode, message: '角色显示方式无法保存。' };
+    }
+  };
+
   ipcMain.handle(IPC_CHANNELS.getAppVersion, (event) => {
     requireTrustedSender(event, windows);
     return app.getVersion();
@@ -149,6 +265,14 @@ export const registerIpcHandlers = (
     const bounds = window.getBounds();
     const workArea = screen.getDisplayMatching(bounds).workArea;
     return normalizeCursorToWorkArea(screen.getCursorScreenPoint(), workArea);
+  });
+  ipcMain.handle(IPC_CHANNELS.getCharacterDisplayMode, async (event) => {
+    requireTrustedSender(event, windows);
+    return resolveCharacterDisplayMode();
+  });
+  ipcMain.handle(IPC_CHANNELS.setCharacterDisplayMode, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return applyCharacterDisplayMode(parseSetCharacterDisplayModeInput(input).mode);
   });
 
   ipcMain.handle(IPC_CHANNELS.listModelProviders, (event) => {
@@ -241,6 +365,45 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return conversations.cancel(parseCancelConversationInput(input).requestId);
   });
+  ipcMain.handle(IPC_CHANNELS.getAssistantToolStatus, (event) => {
+    requireTrustedSender(event, windows);
+    return (
+      assistantTools?.getStatus() ?? {
+        workspaceConfigured: false,
+        webAvailable: false,
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.selectAssistantWorkspace, async (event) => {
+    requireTrustedSender(event, windows);
+    if (!assistantTools) {
+      return { workspaceConfigured: false, webAvailable: false, canceled: true };
+    }
+    const selection = await showOpenDialog(windows, {
+      title: '选择小猫可以处理的工作文件夹',
+      properties: ['openDirectory'],
+    });
+    const selected = selection.filePaths[0];
+    if (selection.canceled || !selected) {
+      return { ...(await assistantTools.getStatus()), canceled: true };
+    }
+    const info = await stat(selected);
+    if (!info.isDirectory()) throw new Error('The assistant workspace is invalid.');
+    await assistantTools.setWorkspace(selected);
+    return { ...(await assistantTools.getStatus()), canceled: false };
+  });
+  ipcMain.handle(IPC_CHANNELS.importDroppedWorkspaceFiles, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    if (!assistantTools) {
+      return { ok: false, imported: [], message: '工作区文件服务不可用。' };
+    }
+    return assistantTools.importDroppedFiles(parseImportDroppedWorkspaceFilesInput(input));
+  });
+  ipcMain.handle(IPC_CHANNELS.resolveAssistantToolApproval, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const parsed = parseResolveAssistantToolApprovalInput(input);
+    return conversations.resolveToolApproval(parsed.requestId, parsed.approvalId, parsed.approved);
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.searchCharacters,
@@ -283,6 +446,28 @@ export const registerIpcHandlers = (
   ipcMain.handle(IPC_CHANNELS.listCharacters, (event) => {
     requireTrustedSender(event, windows);
     return characterPackages?.list() ?? [];
+  });
+  ipcMain.handle(IPC_CHANNELS.createLocalCharacter, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(async () => {
+      const { name } = parseCreateLocalCharacterInput(input);
+      const suffix = randomUUID().replaceAll('-', '').slice(0, 16);
+      conversations.cancelOpeningLine();
+      await profiles.add({
+        ...DEFAULT_CHARACTER_PROFILE,
+        id: `local-${suffix}`,
+        name,
+        memoryNamespace: `character-${suffix}`,
+      });
+      await profiles.activate(`local-${suffix}`);
+    }, '本地角色创建失败。');
+  });
+  ipcMain.handle(IPC_CHANNELS.clearInactiveCharacters, (event) => {
+    requireTrustedSender(event, windows);
+    return runModelOperation(async () => {
+      if (!characterPackages) throw new Error();
+      await characterPackages.clearInactive();
+    }, '角色库无法清空，当前角色和已有资料均已保留。');
   });
   ipcMain.handle(
     IPC_CHANNELS.previewCharacterPackage,
@@ -382,7 +567,63 @@ export const registerIpcHandlers = (
   });
   ipcMain.handle(IPC_CHANNELS.getActiveCharacterModelManifest, async (event) => {
     requireTrustedSender(event, windows);
-    return characterPackages?.getActiveModelManifest();
+    return (
+      (await live2DModelImports?.getActiveModelManifest()) ??
+      (await characterPackages?.getActiveModelManifest())
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.importLive2DModel, async (event) => {
+    requireTrustedSender(event, windows);
+    if (!live2DModelImports) {
+      return { ok: false, canceled: false, message: 'Live2D 模型导入服务不可用。' } as const;
+    }
+    const selection = await showOpenDialog(windows, {
+      title: '导入 Live2D 模型',
+      properties: ['openFile'],
+      filters: [{ name: 'Live2D Cubism 模型（.model3.json）', extensions: ['json'] }],
+    });
+    if (selection.canceled || !selection.filePaths[0]) {
+      return { ok: true, canceled: true } as const;
+    }
+    try {
+      const imported = await live2DModelImports.importModel(selection.filePaths[0]);
+      return { ok: true, canceled: false, ...imported } as const;
+    } catch (error) {
+      return {
+        ok: false,
+        canceled: false,
+        message: error instanceof Error ? error.message : 'Live2D 模型导入失败。',
+      } as const;
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.exportActiveLive2DModel, async (event) => {
+    requireTrustedSender(event, windows);
+    if (!live2DModelImports) {
+      return { ok: false, canceled: false, message: 'Live2D 模型导出服务不可用。' } as const;
+    }
+    const selection = await showOpenDialog(windows, {
+      title: '选择 Live2D 模型导出位置',
+      buttonLabel: '导出到这里',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (selection.canceled || !selection.filePaths[0]) {
+      return { ok: true, canceled: true } as const;
+    }
+    try {
+      const exported = await live2DModelImports.exportActiveModel(selection.filePaths[0]);
+      return {
+        ok: true,
+        canceled: false,
+        ...exported,
+        message: `已导出到“${exported.directoryName}”。`,
+      } as const;
+    } catch (error) {
+      return {
+        ok: false,
+        canceled: false,
+        message: error instanceof Error ? error.message : 'Live2D 模型导出失败。',
+      } as const;
+    }
   });
   ipcMain.handle(IPC_CHANNELS.getWorkGlossaryStatus, (event, input: unknown) => {
     requireTrustedSender(event, windows);
@@ -534,6 +775,16 @@ export const registerIpcHandlers = (
     const parsed = parseSetChatPanelExpandedInput(input);
     windows.setChatPanelExpanded(parsed.expanded, parsed.view === 'settings');
   });
+  ipcMain.handle(IPC_CHANNELS.getDesktopLayoutSettings, async (event) => {
+    requireTrustedSender(event, windows);
+    return desktopLayout?.get() ?? { ...DEFAULT_DESKTOP_LAYOUT_SETTINGS };
+  });
+  ipcMain.handle(IPC_CHANNELS.setDesktopLayoutSettings, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { settings } = parseSetDesktopLayoutSettingsInput(input);
+    await desktopLayout?.set(settings);
+    return settings;
+  });
   ipcMain.handle(
     IPC_CHANNELS.getDesktopIntegrationStatus,
     async (event): Promise<DesktopIntegrationStatus> => {
@@ -571,5 +822,243 @@ export const registerIpcHandlers = (
   ipcMain.handle(IPC_CHANNELS.sendMediaCommand, (event, input: unknown) => {
     requireTrustedSender(event, windows);
     return desktopIntegrations?.sendMediaCommand(parseMediaCommandInput(input).command) ?? false;
+  });
+  ipcMain.handle(IPC_CHANNELS.getSpeechStatus, async (event): Promise<SpeechStatus> => {
+    requireTrustedSender(event, windows);
+    return speech
+      ? speech.getStatus()
+      : {
+          settings: { ...DEFAULT_SPEECH_SETTINGS },
+          apiKeySaved: false,
+          output: {
+            providerId: 'disabled',
+            displayName: '未启用',
+            configured: false,
+            available: false,
+            transport: 'none',
+            dataDestination: 'none',
+            supportsStreamingInput: false,
+            supportedFormats: [],
+            detail: '语音服务不可用；文字聊天不受影响。',
+          },
+          input: {
+            available: false,
+            modes: [],
+            dataDestination: 'none',
+            detail: '麦克风尚未开启。',
+          },
+        };
+  });
+  ipcMain.handle(IPC_CHANNELS.setSpeechSettings, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { settings } = parseSetSpeechSettingsInput(input);
+    const result = await (speech?.setSettings(settings) ??
+      Promise.resolve({ ok: false as const, message: '语音服务不可用。' }));
+    if (result.ok) {
+      await desktopIntegrations?.setPushToTalkKey(
+        settings.inputEnabled && settings.inputMode === 'manual'
+          ? settings.pushToTalkKey
+          : undefined,
+      );
+    }
+    return result;
+  });
+  ipcMain.handle(IPC_CHANNELS.setSpeechSecret, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { apiKey } = parseSetSpeechSecretInput(input);
+    return speech?.setSecret(apiKey) ?? { ok: false, message: '语音服务不可用。' };
+  });
+  ipcMain.handle(IPC_CHANNELS.deleteSpeechSecret, (event) => {
+    requireTrustedSender(event, windows);
+    return speech?.deleteSecret() ?? { ok: false, message: '语音服务不可用。' };
+  });
+  ipcMain.handle(IPC_CHANNELS.synthesizeSpeech, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const parsed = parseSpeechSynthesisInput(input);
+    return (
+      speech?.synthesize(parsed) ?? {
+        ok: false,
+        requestId: parsed.requestId,
+        cancelled: false,
+        message: '语音服务不可用；文字回复仍可正常使用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.transcribeSpeech, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const parsed = parseSpeechTranscriptionInput(input);
+    return (
+      speech?.transcribe(parsed) ?? {
+        ok: false,
+        requestId: parsed.requestId,
+        cancelled: false,
+        message: '中文语音识别服务不可用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.cancelSpeech, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return speech?.cancel(parseCancelSpeechInput(input).requestId) ?? false;
+  });
+  ipcMain.handle(IPC_CHANNELS.getLocalSpeechAssetStatus, async (event) => {
+    requireTrustedSender(event, windows);
+    return (
+      (await localSpeechAssets?.getStatus()) ?? {
+        voiceName: '本地音色',
+        voiceAvailable: false,
+        voiceFileCount: 0,
+        voiceBytes: 0,
+        styles: [],
+        trainingToolAvailable: false,
+        trainingSourceReady: false,
+      }
+    );
+  });
+  ipcMain.handle(
+    IPC_CHANNELS.exportLocalVoice,
+    async (event): Promise<LocalAssetOperationResult> => {
+      requireTrustedSender(event, windows);
+      if (!localSpeechAssets) {
+        return { ok: false, canceled: false, message: '本地音色导出服务不可用。' };
+      }
+      const selection = await showOpenDialog(windows, {
+        title: '选择音色导出位置',
+        buttonLabel: '导出到这里',
+        properties: ['openDirectory', 'createDirectory'],
+      });
+      if (selection.canceled || !selection.filePaths[0]) return { ok: true, canceled: true };
+      try {
+        const exported = await localSpeechAssets.exportVoice(selection.filePaths[0]);
+        return {
+          ok: true,
+          canceled: false,
+          message: `已导出到“${exported.directoryName}”（${exported.fileCount} 个文件，约 ${Math.ceil(exported.exportedBytes / 1024 / 1024)} MiB）。`,
+        };
+      } catch (error) {
+        return {
+          ok: false,
+          canceled: false,
+          message: error instanceof Error ? error.message : '本地音色导出失败。',
+        };
+      }
+    },
+  );
+  const openAuthorizedSpeechAsset = async (
+    input: unknown,
+    resolvePath: () => string,
+    unavailableMessage: string,
+  ): Promise<LocalAssetOperationResult> => {
+    try {
+      parseConfirmAuthorizedVoiceUseInput(input);
+      if (!localSpeechAssets) throw new Error(unavailableMessage);
+      const errorMessage = await shell.openPath(resolvePath());
+      if (errorMessage) throw new Error(errorMessage);
+      return { ok: true, canceled: false, message: '已打开。' };
+    } catch (error) {
+      return {
+        ok: false,
+        canceled: false,
+        message: error instanceof Error ? error.message : unavailableMessage,
+      };
+    }
+  };
+  ipcMain.handle(IPC_CHANNELS.openSpeechTrainingSources, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return openAuthorizedSpeechAsset(
+      input,
+      () => localSpeechAssets!.getTrainingSourcePath(),
+      '训练音源文件夹不可用。',
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.launchSpeechTrainer, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return openAuthorizedSpeechAsset(
+      input,
+      () => localSpeechAssets!.getTrainerPath(),
+      '本地训练工具不可用。',
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.getViewerExStatus, (event) => {
+    requireTrustedSender(event, windows);
+    return viewerEx?.getStatus();
+  });
+  ipcMain.handle(IPC_CHANNELS.setViewerExSettings, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { settings } = parseSetViewerExSettingsInput(input);
+    const mode = await resolveCharacterDisplayMode();
+    return (
+      viewerEx?.setSettings({ ...settings, enabled: mode === 'viewerex' }) ?? {
+        ok: false,
+        message: 'ViewerEX 适配器不可用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.presentInViewerEx, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return viewerEx?.present(parseViewerExPresentationInput(input)) ?? false;
+  });
+  ipcMain.handle(IPC_CHANNELS.getVTubeStudioStatus, (event) => {
+    requireTrustedSender(event, windows);
+    return vTubeStudio?.getStatus();
+  });
+  ipcMain.handle(IPC_CHANNELS.launchVTubeStudio, async (event) => {
+    requireTrustedSender(event, windows);
+    try {
+      await shell.openExternal('steam://rungameid/1325860');
+      return { ok: true, message: '已请求 Steam 启动 VTube Studio。' };
+    } catch {
+      return { ok: false, message: '无法通过 Steam 启动 VTube Studio，请确认已安装 Steam。' };
+    }
+  });
+  ipcMain.handle(IPC_CHANNELS.installBundledVTubeStudioModel, (event) => {
+    requireTrustedSender(event, windows);
+    return (
+      bundledVTubeModel?.install() ?? {
+        ok: false,
+        message: '安装包没有提供可安装的 VTube Studio 模型。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.setVTubeStudioSettings, async (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    const { settings } = parseSetVTubeStudioSettingsInput(input);
+    const mode = await resolveCharacterDisplayMode();
+    return (
+      vTubeStudio?.setSettings({ ...settings, enabled: mode === 'vtube-studio' }) ?? {
+        ok: false,
+        message: 'VTube Studio 适配器不可用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.authorizeVTubeStudio, (event) => {
+    requireTrustedSender(event, windows);
+    return (
+      vTubeStudio?.authorize() ?? {
+        ok: false,
+        message: 'VTube Studio 适配器不可用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.inspectVTubeStudio, (event) => {
+    requireTrustedSender(event, windows);
+    return (
+      vTubeStudio?.inspect() ?? {
+        ok: false,
+        message: 'VTube Studio 适配器不可用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.previewVTubeStudioExpression, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return (
+      vTubeStudio?.previewExpression(parseVTubeStudioExpressionPreviewInput(input)) ?? {
+        ok: false,
+        message: 'VTube Studio 适配器不可用。',
+      }
+    );
+  });
+  ipcMain.handle(IPC_CHANNELS.presentInVTubeStudio, (event, input: unknown) => {
+    requireTrustedSender(event, windows);
+    return vTubeStudio?.present(parseVTubeStudioPresentationInput(input)) ?? false;
   });
 };

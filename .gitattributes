@@ -1,1 +1,2 @@
 * text=auto eol=lf
+native/vtube-studio-spout/vendor/** -whitespace

@@ -1,3 +1,5 @@
+import type { CharacterPresentationPort } from '../../core/presentation/character-presentation';
+import { AutonomousActivityPresentation } from './autonomous-activity';
 import { Live2DPerformanceController } from './performance-controller';
 import {
   inspectLive2DModelCapabilities,
@@ -10,7 +12,7 @@ export interface LoadedCharacter {
   name: string;
   availableActions: string[];
   capabilityReport: Live2DModelCapabilityReport;
-  controller: Live2DPerformanceController;
+  presentation: CharacterPresentationPort;
   dispose(): void;
 }
 
@@ -92,6 +94,7 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
     resolveLocalModelUrl(manifest.model, manifest.assetRoot),
     manifest.parameters,
     manifest.presentation,
+    manifest.controls.lipSync,
   );
   const deskpet = window.deskpet;
   const controller = new Live2DPerformanceController(renderer.driver, manifest.controls);
@@ -134,14 +137,21 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
     renderer.canvas.addEventListener('pointermove', trackLocalPointer);
     renderer.canvas.addEventListener('pointerleave', resetLocalPointer);
   }
-
+  const availableActions = Object.keys(manifest.controls.actions);
+  const autonomousPresentation = new AutonomousActivityPresentation(
+    controller,
+    availableActions,
+    (action) => controller.action.enqueue(action),
+  );
+  autonomousPresentation.start();
   return {
     name: manifest.name,
-    availableActions: Object.keys(manifest.controls.actions),
+    availableActions,
     capabilityReport,
-    controller,
+    presentation: autonomousPresentation,
     dispose: () => {
       isDisposed = true;
+      autonomousPresentation.destroy();
       if (trackingTimer !== undefined) {
         window.clearInterval(trackingTimer);
       }
