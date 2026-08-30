@@ -164,7 +164,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 
 ## 下载
 
-V1.6 将提供 Windows x64 免安装包，并可配合 [Steam VTube Studio](https://store.steampowered.com/app/1325860/VTube_Studio/) 使用。当前公开包不会包含授权待确认的小黑猫模型和伊雷娜音色；确认公开再分发权后再决定是否增加独立资源资产。[V1.5b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.6 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.6) 已提供 `FPNF-v1.6-Windows-x64.zip` Windows x64 免安装包，并可配合 [Steam VTube Studio](https://store.steampowered.com/app/1325860/VTube_Studio/) 使用。公开包不包含授权待确认的小黑猫模型和伊雷娜音色；确认公开再分发权后再决定是否增加独立资源资产。安装包 SHA-256 为 `DA3C0D4E7F0254878288F7A1959A254F54495FFE8690C2C4E10DC651C97A0E44`。[V1.5b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
