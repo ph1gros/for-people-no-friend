@@ -1,8 +1,8 @@
 # For People No Friend
 
-> 没朋友也没关系，桌面上先放一个。
+> 真正的朋友。
 >
-> No friends online? Fine. Put one on your desktop.
+> True friend.
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
