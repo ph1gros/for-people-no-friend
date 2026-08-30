@@ -133,6 +133,11 @@ V1.6 已完成 OpenAI 兼容 TTS/ASR、流式分句、有序播放、取消与�
 | [EchoBot](https://github.com/KdaiP/EchoBot)                                 | Decision、Roleplay、Agent 分层，纯聊天模式、会话管理、Live2D 导入、提供商能力与半双工语音     | Agent 和文件操作等待独立授权；工具元数据不能污染角色上下文        |
 | [ZcChat2](https://github.com/Zao-chen/ZcChat2)                              | 表情、动作和粒子组合，统一角色资产、流式文本与语音、角色导入                                  | 不复制 GPL 源码；系统控制与多模态另设权限                         |
 | [Live2D Cubism Web Framework](https://github.com/Live2D/CubismWebFramework) | Cubism 版本兼容、Motion、Expression、参数语义、模型加载与资源生命周期                         | Cubism Core 与模型素材继续按各自许可证获取和分发                  |
+| [VTube Studio Plugin API](https://github.com/DenchiSoft/VTubeStudio)        | 官方本机 WebSocket API、插件鉴权、模型/热键/表情清单、参数注入与错误恢复                      | 只调用公开 API；VTube Studio 应用、Steam 内容和用户模型不随包分发 |
+| [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2)           | JP-Extra 数据准备、训练/推理、ONNX 导出、本地日语 TTS 服务和性能调优                          | 不复制上游源码进主程序；训练素材、模型权重和音色另行核对授权      |
+| [SenseVoice](https://github.com/FunAudioLLM/SenseVoice)                     | 中文短音频识别、独立本地 ASR 服务、失败回退和主程序进程边界                                   | 不在公开包捆绑权重；不读取真实 API Key，不上传用户录音            |
+| [Kokoro](https://github.com/hexgrad/kokoro)                                 | 轻量本地 TTS 的延迟、体积、语言覆盖与跨设备部署对照                                           | 仅作为实验和方案比较；V1.6 最终日语音色链路未采用                 |
+| [Spout2](https://github.com/leadedge/Spout2)                                | Windows GPU 纹理共享、接收端生命周期和 VTube Studio 透明画面接入                              | 只保留所需互操作边界和许可证声明；不把任意共享纹理暴露给 Renderer |
 
 ## 不变的开发规则
 

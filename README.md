@@ -84,6 +84,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 | [EchoBot](https://github.com/KdaiP/EchoBot)                                 | Roleplay、Decision、Agent 分层、会话管理、模型接入与语音边界 |
 | [ZcChat2](https://github.com/Zao-chen/ZcChat2)                              | 表情、动作和粒子组合、角色资产组织、流式文本与语音演出       |
 | [Live2D Cubism Web Framework](https://github.com/Live2D/CubismWebFramework) | Cubism 模型加载、Motion、Expression、参数语义与资源生命周期  |
+| [VTube Studio Plugin API](https://github.com/DenchiSoft/VTubeStudio)        | 官方本机 API 鉴权、模型清单、热键、表情与受限参数注入        |
+| [Style-Bert-VITS2](https://github.com/litagin02/Style-Bert-VITS2)           | JP-Extra 训练与推理流程、ONNX 导出、本地日语 TTS 服务边界    |
+| [SenseVoice](https://github.com/FunAudioLLM/SenseVoice)                     | 本地中文语音识别、短音频转写与独立语音服务边界               |
+| [Kokoro](https://github.com/hexgrad/kokoro)                                 | 轻量本地 TTS 的延迟、体积和跨设备部署对照                    |
+| [Spout2](https://github.com/leadedge/Spout2)                                | Windows GPU 纹理共享与 VTube Studio 透明画面接入             |
 
 更具体的采用与拒绝范围见 [开发路线中的开发参考](docs/POST_V1_ROADMAP.md#开发参考)。
 
@@ -106,6 +111,15 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - Electron Main 继续保管密钥、网络、文件、Steam 启动、外部显示和语音进程；Preload 只暴露窄方法，Renderer 所有输入均在 Main 再验证。
 - Style-Bert-VITS2 2.7.0 JP-Extra、ONNX Runtime DirectML/CPU 与本地日语 BERT 负责离线朗读；原始训练素材和训练环境不随包。
 - VTube Studio 官方 Plugin API 负责读取模型公开清单并注入有限参数；VTube Studio 本体仍由 Steam 提供。
+
+**参考了什么**
+
+- AIRI、EchoBot、ZcChat2：流式文本切句、生成取消、半双工语音、角色表现和语音播放生命周期。
+- VTube Studio 官方 Plugin API：本机插件鉴权、模型与热键读取、表情控制和参数注入协议；VTube Studio 应用本身不是本仓库代码。
+- Style-Bert-VITS2：JP-Extra 训练、推理、ONNX 导出和本地服务组织；公开包不携带授权待确认的训练录音、权重或音色成品。
+- SenseVoice：中文短音频识别和独立本地 ASR 服务边界；当前公开包不捆绑模型权重。
+- Kokoro：轻量本地 TTS 的速度、体积和部署方式对照；最终 V1.6 日语声音链路未采用 Kokoro 音色克隆。
+- Spout2：Windows GPU 纹理共享和 VTube Studio 透明画面接入；仅使用按其许可证保留声明的本机互操作组件。
 
 **复现与调教**
 

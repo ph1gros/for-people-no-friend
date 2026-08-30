@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -29,6 +29,7 @@ describe('bundled speech runtime', () => {
       await mkdir(path.dirname(destination), { recursive: true });
       await writeFile(destination, 'fake');
     }
+    const canonicalDirectory = await realpath(directory);
     let checks = 0;
     const fetchHealth = vi.fn(async () => {
       checks += 1;
@@ -47,7 +48,7 @@ describe('bundled speech runtime', () => {
 
     await expect(runtime.ensureRunning()).resolves.toBe(true);
     expect(spawnRuntime).toHaveBeenCalledWith(
-      path.join(directory, 'python', 'python.exe'),
+      path.join(canonicalDirectory, 'python', 'python.exe'),
       [
         '-m',
         'uvicorn',
@@ -60,7 +61,7 @@ describe('bundled speech runtime', () => {
         'warning',
       ],
       {
-        cwd: directory,
+        cwd: canonicalDirectory,
         windowsHide: true,
         stdio: 'ignore',
         env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', NO_PROXY: '127.0.0.1,localhost' },
