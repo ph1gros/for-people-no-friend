@@ -8,7 +8,7 @@
 
 当前仓库是 **Live2D Version**。V1.7 基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
-V1.7 已完成本轮开发：新增 Genie-TTS 本机 GPT-SoVITS ONNX 提供方、Fish Audio 在线 TTS、通用 VTube Studio 表情映射、可跟随当前角色名或自定义的精准语音称呼，以及采用工作区/小组件范围授权的工作模式；工作区外文件、脚本和项目检查会显示真实目标后逐次确认。基础包携带可离线启动 TTS/ASR 的受控运行环境和 SenseVoiceSmall 语音输入资源，但不携带任何指定角色或音色权重；伊蕾娜音色和黑猫身份/模型只作为独立的非商业可选资源。
+V1.7 已完成本轮开发：新增 Genie-TTS 本机 GPT-SoVITS ONNX 提供方、Fish Audio 在线 TTS、通用 VTube Studio 表情映射、可跟随当前角色名或自定义的精准语音称呼，以及采用工作区/小组件范围授权的工作模式；工作区外文件、脚本和项目检查会显示真实目标后逐次确认。基础包不携带 Python、本地 TTS/ASR 模型、指定角色或音色权重；完全离线语音运行环境作为公开可选组件提供，伊蕾娜音色和黑猫身份/模型则只作为独立的非商业可选资源。
 
 Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
@@ -32,7 +32,7 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - 用户主动同步并本地缓存的作品社区词库
 - 中文文字回复、流式分句、日语 TTS、有序播放、停声与 Live2D/VTube Studio 表现联动
 - 说话就输出、精准称呼、手动录音三种中文语音输入模式；精准称呼默认跟随当前角色名，也可单独自定义
-- 已验证的 Style-Bert-VITS2 ONNX 本机运行方案，优先 DirectML、失败回退 CPU；基础包携带运行环境但不携带伊蕾娜权重，也不会预填伊蕾娜模型或音色 ID
+- 已验证的 Style-Bert-VITS2 ONNX 本机运行方案，优先 DirectML、失败回退 CPU；Python、日语 BERT 与本地 ASR 放在独立可选语音组件中，基础包不会预填伊蕾娜模型或音色 ID
 - VTube Studio 官方 Plugin API 适配、自动发现本机实际端口并请求插件授权、固定 Steam 启动入口、当前模型清单与表情预览，以及为已获授权模型预留的有界安装入口；VTube Studio 与 FPNF 已自带所需 Spout2 两端，不要求另装 OBS 插件，包内没有模型时安装入口不会显示
 - Agent 式工作模式、受限文件拖入、网页查找、代码内容搜索、精确修改与固定项目检查；敏感操作仍需明确批准
 - 作品名留空时从精确角色资料页识别并在确认候选后自动回填

@@ -129,6 +129,8 @@ describe('bundled speech runtime', () => {
       [
         '-m',
         'uvicorn',
+        '--app-dir',
+        canonicalDirectory,
         'ireina_tts_service:app',
         '--host',
         '127.0.0.1',
@@ -332,6 +334,8 @@ describe('bundled speech runtime', () => {
       [
         '-m',
         'uvicorn',
+        '--app-dir',
+        canonicalServiceRoot,
         'sensevoice_asr_service:app',
         '--host',
         '127.0.0.1',

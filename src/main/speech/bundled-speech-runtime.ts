@@ -157,6 +157,8 @@ export class BundledSpeechRuntime {
       [
         '-m',
         'uvicorn',
+        '--app-dir',
+        runtime.serviceRoot,
         'ireina_tts_service:app',
         '--host',
         '127.0.0.1',
@@ -324,6 +326,8 @@ export class BundledSpeechInputRuntime {
       [
         '-m',
         'uvicorn',
+        '--app-dir',
+        serviceRoot,
         'sensevoice_asr_service:app',
         '--host',
         '127.0.0.1',
