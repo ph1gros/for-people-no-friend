@@ -3,8 +3,8 @@ from __future__ import annotations
 import io
 import os
 import re
+import sys
 import threading
-import traceback
 import wave
 from pathlib import Path
 
@@ -19,8 +19,12 @@ from style_bert_vits2.nlp import onnx_bert_models
 
 os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost")
 RUNTIME_ROOT = Path(__file__).resolve().parent
-VOICE_ROOT = RUNTIME_ROOT / "voice" / "ireina"
-OUTPUT_ROOT = RUNTIME_ROOT / "recent-output"
+VOICE_ROOT = Path(
+    os.environ.get("FPNF_BUNDLED_VOICE_ROOT", RUNTIME_ROOT / "voice" / "ireina")
+).resolve()
+OUTPUT_ROOT = Path(
+    os.environ.get("FPNF_BUNDLED_OUTPUT_ROOT", RUNTIME_ROOT / "recent-output")
+).resolve()
 MODEL_FILE = VOICE_ROOT / "ireina_e100_s16040.onnx"
 CONFIG_FILE = VOICE_ROOT / "config.json"
 STYLE_FILE = VOICE_ROOT / "style_vectors.npy"
@@ -41,6 +45,11 @@ class SpeechRequest(BaseModel):
 app = FastAPI(title="FPNF bundled local TTS", docs_url=None, redoc_url=None)
 model_lock = threading.RLock()
 model: TTSModel | None = None
+model_provider = ""
+force_cpu_only = False
+runtime_ready = False
+runtime_warmup_started = False
+runtime_warmup_error = False
 TAIL_PADDING_SECONDS = 0.28
 BETWEEN_SENTENCE_SILENCE_SECONDS = 0.09
 SILENCE_EDGE_SECONDS = 0.04
@@ -98,29 +107,91 @@ def encode_wav(audio: np.ndarray, sample_rate: int) -> bytes:
     return output.getvalue()
 
 
+def reset_model(force_cpu: bool = False) -> None:
+    global model, model_provider, force_cpu_only
+    with model_lock:
+        if model is not None:
+            try:
+                model.unload()
+            except Exception:
+                pass
+        model = None
+        model_provider = ""
+        force_cpu_only = force_cpu
+        onnx_bert_models.unload_model(Languages.JP)
+
+
 def get_model() -> TTSModel:
-    global model
+    global model, model_provider
     with model_lock:
         if model is None:
             available = onnxruntime.get_available_providers()
             providers = [
                 provider
                 for provider in ("DmlExecutionProvider", "CPUExecutionProvider")
-                if provider in available
+                if provider in available and (not force_cpu_only or provider == "CPUExecutionProvider")
             ]
             if not providers:
                 raise RuntimeError("No supported ONNX execution provider is available.")
-            onnx_bert_models.load_tokenizer(Languages.JP)
-            onnx_bert_models.load_model(Languages.JP, onnx_providers=providers)
-            model = TTSModel(
-                model_path=MODEL_FILE,
-                config_path=CONFIG_FILE,
-                style_vec_path=STYLE_FILE,
-                device="cpu",
-                onnx_providers=providers,
-            )
-            model.load()
+            try:
+                onnx_bert_models.load_tokenizer(Languages.JP)
+                onnx_bert_models.load_model(Languages.JP, onnx_providers=providers)
+                candidate = TTSModel(
+                    model_path=MODEL_FILE,
+                    config_path=CONFIG_FILE,
+                    style_vec_path=STYLE_FILE,
+                    device="cpu",
+                    onnx_providers=providers,
+                )
+                candidate.load()
+                model = candidate
+                model_provider = providers[0]
+            except Exception:
+                if providers[0] == "DmlExecutionProvider":
+                    print(
+                        "FPNF_TTS_PROVIDER_FALLBACK CPUExecutionProvider",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    reset_model(force_cpu=True)
+                    return get_model()
+                raise
         return model
+
+
+def infer_with_runtime_fallback(text: str, speed: float) -> tuple[int, np.ndarray]:
+    try:
+        return get_model().infer(
+            text=text,
+            language="JP",
+            style="Neutral",
+            length=1.0 / speed,
+            line_split=False,
+        )
+    except Exception:
+        if model_provider != "DmlExecutionProvider":
+            raise
+        print("FPNF_TTS_PROVIDER_FALLBACK CPUExecutionProvider", file=sys.stderr, flush=True)
+        reset_model(force_cpu=True)
+        return get_model().infer(
+            text=text,
+            language="JP",
+            style="Neutral",
+            length=1.0 / speed,
+            line_split=False,
+        )
+
+
+def warmup_runtime() -> None:
+    global runtime_ready, runtime_warmup_error
+    try:
+        with model_lock:
+            infer_with_runtime_fallback("テスト。", 1.0)
+        runtime_ready = True
+        print(f"FPNF_TTS_READY {model_provider}", file=sys.stderr, flush=True)
+    except Exception:
+        runtime_warmup_error = True
+        print("FPNF_TTS_READY_FAILED", file=sys.stderr, flush=True)
 
 
 @app.get("/health")
@@ -128,9 +199,27 @@ def health() -> dict[str, str]:
     return {"status": "ok", "voice": "ireina", "language": "ja-JP"}
 
 
+@app.get("/ready")
+def ready():
+    global runtime_warmup_started
+    if runtime_ready:
+        return {
+            "status": "ready",
+            "voice": "ireina",
+            "language": "ja-JP",
+            "provider": model_provider,
+        }
+    if runtime_warmup_error:
+        return Response(status_code=503)
+    if not runtime_warmup_started:
+        runtime_warmup_started = True
+        threading.Thread(target=warmup_runtime, name="fpnf-tts-warmup", daemon=True).start()
+    return Response(status_code=503)
+
+
 @app.post("/v1/audio/speech")
 def create_speech(request: SpeechRequest) -> Response:
-    if request.model != "ireina" or request.voice != "ireina":
+    if request.model != "style-bert-vits2" or request.voice != "ireina":
         raise HTTPException(status_code=400, detail="Only the bundled ireina voice is available.")
     if request.response_format != "wav":
         raise HTTPException(status_code=400, detail="Only WAV output is available.")
@@ -143,13 +232,7 @@ def create_speech(request: SpeechRequest) -> Response:
             generated: list[np.ndarray] = []
             sample_rate = 44_100
             for sentence in sentences:
-                sample_rate, sentence_audio = get_model().infer(
-                    text=sentence,
-                    language="JP",
-                    style="Neutral",
-                    length=1.0 / request.speed,
-                    line_split=False,
-                )
+                sample_rate, sentence_audio = infer_with_runtime_fallback(sentence, request.speed)
                 generated.append(trim_generated_silence(sentence_audio, sample_rate))
         separator = np.zeros(
             int(sample_rate * BETWEEN_SENTENCE_SILENCE_SECONDS), dtype=generated[0].dtype
@@ -169,5 +252,5 @@ def create_speech(request: SpeechRequest) -> Response:
     except HTTPException:
         raise
     except Exception as error:
-        traceback.print_exc()
+        print("FPNF_TTS_REQUEST_FAILED", file=sys.stderr, flush=True)
         raise HTTPException(status_code=500, detail="Local speech generation failed.") from error

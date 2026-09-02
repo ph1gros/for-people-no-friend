@@ -2,6 +2,8 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
+  BUNDLED_IREINA_SPEECH_PRESET,
+  createInitialSpeechSettings,
   DEFAULT_SPEECH_SETTINGS,
   parseSpeechSettings,
   type SpeechSettings,
@@ -14,10 +16,15 @@ interface SpeechConfigFile {
 
 export class SpeechConfigStore {
   private readonly filePath: string;
+  private readonly initialSettings: SpeechSettings;
   private writeQueue: Promise<void> = Promise.resolve();
 
-  public constructor(userDataPath: string) {
+  public constructor(
+    userDataPath: string,
+    private readonly bundledVoiceAvailable = false,
+  ) {
     this.filePath = path.join(userDataPath, 'speech.v1.json');
+    this.initialSettings = createInitialSpeechSettings(bundledVoiceAvailable);
   }
 
   public async get(): Promise<SpeechSettings> {
@@ -34,12 +41,28 @@ export class SpeechConfigStore {
       }
       const parsed = parseSpeechSettings((value as Record<string, unknown>).settings);
       const version = (value as Record<string, unknown>).version;
-      return (version === 1 && parsed.speed === 1) || (version === 2 && parsed.speed === 0.95)
-        ? { ...parsed, speed: DEFAULT_SPEECH_SETTINGS.speed }
-        : parsed;
+      const migratedSpeed =
+        (version === 1 && parsed.speed === 1) || (version === 2 && parsed.speed === 0.95)
+          ? { ...parsed, speed: DEFAULT_SPEECH_SETTINGS.speed }
+          : parsed;
+      const migratedModel =
+        migratedSpeed.providerId === BUNDLED_IREINA_SPEECH_PRESET.providerId &&
+        migratedSpeed.baseUrl === BUNDLED_IREINA_SPEECH_PRESET.baseUrl &&
+        migratedSpeed.modelId === 'ireina' &&
+        migratedSpeed.voiceId === BUNDLED_IREINA_SPEECH_PRESET.voiceId
+          ? { ...migratedSpeed, modelId: BUNDLED_IREINA_SPEECH_PRESET.modelId }
+          : migratedSpeed;
+      const isUnavailableBundledDefault =
+        !this.bundledVoiceAvailable &&
+        !migratedModel.enabled &&
+        migratedModel.providerId === BUNDLED_IREINA_SPEECH_PRESET.providerId &&
+        migratedModel.baseUrl === BUNDLED_IREINA_SPEECH_PRESET.baseUrl &&
+        migratedModel.modelId === BUNDLED_IREINA_SPEECH_PRESET.modelId &&
+        migratedModel.voiceId === BUNDLED_IREINA_SPEECH_PRESET.voiceId;
+      return isUnavailableBundledDefault ? { ...this.initialSettings } : migratedModel;
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-        return { ...DEFAULT_SPEECH_SETTINGS };
+        return { ...this.initialSettings };
       }
       throw error;
     }

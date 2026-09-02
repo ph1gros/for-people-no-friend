@@ -8,6 +8,7 @@ import {
 import {
   combineFullListeningCommands,
   PendingVoiceCommandQueue,
+  resolvePreciseWakeWord,
   shouldCombineFullListeningCommands,
   WakeWordCommandSession,
 } from '../src/renderer/speech/wake-word-command';
@@ -75,9 +76,17 @@ describe('continuous speech listening', () => {
     const session = new WakeWordCommandSession();
     session.setMode('half');
     expect(session.handle('帮我看看这个文件')).toEqual({ kind: 'ignored' });
-    expect(session.handle('小猫，帮我看看这个文件')).toMatchObject({
+    expect(session.handle('芙莉莲，帮我看看这个文件', '芙莉莲')).toMatchObject({
       kind: 'send',
       text: '帮我看看这个文件',
+      message: '听到“芙莉莲”，正在发送。',
     });
+    expect(session.handle('小猫，帮我看看这个文件', '芙莉莲')).toEqual({ kind: 'ignored' });
+  });
+
+  it('follows the active character name unless a custom precise name is selected', () => {
+    expect(resolvePreciseWakeWord('character-name', '', '芙莉莲')).toBe('芙莉莲');
+    expect(resolvePreciseWakeWord('custom', '阿响', '芙莉莲')).toBe('阿响');
+    expect(resolvePreciseWakeWord('character-name', '', '  ')).toBe('桌宠');
   });
 });

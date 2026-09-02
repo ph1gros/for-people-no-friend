@@ -4,9 +4,9 @@ import path from 'node:path';
 import type { Rectangle } from 'electron';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 export const DEFAULT_WINDOW_SIZE = Object.freeze({ width: 360, height: 520 });
-export const EXPANDED_WINDOW_SIZE = Object.freeze({ width: 720, height: 520 });
-export const SETTINGS_WINDOW_SIZE = Object.freeze({ width: 1100, height: 760 });
-export const DEFAULT_WINDOW_SCALE = 0.85;
+export const EXPANDED_WINDOW_SIZE = Object.freeze({ width: 1100, height: 760 });
+export const SETTINGS_WINDOW_SIZE = EXPANDED_WINDOW_SIZE;
+export const DEFAULT_WINDOW_SCALE = 0.78;
 export { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 
 export interface PersistedWindowState {
@@ -95,12 +95,16 @@ export const stateToBounds = (
   height: Math.round(layoutSize(expanded, settings).height * state.scale),
 });
 
-export const boundsToState = (bounds: Rectangle, settings = false): PersistedWindowState => ({
+export const boundsToState = (
+  bounds: Rectangle,
+  expanded = false,
+  settings = false,
+): PersistedWindowState => ({
   version: 5,
   x: Math.round(bounds.x),
   y: Math.round(bounds.y),
   scale: clamp(
-    bounds.height / (settings ? SETTINGS_WINDOW_SIZE.height : DEFAULT_WINDOW_SIZE.height),
+    bounds.height / layoutSize(expanded, settings).height,
     MIN_WINDOW_SCALE,
     MAX_WINDOW_SCALE,
   ),

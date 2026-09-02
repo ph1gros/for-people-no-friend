@@ -81,8 +81,20 @@ export const buildConversationSystemPrompt = (
       ].join('\n')
     : '';
   const characterLore = [baseCharacterLore, contextualExamples].filter(Boolean).join('\n\n');
+  const actionMeanings: Readonly<Record<string, string>> = {
+    nod: '明确肯定、同意或赞成时点头',
+    shake: '明确否定、拒绝或不同意时摇头',
+  };
   const actionInstruction = allowedActions.length
-    ? `action 必须是 null 或以下动作之一：${allowedActions.join(', ')}。`
+    ? [
+        `action 必须是 null 或以下动作之一：${allowedActions.join(', ')}。`,
+        ...allowedActions
+          .filter((action) => actionMeanings[action])
+          .map(
+            (action) =>
+              `${action}：${actionMeanings[action]}；不要在没有明确肯定或否定含义时乱用。`,
+          ),
+      ].join('\n')
     : '当前模型没有可用动作，action 必须是 null。';
   const hasStructuredLore = profile.lore !== undefined;
   const includeBio =

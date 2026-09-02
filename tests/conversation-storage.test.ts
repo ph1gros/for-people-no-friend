@@ -26,11 +26,11 @@ describe('M4 local conversation storage', () => {
 
   it('loads the default profile and persists validated edits', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-profile-test-'));
-    const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toEqual(KALTSIT_CHARACTER_PROFILE);
+    const store = new CharacterProfileStore(directory, DEFAULT_CHARACTER_PROFILE);
+    expect(await store.get()).toEqual(DEFAULT_CHARACTER_PROFILE);
 
     await store.set({
-      ...KALTSIT_CHARACTER_PROFILE,
+      ...DEFAULT_CHARACTER_PROFILE,
       name: '测试角色',
       personaPrompt: '保持冷静。',
       lore: {
@@ -170,9 +170,9 @@ describe('M4 local conversation storage', () => {
       'utf8',
     );
     const store = new CharacterProfileStore(directory);
-    expect(await store.get()).toMatchObject({ id: 'default-character', name: 'Live2D 角色' });
+    expect(await store.get()).toEqual(KALTSIT_CHARACTER_PROFILE);
 
-    await store.set(DEFAULT_CHARACTER_PROFILE);
+    await store.set({ ...KALTSIT_CHARACTER_PROFILE, name: 'Live2D 新角色' });
     const shared = JSON.parse(
       await readFile(path.join(directory, 'character-profiles.v5.json'), 'utf8'),
     ) as { activeProfileId: string };

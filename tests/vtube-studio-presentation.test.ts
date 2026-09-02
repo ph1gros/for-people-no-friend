@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   resolveAnimationHotkeyForAction,
+  resolveConfirmedModelMapping,
   resolveExpressionForEmotion,
   resolveHotkeyForEmotion,
+  selectControlledActiveExpressionFiles,
+  suggestVTubeStudioModelMapping,
 } from '../src/main/vtube-studio/vtube-studio-presentation';
 import type {
   VTubeStudioExpressionSummary,
@@ -46,6 +49,120 @@ const expressions: VTubeStudioExpressionSummary[] = [
 ];
 
 describe('VTube Studio presentation mapping', () => {
+  it('keeps confirmed mappings isolated by model while exposing new-model matches only as suggestions', () => {
+    const suggested = suggestVTubeStudioModelMapping({
+      model: {
+        loaded: true,
+        name: 'new-model',
+        id: 'model-b',
+        vtsModelName: 'new-model.vtube.json',
+        live2DModelName: 'new-model.model3.json',
+        parameterCount: 0,
+        artmeshCount: 0,
+        textureCount: 0,
+        textureResolution: 0,
+      },
+      expressions,
+      hotkeys: [
+        {
+          name: '点头',
+          type: 'TriggerAnimation',
+          file: 'Nod.motion3.json',
+          hotkeyId: 'nod-hotkey',
+          onScreenButtonId: 1,
+        },
+      ],
+      parameters: [],
+    });
+
+    expect(suggested).toEqual({
+      emotionExpressions: {
+        happy: 'EyesLove.exp3.json',
+        sad: 'EyesCry.exp3.json',
+        angry: 'SignAngry.exp3.json',
+        surprised: 'SignShock.exp3.json',
+      },
+      actionHotkeys: { nod: 'nod-hotkey' },
+    });
+    expect(
+      resolveConfirmedModelMapping(
+        {
+          'model-a': {
+            modelName: 'old-model',
+            emotionExpressions: { happy: 'OldHappy.exp3.json' },
+            actionHotkeys: { shake: 'old-shake-hotkey' },
+          },
+        },
+        'model-b',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('finds active confirmed expressions after reconnect so neutral can clear a stuck face', () => {
+    expect(
+      selectControlledActiveExpressionFiles(
+        expressions.map((expression) => ({
+          ...expression,
+          active: expression.file === 'SignAngry.exp3.json',
+        })),
+        {
+          modelName: 'new-model',
+          emotionExpressions: { angry: 'SignAngry.exp3.json' },
+          actionHotkeys: {},
+        },
+      ),
+    ).toEqual(['SignAngry.exp3.json']);
+  });
+
+  it('uses API hotkey and parameter details while refusing a filename-only guess', () => {
+    const suggested = suggestVTubeStudioModelMapping({
+      model: {
+        loaded: true,
+        name: 'generic-model',
+        id: 'generic-model-id',
+        vtsModelName: 'generic.vtube.json',
+        live2DModelName: 'generic.model3.json',
+        parameterCount: 2,
+        artmeshCount: 0,
+        textureCount: 0,
+        textureResolution: 0,
+      },
+      hotkeys: [],
+      expressions: [
+        {
+          name: 'Param100',
+          file: 'Param100.exp3.json',
+          active: false,
+          deactivateWhenKeyIsLetGo: false,
+          hotkeyNames: ['开心切换'],
+          parameters: [{ name: 'ParamEyeOpen', value: 0.8 }],
+        },
+        {
+          name: 'Param101',
+          file: 'Angry.exp3.json',
+          active: false,
+          deactivateWhenKeyIsLetGo: false,
+          hotkeyNames: [],
+          parameters: [{ name: 'ParamEyeOpen', value: 0.8 }],
+        },
+        {
+          name: 'Param102',
+          file: 'Param102.exp3.json',
+          active: false,
+          deactivateWhenKeyIsLetGo: false,
+          hotkeyNames: [],
+          parameters: [{ name: 'FaceBlush', value: 1 }],
+        },
+      ],
+      parameters: [],
+    });
+
+    expect(suggested.emotionExpressions).toEqual({
+      happy: 'Param100.exp3.json',
+      shy: 'Param102.exp3.json',
+    });
+  });
+
   it('maps known emotions only to expressions exposed by the current model', () => {
     expect(resolveExpressionForEmotion(expressions, 'happy')?.file).toBe('EyesLove.exp3.json');
     expect(resolveExpressionForEmotion(expressions, 'sad')?.file).toBe('EyesCry.exp3.json');
@@ -119,5 +236,27 @@ describe('VTube Studio presentation mapping', () => {
     expect(resolveHotkeyForEmotion(hotkeys, 'sad')?.hotkeyId).toBe('cry-animation');
     expect(resolveHotkeyForEmotion(hotkeys, 'surprised')).toBeUndefined();
     expect(resolveHotkeyForEmotion(hotkeys, 'neutral')).toBeUndefined();
+  });
+
+  it('recognizes the bundled kitten model emotion hotkeys', () => {
+    const hotkeys: VTubeStudioHotkeySummary[] = [
+      ['星星眼', 'Param105.exp3.json', 'happy'],
+      ['哭哭', 'Param101.exp3.json', 'sad'],
+      ['黑脸', 'Param102.exp3.json', 'angry'],
+      ['害羞', 'Param103.exp3.json', 'shy'],
+      ['白眼', 'Param104.exp3.json', 'playful'],
+    ].map(([name, file, hotkeyId]) => ({
+      name,
+      file,
+      hotkeyId,
+      type: 'ToggleExpression',
+      onScreenButtonId: -1,
+    }));
+
+    expect(resolveHotkeyForEmotion(hotkeys, 'happy')?.file).toBe('Param105.exp3.json');
+    expect(resolveHotkeyForEmotion(hotkeys, 'sad')?.file).toBe('Param101.exp3.json');
+    expect(resolveHotkeyForEmotion(hotkeys, 'angry')?.file).toBe('Param102.exp3.json');
+    expect(resolveHotkeyForEmotion(hotkeys, 'shy')?.file).toBe('Param103.exp3.json');
+    expect(resolveHotkeyForEmotion(hotkeys, 'playful')?.file).toBe('Param104.exp3.json');
   });
 });

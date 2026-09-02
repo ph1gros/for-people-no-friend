@@ -25,6 +25,10 @@ export class WindowManager {
   private expandedOrigin: PersistedWindowState | undefined;
   private readonly store = new WindowStateStore(app.getPath('userData'));
 
+  public constructor(
+    private readonly onSettingsPanelExpandedChanged: (expanded: boolean) => void = () => undefined,
+  ) {}
+
   private readonly handleDisplayChange = (): void => {
     this.ensureVisible();
   };
@@ -89,13 +93,15 @@ export class WindowManager {
 
   public getScale(): number {
     const window = this.getWindow();
-    return window ? boundsToState(window.getBounds(), this.settingsPanelExpanded).scale : 1;
+    return window
+      ? boundsToState(window.getBounds(), this.chatPanelExpanded, this.settingsPanelExpanded).scale
+      : 1;
   }
 
   public setScale(scale: number): number {
     const window = this.getWindow() ?? this.create();
     const centered = resizeStateAroundCenter(
-      boundsToState(window.getBounds(), this.settingsPanelExpanded),
+      boundsToState(window.getBounds(), this.chatPanelExpanded, this.settingsPanelExpanded),
       scale,
       this.chatPanelExpanded,
       this.settingsPanelExpanded,
@@ -121,7 +127,11 @@ export class WindowManager {
       return;
     }
     const window = this.getWindow() ?? this.create();
-    const current = boundsToState(window.getBounds(), this.settingsPanelExpanded);
+    const current = boundsToState(
+      window.getBounds(),
+      this.chatPanelExpanded,
+      this.settingsPanelExpanded,
+    );
     if (this.chatPanelExpanded && expanded) {
       this.collapsedStateBeforeExpansion = this.deriveCollapsedState(current);
     }
@@ -131,7 +141,8 @@ export class WindowManager {
     if (expanded && !this.chatPanelExpanded) this.collapsedStateBeforeExpansion = current;
     this.chatPanelExpanded = expanded;
     this.settingsPanelExpanded = nextSettingsExpanded;
-    if (expanded) configureMainWindowLayout(window, true, nextSettingsExpanded);
+    this.onSettingsPanelExpandedChanged(nextSettingsExpanded);
+    configureMainWindowLayout(window, expanded, nextSettingsExpanded);
     const visible = keepWindowVisible(
       target,
       screen.getAllDisplays(),
@@ -143,7 +154,6 @@ export class WindowManager {
     if (expanded) {
       this.expandedOrigin = visible;
     } else {
-      configureMainWindowLayout(window, false);
       this.collapsedStateBeforeExpansion = undefined;
       this.expandedOrigin = undefined;
       this.settingsPanelExpanded = false;
@@ -166,7 +176,7 @@ export class WindowManager {
     }
 
     const visibleState = keepWindowVisible(
-      boundsToState(window.getBounds(), this.settingsPanelExpanded),
+      boundsToState(window.getBounds(), this.chatPanelExpanded, this.settingsPanelExpanded),
       screen.getAllDisplays(),
       screen.getPrimaryDisplay().workArea,
       this.chatPanelExpanded,
@@ -204,7 +214,9 @@ export class WindowManager {
 
     try {
       this.store.save(
-        this.deriveCollapsedState(boundsToState(window.getBounds(), this.settingsPanelExpanded)),
+        this.deriveCollapsedState(
+          boundsToState(window.getBounds(), this.chatPanelExpanded, this.settingsPanelExpanded),
+        ),
       );
     } catch (error) {
       console.warn('Unable to save the deskpet window state.', error);

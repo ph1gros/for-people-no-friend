@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
+import { PassThrough } from 'node:stream';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -18,6 +19,7 @@ const createChild = (): ChildProcess => {
     signalCode: { value: null, writable: true },
   });
   child.kill = vi.fn(() => true);
+  child.stderr = new PassThrough();
   return child;
 };
 
@@ -49,12 +51,17 @@ describe('VTubeStudioSpoutOverlay', () => {
     const spawnProcess = vi.fn(() => child);
     const executablePath =
       'C:\\ai_deskpet\\native\\vtube-studio-spout\\bin\\FpnfVTubeStudioSpout.exe';
-    const overlay = new VTubeStudioSpoutOverlay(() => createWindow(10_486n), {
-      platform: 'win32',
-      executablePath,
-      exists: () => true,
-      spawnProcess,
-    });
+    const diagnostics: string[] = [];
+    const overlay = new VTubeStudioSpoutOverlay(
+      () => createWindow(10_486n),
+      {
+        platform: 'win32',
+        executablePath,
+        exists: () => true,
+        spawnProcess,
+      },
+      (event) => diagnostics.push(event),
+    );
 
     overlay.setMode('vtube-studio');
     overlay.setMode('vtube-studio');
@@ -66,9 +73,11 @@ describe('VTubeStudioSpoutOverlay', () => {
       {
         cwd: 'C:\\ai_deskpet\\native\\vtube-studio-spout\\bin',
         windowsHide: true,
-        stdio: 'ignore',
+        stdio: ['ignore', 'ignore', 'pipe'],
       },
     );
+    child.stderr?.emit('data', Buffer.from('FPNF_SPOUT_FRAME_UNAVAILABLE\n'));
+    expect(diagnostics).toContain('FPNF_SPOUT_FRAME_UNAVAILABLE');
 
     overlay.setMode('off');
     expect(child.kill).toHaveBeenCalledTimes(1);
@@ -102,7 +111,7 @@ describe('VTubeStudioSpoutOverlay', () => {
   it('keeps the compact widget strip outside the native model pixels', () => {
     const source = readFileSync(resolve('native/vtube-studio-spout/SpoutOverlay.cpp'), 'utf8');
 
-    expect(source).toContain('constexpr int kWidgetSafeAreaHeight = 112;');
+    expect(source).toContain('constexpr int kWidgetSafeAreaHeight = 128;');
     expect(source).toContain('const int widget_safe_area = std::min(kWidgetSafeAreaHeight');
     expect(source).toContain('scale_frame(state, height - widget_safe_area);');
     expect(source).toContain('std::fill(');
@@ -112,12 +121,55 @@ describe('VTubeStudioSpoutOverlay', () => {
     const source = readFileSync(resolve('native/vtube-studio-spout/SpoutOverlay.cpp'), 'utf8');
 
     expect(source).toContain('constexpr float kExpandedChatMinimumAspect = 0.95F;');
-    expect(source).toContain('constexpr float kSettingsLayoutMinimumAspect = 1.42F;');
     expect(source).toContain(
       'const bool expanded_chat = owner_aspect > kExpandedChatMinimumAspect;',
     );
     expect(source).toContain('const int render_width = expanded_chat ? width / 2 : width;');
     expect(source).toContain('bounds.left + render_width');
-    expect(source).toContain('if (owner_aspect >= kSettingsLayoutMinimumAspect)');
+    expect(source).not.toContain('kSettingsLayoutMinimumAspect');
+    expect(source).not.toContain('if (owner_aspect >=');
+  });
+
+  it('uses the owner DPI and stable owned-window z-order without per-frame topmost fighting', () => {
+    const source = readFileSync(resolve('native/vtube-studio-spout/SpoutOverlay.cpp'), 'utf8');
+
+    expect(source).toContain(
+      'SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)',
+    );
+    expect(source).toContain('state.options.owner, nullptr, instance, &state');
+    expect(source).toContain('SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW');
+    expect(source).not.toContain('SetWindowPos(window, HWND_TOPMOST');
+    expect(source).not.toContain('SetWindowPos(state.options.owner, HWND_TOPMOST');
+  });
+
+  it('suppresses the native model only while the settings panel is explicitly open', () => {
+    const firstChild = createChild();
+    const secondChild = createChild();
+    const spawnProcess = vi.fn().mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+    const overlay = new VTubeStudioSpoutOverlay(() => createWindow(10_486n), {
+      platform: 'win32',
+      executablePath: 'C:\\fixed\\FpnfVTubeStudioSpout.exe',
+      exists: () => true,
+      spawnProcess,
+    });
+
+    overlay.setMode('vtube-studio');
+    overlay.setSettingsPanelExpanded(true);
+    overlay.setSettingsPanelExpanded(false);
+
+    expect(firstChild.kill).toHaveBeenCalledTimes(1);
+    expect(spawnProcess).toHaveBeenCalledTimes(2);
+  });
+
+  it('selects the high-performance GPU used by VTube Studio and reports receiver readiness', () => {
+    const source = readFileSync(resolve('native/vtube-studio-spout/SpoutOverlay.cpp'), 'utf8');
+
+    expect(source).toContain('NvOptimusEnablement');
+    expect(source).toContain('AmdPowerXpressRequestHighPerformance');
+    expect(source).toContain('GetSenderAdapter(state.options.sender.c_str()');
+    expect(source).toContain('SetPreferredAdapter(2)');
+    expect(source).toContain('SetAutoShare(true)');
+    expect(source).toContain('FPNF_SPOUT_READY');
+    expect(source).toContain('FPNF_SPOUT_FRAME_UNAVAILABLE');
   });
 });

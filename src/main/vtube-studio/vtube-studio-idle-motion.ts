@@ -31,6 +31,8 @@ const FIRST_BLINK_MIN_DELAY_MS = 1_200;
 const FIRST_BLINK_DELAY_RANGE_MS = 800;
 const NOD_DURATION_MS = 1_200;
 const NOD_AMPLITUDE = 4;
+const SHAKE_DURATION_MS = 1_400;
+const SHAKE_AMPLITUDE = 5.5;
 const FIRST_AUTONOMOUS_ACTION_MIN_DELAY_MS = 18_000;
 const FIRST_AUTONOMOUS_ACTION_DELAY_RANGE_MS = 12_000;
 const AUTONOMOUS_ACTION_MIN_INTERVAL_MS = 45_000;
@@ -63,6 +65,7 @@ export class VTubeStudioIdleMotion {
   private poseStartedAt: number;
   private poseEndsAt: number;
   private nodStartedAt: number | undefined;
+  private shakeStartedAt: number | undefined;
   private nextAutonomousActionAt: number;
   private drowsy = false;
   private drowsyStartedAt: number | undefined;
@@ -127,11 +130,14 @@ export class VTubeStudioIdleMotion {
     this.updateEyeOpen(now, targetEyeOpen);
     const eyeOpen = Math.max(0, this.eyeOpen + blink);
     const nodOffset = this.nodOffset(now, pointerProximity);
+    const shakeOffset = this.shakeOffset(now);
     return [
       {
         id: 'FaceAngleX',
         value:
-          headX * profile.angleX * 0.86 + Math.sin(elapsedSeconds * 0.43) * profile.angleX * 0.08,
+          headX * profile.angleX * 0.86 +
+          Math.sin(elapsedSeconds * 0.43) * profile.angleX * 0.08 +
+          shakeOffset,
       },
       {
         id: 'FaceAngleY',
@@ -163,18 +169,21 @@ export class VTubeStudioIdleMotion {
     const normalized = action.trim().toLocaleLowerCase();
     if (normalized === 'drowsy') {
       this.drowsy = true;
+      this.nodStartedAt = undefined;
+      this.shakeStartedAt = undefined;
       this.drowsyStartedAt = now;
       this.drowsyNodStartedAt = undefined;
       this.nextDrowsyNodAt = this.scheduleDrowsyNod(now, true);
       this.eyeOpenUpdatedAt = now;
       return true;
     }
-    if (normalized !== 'nod') return false;
+    if (normalized !== 'nod' && normalized !== 'shake') return false;
     this.drowsy = false;
     this.drowsyStartedAt = undefined;
     this.drowsyNodStartedAt = undefined;
     this.nextDrowsyNodAt = undefined;
-    this.nodStartedAt = now;
+    this.nodStartedAt = normalized === 'nod' ? now : undefined;
+    this.shakeStartedAt = normalized === 'shake' ? now : undefined;
     this.nextAutonomousActionAt = this.scheduleAutonomousAction(now, false);
     return true;
   }
@@ -185,7 +194,12 @@ export class VTubeStudioIdleMotion {
     pointerWeight: number,
   ): void {
     if (now < this.nextAutonomousActionAt) return;
-    if (state === 'idle' && pointerWeight <= 0 && this.nodStartedAt === undefined) {
+    if (
+      state === 'idle' &&
+      pointerWeight <= 0 &&
+      this.nodStartedAt === undefined &&
+      this.shakeStartedAt === undefined
+    ) {
       this.nodStartedAt = now;
     }
     this.nextAutonomousActionAt = this.scheduleAutonomousAction(now, false);
@@ -322,5 +336,17 @@ export class VTubeStudioIdleMotion {
       return 0;
     }
     return -(Math.sin(progress * Math.PI) ** 2) * NOD_AMPLITUDE;
+  }
+
+  private shakeOffset(now: number): number {
+    if (this.shakeStartedAt === undefined) return 0;
+    const progress = (now - this.shakeStartedAt) / SHAKE_DURATION_MS;
+    if (progress < 0) return 0;
+    if (progress >= 1) {
+      this.shakeStartedAt = undefined;
+      return 0;
+    }
+    const envelope = Math.sin(progress * Math.PI);
+    return Math.sin(progress * Math.PI * 4) * envelope * SHAKE_AMPLITUDE;
   }
 }

@@ -6,7 +6,9 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-当前仓库是 **Live2D Version**。V1.6 新安装默认使用原创角色“小猫”，可以选择内嵌 Live2D、ViewerEX 或 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+当前仓库是 **Live2D Version**。V1.7 基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+
+V1.7 已完成本轮开发：新增 Genie-TTS 本机 GPT-SoVITS ONNX 提供方、Fish Audio 在线 TTS、通用 VTube Studio 表情映射、可跟随当前角色名或自定义的精准语音称呼，以及采用工作区/小组件范围授权的工作模式；工作区外文件、脚本和项目检查会显示真实目标后逐次确认。基础包携带可离线启动 TTS/ASR 的受控运行环境和 SenseVoiceSmall 语音输入资源，但不携带任何指定角色或音色权重；伊蕾娜音色和黑猫身份/模型只作为独立的非商业可选资源。
 
 Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
@@ -29,18 +31,19 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - 侧拉对话 HUD、长回复滚动和动态角色身份
 - 用户主动同步并本地缓存的作品社区词库
 - 中文文字回复、流式分句、日语 TTS、有序播放、停声与 Live2D/VTube Studio 表现联动
-- 说话就输出、精准小猫、手动录音三种中文语音输入模式；2 秒内连续语句合并后重新思考
-- 已验证的 Style-Bert-VITS2 ONNX 本机运行方案，优先 DirectML、失败回退 CPU；因音色授权待确认，公开包暂不携带伊雷娜权重
-- VTube Studio 官方 Plugin API 适配、固定 Steam 启动入口、当前模型清单与表情预览，以及为已获授权模型预留的有界安装入口
-- 工作模式、受限文件拖入、网页查找与本机文件/代码协助；敏感操作仍需明确批准
+- 说话就输出、精准称呼、手动录音三种中文语音输入模式；精准称呼默认跟随当前角色名，也可单独自定义
+- 已验证的 Style-Bert-VITS2 ONNX 本机运行方案，优先 DirectML、失败回退 CPU；基础包携带运行环境但不携带伊蕾娜权重，也不会预填伊蕾娜模型或音色 ID
+- VTube Studio 官方 Plugin API 适配、自动发现本机实际端口并请求插件授权、固定 Steam 启动入口、当前模型清单与表情预览，以及为已获授权模型预留的有界安装入口；VTube Studio 与 FPNF 已自带所需 Spout2 两端，不要求另装 OBS 插件，包内没有模型时安装入口不会显示
+- Agent 式工作模式、受限文件拖入、网页查找、代码内容搜索、精确修改与固定项目检查；敏感操作仍需明确批准
 - 作品名留空时从精确角色资料页识别并在确认候选后自动回填
 - 再次启动同一人格且已有对话时，由当前模型用最近几轮和相关已确认记忆生成一句简短关联开场；新人格、切换人格或无历史时使用角色卡默认开场
 - 仅在桌宠窗口被选中时生效的可配置显示/隐藏与停止生成快捷键
-- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；听歌条开启后固定保留，优先适配网易云音乐、QQ 音乐、酷狗音乐、Apple Music 和 Spotify，并提供上一首、播放/暂停、下一首；输入展示按用户白名单显示按键（默认 WASD），可用多种分隔符继续添加常用键盘按键，并可显示鼠标三键和移动方向。现有组件使用[仓库内类型化注册器](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)，便于开发者或编码 AI 安全增加新组件，不在客户端加载外部插件
+- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；听歌条开启后固定保留，读取并控制 Windows 当前媒体会话，包括网易云音乐、QQ 音乐、酷狗音乐、Apple Music、Spotify 及其他正确发布系统媒体会话的播放器，并提供上一首、播放/暂停、下一首；输入展示按用户白名单显示按键（默认 WASD），可用多种分隔符继续添加常用键盘按键，并可显示鼠标三键和移动方向。现有组件使用[仓库内类型化注册器](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)，便于开发者或编码 AI 安全增加新组件，不在客户端加载外部插件
 
 ## 当前不包含
 
 - 未经授权的声音克隆、训练原始录音和公开模型再分发
+- 默认角色身份卡、Live2D/VTube Studio 模型或指定音色权重；这些资源通过独立可选包导入
 - 直播、弹幕和主播控制台
 - Qdrant、语义 Embedding、Neo4j 和独立 Python 记忆服务
 - 独立画像模型 API Key
@@ -100,11 +103,11 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 **完成了什么**
 
-- 增加中文显示、日语朗读的流式语音主干；默认伊雷娜语速 `0.90`、音量 `60%`，句间与结尾停顿按自然听感重新校准。
+- 增加中文显示、日语朗读的流式语音主干；默认伊蕾娜语速 `0.90`、音量 `60%`，句间与结尾停顿按自然听感重新校准。
 - 增加说话就输出、精准小猫、手动录音三种中文输入；2 秒内续句合并后重新思考，繁忙时使用最多四句的有界队列。
 - 增加内嵌 Live2D、ViewerEX、VTube Studio 三种互斥显示方式，以及眨眼、鼠标追踪、随机待机、犯困点头、慢闭眼和消息唤醒。
 - 增加原创“小猫”角色卡、工作模式、文件拖入工作区、网页查找和受限本机文件/代码工具。
-- 已完成本地 ONNX 日语语音运行时与有界 VTube 模型安装器；当前公开包不包含授权待确认的伊雷娜权重和小黑猫模型，二者只保存在用户私人备份中。
+- 已完成本地 ONNX 日语语音运行时与有界 VTube 模型安装器；当前公开包不包含授权待确认的伊蕾娜权重和小黑猫模型，二者只保存在用户私人备份中。
 
 **使用了什么**
 
@@ -123,7 +126,7 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 **复现与调教**
 
-完整角色卡、语音训练成品、语速停顿、监听模式、VTube 参数、休息动作、迁移步骤、授权边界和新电脑验收见 [V1.6 小猫角色、伊雷娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)。
+完整角色卡、语音训练成品、语速停顿、监听模式、VTube 参数、休息动作、迁移步骤、授权边界和新电脑验收见 [V1.6 小猫角色、伊蕾娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)。
 
 ### V1.5b（程序版本 1.5.2）
 
@@ -178,7 +181,7 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 
 ## 下载
 
-[V1.6 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.6) 已提供 `FPNF-v1.6-Windows-x64.zip` Windows x64 免安装包，并可配合 [Steam VTube Studio](https://store.steampowered.com/app/1325860/VTube_Studio/) 使用。公开包不包含授权待确认的小黑猫模型和伊雷娜音色；确认公开再分发权后再决定是否增加独立资源资产。安装包 SHA-256 为 `DA3C0D4E7F0254878288F7A1959A254F54495FFE8690C2C4E10DC651C97A0E44`。[V1.5b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[V1.6 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.6) 已提供 `FPNF-v1.6-Windows-x64.zip` Windows x64 免安装包，并可配合 [Steam VTube Studio](https://store.steampowered.com/app/1325860/VTube_Studio/) 使用。公开包不包含授权待确认的小黑猫模型和伊蕾娜音色；确认公开再分发权后再决定是否增加独立资源资产。安装包 SHA-256 为 `DA3C0D4E7F0254878288F7A1959A254F54495FFE8690C2C4E10DC651C97A0E44`。[V1.5b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
@@ -215,15 +218,18 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 - [V1.6 声音与实时对话基线](docs/V1_6_SPEECH_FOUNDATION.md)
 - [V1.6 VTube Studio 适配边界](docs/V1_6_VTUBE_STUDIO_ADAPTER.md)
 - [V1.6 VTube Studio 模型调教参考](docs/V1_6_VTUBE_STUDIO_MODEL_ADAPTATION_GUIDE.md)
-- [V1.6 小猫角色、伊雷娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)
+- [V1.6 小猫角色、伊蕾娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)
 - [V1.6 Release 说明](docs/V1_6_RELEASE_NOTES.md)
+- [V1.7 当前实施与安全边界](docs/V1_7_IMPLEMENTATION.md)
 - [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)
 
 ## 角色与表现资源
 
-V1.6 新安装默认使用原创“小猫”资料卡。内嵌 Live2D 仍保留已获许可的“工作凯尔希”示例；VTube Studio 随包模型和伊雷娜音色只有在公开再分发权已经核验时才能进入 Release。启用方法、迁移步骤与许可边界见 [V1.6 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md) 和 [本地 Live2D 兼容模型](assets/models/README.md)。
+V1.7 新安装只建立中性的“桌宠”占位资料，角色显示默认关闭；基础包不包含身份卡、内嵌 Live2D 模型、VTube Studio 模型或指定音色权重。身份卡通过 `.fpnf-character.zip` 导入，内嵌 Live2D 模型通过设置页选择 `.model3.json` 导入，VTube Studio 模型放入 VTube Studio 自己的 `Live2DModels` 目录。应用只保存相对资源结构和模型 ID，不把开发电脑的绝对路径带到另一台电脑。
+
+V1.7 的精准语音称呼默认跟随当前激活角色的名称，也可单独自定义。程序按安装目录内的实际资源显示语音预设和模型安装入口：没有伊蕾娜权重时不显示伊蕾娜预设，没有随包 VTube 模型时不显示安装按钮。可选的黑猫身份/模型与伊蕾娜音色均仅限非商业用途，必须保留各自附带的说明。
 
 两个独立项目共享角色资料学习、长期记忆和安全边界，但不是同一个程序里的两套皮肤，也不提供跨版本角色运行时互切：本仓库专注 Live2D 的完整表现能力，[GIF Version](https://github.com/ph1gros/for-people-no-friend-gif) 专注更轻量、更像传统桌宠的动态 WebP 待机与表情动作。
 

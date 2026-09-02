@@ -86,13 +86,14 @@ import type {
   SetVTubeStudioSettingsInput,
   VTubeStudioInspectResult,
   VTubeStudioExpressionPreviewInput,
+  VTubeStudioAuthorizationResult,
   VTubeStudioOperationResult,
   VTubeStudioPresentationInput,
+  VTubeStudioPresentationResult,
   VTubeStudioStatus,
 } from './vtube-studio-ipc';
 import type { Live2DModelImportResult } from './live2d-model-ipc';
 import type {
-  ConfirmAuthorizedVoiceUseInput,
   Live2DModelExportResult,
   LocalAssetOperationResult,
   LocalSpeechAssetStatus,
@@ -283,10 +284,8 @@ export interface DeskpetApi {
   cancelSpeech(input: CancelSpeechInput): Promise<boolean>;
   getLocalSpeechAssetStatus(): Promise<LocalSpeechAssetStatus>;
   exportLocalVoice(): Promise<LocalAssetOperationResult>;
-  openSpeechTrainingSources(
-    input: ConfirmAuthorizedVoiceUseInput,
-  ): Promise<LocalAssetOperationResult>;
-  launchSpeechTrainer(input: ConfirmAuthorizedVoiceUseInput): Promise<LocalAssetOperationResult>;
+  openSpeechTrainingSources(): Promise<LocalAssetOperationResult>;
+  launchSpeechTrainer(): Promise<LocalAssetOperationResult>;
   getViewerExStatus(): Promise<ViewerExStatus>;
   setViewerExSettings(input: SetViewerExSettingsInput): Promise<ViewerExOperationResult>;
   presentInViewerEx(input: ViewerExPresentationInput): Promise<boolean>;
@@ -294,10 +293,10 @@ export interface DeskpetApi {
   launchVTubeStudio(): Promise<VTubeStudioOperationResult>;
   installBundledVTubeStudioModel(): Promise<VTubeStudioOperationResult>;
   setVTubeStudioSettings(input: SetVTubeStudioSettingsInput): Promise<VTubeStudioOperationResult>;
-  authorizeVTubeStudio(): Promise<VTubeStudioOperationResult>;
+  authorizeVTubeStudio(): Promise<VTubeStudioAuthorizationResult>;
   inspectVTubeStudio(): Promise<VTubeStudioInspectResult>;
   previewVTubeStudioExpression(
     input: VTubeStudioExpressionPreviewInput,
   ): Promise<VTubeStudioOperationResult>;
-  presentInVTubeStudio(input: VTubeStudioPresentationInput): Promise<boolean>;
+  presentInVTubeStudio(input: VTubeStudioPresentationInput): Promise<VTubeStudioPresentationResult>;
 }

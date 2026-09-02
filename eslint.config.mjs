@@ -14,6 +14,7 @@ export default tseslint.config(
       'dist-electron/**',
       'node_modules/**',
       'native/vtube-studio-spout/vendor/spout2/**',
+      'release/**',
     ],
   },
   eslint.configs.recommended,

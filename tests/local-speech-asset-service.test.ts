@@ -43,6 +43,7 @@ describe('LocalSpeechAssetService', () => {
     const service = new LocalSpeechAssetService(path.join(directory, 'data'));
 
     expect(await service.getStatus()).toMatchObject({
+      voiceName: '伊蕾娜（JP-Extra）',
       voiceAvailable: true,
       styles: ['Neutral', 'Happy'],
       trainingToolAvailable: true,
@@ -50,6 +51,7 @@ describe('LocalSpeechAssetService', () => {
     });
 
     const exported = await service.exportVoice(exportRoot);
+    expect(exported.directoryName).toBe('FPNF-伊蕾娜-JP-Extra-音色');
     const exportedRoot = path.join(exportRoot, exported.directoryName);
     expect(await readFile(path.join(exportedRoot, 'voice.safetensors'), 'utf8')).toBe('fake-model');
     expect(await readFile(path.join(exportedRoot, 'FPNF-音色说明.txt'), 'utf8')).toContain(

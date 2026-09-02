@@ -1,4 +1,4 @@
-import type { SpeechInputMode } from '../../shared/speech-ipc';
+import type { SpeechInputMode, SpeechWakeWordSource } from '../../shared/speech-ipc';
 
 export type WakeWordCommandResult =
   | { kind: 'ignored' }
@@ -30,9 +30,14 @@ export class PendingVoiceCommandQueue {
   }
 }
 
-const WAKE_WORD = '小猫';
 const OUTER_PUNCTUATION = /^[\s,，。.!！?？:：;；、~～-]+|[\s,，。.!！?？:：;；、~～-]+$/gu;
 const clean = (value: string): string => value.trim().replace(OUTER_PUNCTUATION, '').trim();
+
+export const resolvePreciseWakeWord = (
+  source: SpeechWakeWordSource,
+  customWakeWord: string,
+  characterName: string,
+): string => clean(source === 'custom' ? customWakeWord : characterName) || '桌宠';
 
 export const combineFullListeningCommands = (first: string, second: string): string => {
   const before = first.trim();
@@ -68,17 +73,18 @@ export class WakeWordCommandSession {
     // segments cannot accidentally combine into one command.
   }
 
-  public handle(rawTranscript: string): WakeWordCommandResult {
+  public handle(rawTranscript: string, rawWakeWord = ''): WakeWordCommandResult {
     const transcript = clean(rawTranscript);
     if (!transcript || this.mode === 'manual') return { kind: 'ignored' };
     if (this.mode === 'full') {
       return { kind: 'send', text: transcript, message: '听到完整一句话，正在发送。' };
     }
 
-    if (!transcript.startsWith(WAKE_WORD)) return { kind: 'ignored' };
-    const text = clean(transcript.slice(WAKE_WORD.length));
+    const wakeWord = clean(rawWakeWord);
+    if (!wakeWord || !transcript.startsWith(wakeWord)) return { kind: 'ignored' };
+    const text = clean(transcript.slice(wakeWord.length));
     return text
-      ? { kind: 'send', text, message: '听到“小猫”，正在发送。' }
-      : { kind: 'armed', message: '听到了“小猫”，但后面还没有内容。' };
+      ? { kind: 'send', text, message: `听到“${wakeWord}”，正在发送。` }
+      : { kind: 'armed', message: `听到了“${wakeWord}”，但后面还没有内容。` };
   }
 }

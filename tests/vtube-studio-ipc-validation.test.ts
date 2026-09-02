@@ -13,18 +13,87 @@ describe('VTube Studio IPC validation', () => {
       enabled: false,
       port: 8001,
       mouseTrackingEnabled: false,
+      emotionExpressions: {},
+      modelMappings: {},
     });
   });
 
   it('accepts a bounded port and rejects renderer-controlled addresses', () => {
     expect(parseSetVTubeStudioSettingsInput({ settings: { enabled: true, port: 8123 } })).toEqual({
-      settings: { enabled: true, port: 8123, mouseTrackingEnabled: false },
+      settings: {
+        enabled: true,
+        port: 8123,
+        mouseTrackingEnabled: false,
+        emotionExpressions: {},
+        modelMappings: {},
+      },
     });
     expect(
       parseSetVTubeStudioSettingsInput({
         settings: { enabled: true, port: 8123, mouseTrackingEnabled: true },
       }),
-    ).toEqual({ settings: { enabled: true, port: 8123, mouseTrackingEnabled: true } });
+    ).toEqual({
+      settings: {
+        enabled: true,
+        port: 8123,
+        mouseTrackingEnabled: true,
+        emotionExpressions: {},
+        modelMappings: {},
+      },
+    });
+    expect(
+      parseSetVTubeStudioSettingsInput({
+        settings: {
+          enabled: true,
+          port: 8123,
+          emotionExpressions: { happy: 'expression1.exp3.json' },
+        },
+      }),
+    ).toEqual({
+      settings: {
+        enabled: true,
+        port: 8123,
+        mouseTrackingEnabled: false,
+        emotionExpressions: { happy: 'expression1.exp3.json' },
+        modelMappings: {},
+      },
+    });
+    expect(
+      parseSetVTubeStudioSettingsInput({
+        settings: {
+          enabled: true,
+          port: 8123,
+          modelMappings: {
+            'model-a': {
+              modelName: 'Akari',
+              emotionExpressions: { angry: 'Angry.exp3.json' },
+              actionHotkeys: { nod: 'hotkey-nod' },
+            },
+            'model-b': {
+              modelName: 'MaoMao',
+              emotionExpressions: { happy: 'Happy.exp3.json' },
+              actionHotkeys: { shake: 'hotkey-shake' },
+            },
+          },
+        },
+      }),
+    ).toMatchObject({
+      settings: {
+        modelMappings: {
+          'model-a': { emotionExpressions: { angry: 'Angry.exp3.json' } },
+          'model-b': { emotionExpressions: { happy: 'Happy.exp3.json' } },
+        },
+      },
+    });
+    expect(() =>
+      parseSetVTubeStudioSettingsInput({
+        settings: {
+          enabled: true,
+          port: 8123,
+          emotionExpressions: { happy: '../unsafe.exp3.json' },
+        },
+      }),
+    ).toThrow();
     expect(() =>
       parseSetVTubeStudioSettingsInput({
         settings: { enabled: true, port: 8001, host: '192.168.1.5' },

@@ -46,6 +46,9 @@ describe('VTube Studio service integration', () => {
         has: async () => false,
         set: async () => undefined,
       } as Pick<SecretStore, 'get' | 'has' | 'set'>,
+      undefined,
+      undefined,
+      async () => ({ found: false }),
     );
 
     await expect(service.inspect()).resolves.toMatchObject({ ok: false });
@@ -53,11 +56,245 @@ describe('VTube Studio service integration', () => {
     await expect(service.getStatus()).resolves.toMatchObject({ connection: 'disabled' });
   });
 
+  it('does not treat an undecryptable token copied from another computer as authorized', async () => {
+    service = new VTubeStudioService(
+      {
+        get: async () => ({
+          enabled: true,
+          port: 8001,
+          mouseTrackingEnabled: false,
+        }),
+        set: async () => undefined,
+      } as VTubeStudioConfigStore,
+      {
+        get: async () => undefined,
+        has: async () => true,
+        set: async () => undefined,
+      } as Pick<SecretStore, 'get' | 'has' | 'set'>,
+    );
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      authorized: false,
+      connection: 'disconnected',
+    });
+  });
+
+  it('uses the loopback VTube Studio broadcast port before requesting authorization', async () => {
+    server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    server.on('connection', (socket) => {
+      socket.on('message', (raw) => {
+        const request = JSON.parse(raw.toString()) as {
+          requestID: string;
+          messageType: string;
+        };
+        if (request.messageType !== 'AuthenticationTokenRequest') return;
+        socket.send(
+          JSON.stringify({
+            apiName: 'VTubeStudioPublicAPI',
+            apiVersion: '1.0',
+            requestID: request.requestID,
+            messageType: 'AuthenticationTokenResponse',
+            data: { authenticationToken: 'discovered-token' },
+          }),
+        );
+      });
+    });
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing local test port.');
+
+    let settings: VTubeStudioSettings = {
+      enabled: true,
+      port: address.port === 65_535 ? address.port - 1 : address.port + 1,
+      mouseTrackingEnabled: false,
+      emotionExpressions: {},
+    };
+    const storedTokens = new Map<string, string>();
+    service = new VTubeStudioService(
+      {
+        get: async () => ({ ...settings }),
+        set: async (next: VTubeStudioSettings) => {
+          settings = { ...next };
+        },
+      } as VTubeStudioConfigStore,
+      {
+        get: async (id: string) => storedTokens.get(id),
+        has: async (id: string) => storedTokens.has(id),
+        set: async (id: string, value: string) => {
+          storedTokens.set(id, value);
+        },
+      } as Pick<SecretStore, 'get' | 'has' | 'set'>,
+      undefined,
+      undefined,
+      async () => ({ found: true, active: true, port: address.port }),
+    );
+
+    await expect(service.authorize()).resolves.toEqual({
+      ok: true,
+      reason: 'authorized',
+      message: 'VTube Studio 已授权。',
+    });
+    expect(settings.port).toBe(address.port);
+    expect(storedTokens.get('vtube-studio-plugin-token')).toBe('discovered-token');
+  });
+
+  it('uses the configured loopback port without waiting for optional UDP discovery', async () => {
+    server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    server.on('connection', (socket) => {
+      socket.on('message', (raw) => {
+        const request = JSON.parse(raw.toString()) as {
+          requestID: string;
+          messageType: string;
+        };
+        if (request.messageType !== 'AuthenticationTokenRequest') return;
+        socket.send(
+          JSON.stringify({
+            apiName: 'VTubeStudioPublicAPI',
+            apiVersion: '1.0',
+            requestID: request.requestID,
+            messageType: 'AuthenticationTokenResponse',
+            data: { authenticationToken: 'direct-token' },
+          }),
+        );
+      });
+    });
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing local test port.');
+
+    let discoveryCalls = 0;
+    service = new VTubeStudioService(
+      {
+        get: async () => ({
+          enabled: true,
+          port: address.port,
+          mouseTrackingEnabled: false,
+          emotionExpressions: {},
+        }),
+        set: async () => undefined,
+      } as VTubeStudioConfigStore,
+      {
+        get: async () => undefined,
+        has: async () => false,
+        set: async () => undefined,
+      } as Pick<SecretStore, 'get' | 'has' | 'set'>,
+      undefined,
+      undefined,
+      async () => {
+        discoveryCalls += 1;
+        return { found: false };
+      },
+    );
+
+    await expect(service.authorize()).resolves.toMatchObject({
+      ok: true,
+      reason: 'authorized',
+    });
+    expect(discoveryCalls).toBe(0);
+  });
+
+  it('explains the one VTube Studio switch that must be enabled by the user', async () => {
+    let socketCreated = false;
+    let settings: VTubeStudioSettings = {
+      enabled: true,
+      port: 8_001,
+      mouseTrackingEnabled: false,
+      emotionExpressions: {},
+    };
+    service = new VTubeStudioService(
+      {
+        get: async () => ({ ...settings }),
+        set: async (next: VTubeStudioSettings) => {
+          settings = { ...next };
+        },
+      } as VTubeStudioConfigStore,
+      {
+        get: async () => undefined,
+        has: async () => false,
+        set: async () => undefined,
+      } as Pick<SecretStore, 'get' | 'has' | 'set'>,
+      () => {
+        socketCreated = true;
+        throw new Error('VTube Studio is unavailable.');
+      },
+      undefined,
+      async () => ({ found: true, active: false, port: 9_123 }),
+    );
+
+    await expect(service.authorize()).resolves.toEqual({
+      ok: false,
+      reason: 'api-disabled',
+      message:
+        'VTube Studio 已运行，但插件接口尚未开启。请在它的设置首页打开“允许插件 API 访问”，然后回来再次连接。',
+    });
+    expect(socketCreated).toBe(true);
+    expect(settings.port).toBe(9_123);
+  });
+
+  it('forgets a revoked saved token so the same user action can authorize again', async () => {
+    server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    server.on('connection', (socket) => {
+      socket.on('message', (raw) => {
+        const request = JSON.parse(raw.toString()) as {
+          requestID: string;
+          messageType: string;
+        };
+        if (request.messageType !== 'AuthenticationRequest') return;
+        socket.send(
+          JSON.stringify({
+            apiName: 'VTubeStudioPublicAPI',
+            apiVersion: '1.0',
+            requestID: request.requestID,
+            messageType: 'AuthenticationResponse',
+            data: { authenticated: false, reason: 'Token revoked.' },
+          }),
+        );
+      });
+    });
+    await once(server, 'listening');
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing local test port.');
+    const secrets = new Map([['vtube-studio-plugin-token', 'stale-token']]);
+    service = new VTubeStudioService(
+      {
+        get: async () => ({
+          enabled: true,
+          port: address.port,
+          mouseTrackingEnabled: false,
+        }),
+        set: async () => undefined,
+      } as VTubeStudioConfigStore,
+      {
+        get: async (id: string) => secrets.get(id),
+        has: async (id: string) => secrets.has(id),
+        set: async (id: string, value: string) => {
+          secrets.set(id, value);
+        },
+        delete: async (id: string) => {
+          secrets.delete(id);
+        },
+      } as Pick<SecretStore, 'get' | 'has' | 'set' | 'delete'>,
+      undefined,
+      undefined,
+      async () => ({ found: false }),
+    );
+
+    await expect(service.inspect()).resolves.toEqual({
+      ok: false,
+      reason: 'authorization-denied',
+      message: 'VTube Studio 授权已失效，需要重新授权。',
+    });
+    await expect(service.getStatus()).resolves.toMatchObject({ authorized: false });
+  });
+
   it('authorizes and reads model metadata sequentially from loopback', async () => {
     const requestTypes: string[] = [];
     const expressionActivations: Record<string, unknown>[] = [];
     const injectedFrames: Record<string, unknown>[] = [];
     const activeExpressions = new Set<string>();
+    let currentModelLoaded = true;
+    let currentModelId = 'model-id';
+    let currentModelName = 'akari';
     server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
     server.on('connection', (socket) => {
       socket.on('message', (raw) => {
@@ -83,9 +320,9 @@ describe('VTube Studio service integration', () => {
         } else if (request.messageType === 'CurrentModelRequest') {
           messageType = 'CurrentModelResponse';
           data = {
-            modelLoaded: true,
-            modelName: 'akari',
-            modelID: 'model-id',
+            modelLoaded: currentModelLoaded,
+            modelName: currentModelLoaded ? currentModelName : '',
+            modelID: currentModelLoaded ? currentModelId : '',
             vtsModelName: 'akari.vtube.json',
             live2DModelName: 'akari.model3.json',
             numberOfLive2DParameters: 206,
@@ -186,10 +423,12 @@ describe('VTube Studio service integration', () => {
       } as Pick<SecretStore, 'get' | 'has' | 'set'>,
       undefined,
       () => ({ x: 0.5, y: -0.5 }),
+      async () => ({ found: false }),
     );
 
     await expect(service.authorize()).resolves.toEqual({
       ok: true,
+      reason: 'authorized',
       message: 'VTube Studio 已授权。',
     });
     const [firstInspection, concurrentInspection] = await Promise.all([
@@ -210,12 +449,58 @@ describe('VTube Studio service integration', () => {
           { name: 'SignAngry', minimum: 0, maximum: 1 },
         ],
       },
+      mapping: {
+        modelId: 'model-id',
+        confirmed: undefined,
+        suggestions: {
+          emotionExpressions: {
+            happy: 'EyesLove.exp3.json',
+            angry: 'SignAngry.exp3.json',
+          },
+        },
+      },
     });
     expect(concurrentInspection).toEqual(firstInspection);
-    await expect(service.present({ emotion: 'happy' })).resolves.toBe(true);
-    await expect(service.present({ emotion: 'happy' })).resolves.toBe(true);
-    await expect(service.present({ emotion: 'angry' })).resolves.toBe(true);
-    expect(requestTypes).toEqual([
+    await expect(
+      service.setSettings({
+        ...settings,
+        emotionExpressions: {},
+        modelMappings: {
+          'model-id': {
+            modelName: 'akari',
+            emotionExpressions: {
+              happy: 'EyesLove.exp3.json',
+              angry: 'SignAngry.exp3.json',
+            },
+            actionHotkeys: {},
+          },
+        },
+      }),
+    ).resolves.toEqual({ ok: true });
+    const requestsBeforeRefresh = requestTypes.length;
+    await expect(service.inspect()).resolves.toMatchObject({ ok: true });
+    expect(requestTypes.slice(requestsBeforeRefresh)).toEqual([
+      'CurrentModelRequest',
+      'HotkeysInCurrentModelRequest',
+      'ExpressionStateRequest',
+      'Live2DParameterListRequest',
+    ]);
+    await expect(service.present({ emotion: 'happy' })).resolves.toMatchObject({
+      ok: true,
+      reason: 'presented',
+    });
+    await expect(service.present({ emotion: 'happy' })).resolves.toMatchObject({
+      ok: true,
+      reason: 'presented',
+    });
+    await expect(service.present({ emotion: 'angry' })).resolves.toMatchObject({
+      ok: true,
+      reason: 'presented',
+    });
+    expect([
+      ...requestTypes.slice(0, requestsBeforeRefresh),
+      ...requestTypes.slice(requestsBeforeRefresh + 4),
+    ]).toEqual([
       'AuthenticationTokenRequest',
       'AuthenticationRequest',
       'CurrentModelRequest',
@@ -234,6 +519,29 @@ describe('VTube Studio service integration', () => {
       { expressionFile: 'EyesLove.exp3.json', fadeTime: 0.2, active: false },
       { expressionFile: 'SignAngry.exp3.json', fadeTime: 0.2, active: true },
     ]);
+    const requestsBeforeMappingSave = requestTypes.length;
+    await expect(
+      service.setSettings({
+        ...settings,
+        modelMappings: {
+          ...settings.modelMappings,
+          'model-id': {
+            modelName: 'akari',
+            emotionExpressions: {
+              happy: 'EyesLove.exp3.json',
+              angry: 'SignAngry.exp3.json',
+              neutral: 'EyesLove.exp3.json',
+            },
+            actionHotkeys: {},
+          },
+        },
+      }),
+    ).resolves.toEqual({ ok: true });
+    await expect(service.present({ emotion: 'happy' })).resolves.toMatchObject({
+      ok: true,
+      reason: 'presented',
+    });
+    expect(requestTypes.slice(requestsBeforeMappingSave)).not.toContain('AuthenticationRequest');
     await expect(
       service.previewExpression({ active: true, expressionIndex: 0 }),
     ).resolves.toMatchObject({ ok: true });
@@ -243,12 +551,28 @@ describe('VTube Studio service integration', () => {
       { expressionFile: 'EyesLove.exp3.json', fadeTime: 0.2, active: true },
       { expressionFile: 'EyesLove.exp3.json', fadeTime: 0.2, active: false },
     ]);
+    await expect(service.present({ emotion: 'surprised' })).resolves.toEqual({
+      ok: false,
+      reason: 'mapping-missing',
+      message: '当前模型没有可用的“惊讶”表情映射。',
+    });
     await expect(service.getStatus()).resolves.toMatchObject({
       connection: 'connected',
       authorized: true,
     });
-    await expect(service.present({ state: 'idle' })).resolves.toBe(true);
-    await expect(service.present({ action: 'nod' })).resolves.toBe(true);
+    service.setDisplayTransportDiagnostic('FPNF_SPOUT_FRAME_UNAVAILABLE');
+    await expect(service.getStatus()).resolves.toMatchObject({
+      detail:
+        'VTube Studio API 已连接，但 Spout2 模型画面无法接收；请让 VTube Studio 与桌宠使用同一块高性能显卡。',
+    });
+    await expect(service.present({ state: 'idle' })).resolves.toMatchObject({
+      ok: true,
+      reason: 'presented',
+    });
+    await expect(service.present({ action: 'nod' })).resolves.toMatchObject({
+      ok: true,
+      reason: 'presented',
+    });
     expect(injectedFrames).toHaveLength(2);
     expect(injectedFrames[0]).toMatchObject({
       mode: 'set',
@@ -261,6 +585,22 @@ describe('VTube Studio service integration', () => {
         { id: 'EyeOpenLeft', value: 0.8 },
         { id: 'EyeOpenRight', value: 0.8 },
       ],
+    });
+    currentModelId = 'model-id-2';
+    currentModelName = 'other-model';
+    await expect(service.inspect()).resolves.toMatchObject({
+      ok: true,
+      mapping: { modelId: 'model-id-2', confirmed: undefined },
+    });
+    await expect(service.present({ emotion: 'happy' })).resolves.toEqual({
+      ok: false,
+      reason: 'mapping-missing',
+      message: '当前模型没有可用的“开心”表情映射。',
+    });
+    currentModelLoaded = false;
+    await expect(service.inspect()).resolves.toEqual({
+      ok: false,
+      message: 'VTube Studio 当前没有加载可读取的模型。',
     });
   });
 });

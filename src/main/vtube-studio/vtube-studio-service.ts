@@ -5,11 +5,13 @@ import type { VTubeStudioConfigStore } from '../storage/vtube-studio-config-stor
 import type { CharacterPresentationState } from '../../core/presentation/character-presentation';
 import type {
   VTubeStudioConnectionState,
+  VTubeStudioAuthorizationResult,
   VTubeStudioInspectResult,
   VTubeStudioInventory,
   VTubeStudioExpressionPreviewInput,
   VTubeStudioOperationResult,
   VTubeStudioPresentationInput,
+  VTubeStudioPresentationResult,
   VTubeStudioSettings,
   VTubeStudioStatus,
 } from '../../shared/vtube-studio-ipc';
@@ -32,10 +34,11 @@ import {
   type VTubeStudioPointerTrackingTarget,
 } from './vtube-studio-idle-motion';
 import {
-  resolveAnimationHotkeyForAction,
-  resolveExpressionForEmotion,
-  resolveHotkeyForEmotion,
+  resolveConfirmedModelMapping,
+  selectControlledActiveExpressionFiles,
+  suggestVTubeStudioModelMapping,
 } from './vtube-studio-presentation';
+import { discoverVTubeStudioApi, type VTubeStudioApiDiscovery } from './vtube-studio-discovery';
 
 const TOKEN_SECRET_ID = 'vtube-studio-plugin-token';
 const CONNECT_TIMEOUT_MS = 2_000;
@@ -43,7 +46,8 @@ const REQUEST_TIMEOUT_MS = 5_000;
 const AUTHORIZATION_TIMEOUT_MS = 120_000;
 const IDLE_MOTION_INTERVAL_MS = 100;
 
-type VTubeStudioSecretStore = Pick<SecretStore, 'get' | 'has' | 'set'>;
+type VTubeStudioSecretStore = Pick<SecretStore, 'get' | 'has' | 'set'> &
+  Partial<Pick<SecretStore, 'delete'>>;
 type SocketFactory = (url: string) => WebSocket;
 type PointerSource = () => { x: number; y: number; proximity?: number } | undefined;
 
@@ -57,6 +61,29 @@ interface PendingRequest {
   reject(error: Error): void;
   timer: ReturnType<typeof setTimeout>;
 }
+
+class VTubeStudioAuthorizationExpiredError extends Error {}
+class VTubeStudioApiDisabledError extends Error {}
+
+const unavailableMessage =
+  '无法连接 VTube Studio。请确认它已启动；如果已经启动，请打开“允许插件 API 访问”后再次连接。';
+const apiDisabledMessage =
+  'VTube Studio 已运行，但插件接口尚未开启。请在它的设置首页打开“允许插件 API 访问”，然后回来再次连接。';
+
+const isConnectionUnavailable = (error: unknown): boolean =>
+  error instanceof Error &&
+  (error.message === 'VTube Studio is unavailable.' ||
+    error.message === 'VTube Studio connection timed out.');
+
+const emotionLabels: Record<NonNullable<VTubeStudioPresentationInput['emotion']>, string> = {
+  neutral: '中性',
+  happy: '开心',
+  sad: '难过',
+  angry: '生气',
+  surprised: '惊讶',
+  shy: '害羞',
+  playful: '俏皮',
+};
 
 const defaultSocketFactory: SocketFactory = (url) =>
   new WebSocket(url, {
@@ -225,6 +252,7 @@ export class VTubeStudioService {
   private idleMotionTimer: ReturnType<typeof setInterval> | undefined;
   private idleMotionRequestInFlight = false;
   private inspectInFlight: Promise<VTubeStudioInspectResult> | undefined;
+  private displayTransportDetail: string | undefined;
   private mouseTrackingEnabled = false;
   private lastPointer: { x: number; y: number } | undefined;
   private smoothedHeadPointer: { x: number; y: number } | undefined;
@@ -235,18 +263,21 @@ export class VTubeStudioService {
     private readonly secrets: VTubeStudioSecretStore,
     private readonly createSocket: SocketFactory = defaultSocketFactory,
     private readonly pointerSource: PointerSource = noPointer,
+    private readonly discoverApi: VTubeStudioApiDiscovery = discoverVTubeStudioApi,
   ) {}
 
   public async getStatus(): Promise<VTubeStudioStatus> {
     const settings = await this.store.get();
-    const authorized = await this.secrets.has(TOKEN_SECRET_ID).catch(() => false);
+    const authorized = Boolean(await this.secrets.get(TOKEN_SECRET_ID).catch(() => undefined));
     const connection = settings.enabled ? this.connection : 'disabled';
     return {
       settings,
       connection,
       authorized,
+      bundledModelAvailable: false,
       detail:
-        connection === 'connected'
+        (connection === 'connected' ? this.displayTransportDetail : undefined) ??
+        (connection === 'connected'
           ? '已连接并授权本机 VTube Studio。'
           : connection === 'connecting'
             ? '正在连接本机 VTube Studio。'
@@ -256,30 +287,51 @@ export class VTubeStudioService {
                 ? 'VTube Studio 角色显示已关闭。'
                 : authorized
                   ? '已保存 VTube Studio 授权；当前尚未连接。'
-                  : '尚未授权 VTube Studio 插件。',
+                  : '尚未授权 VTube Studio 插件。'),
     };
+  }
+
+  public setDisplayTransportDiagnostic(event: string): void {
+    if (event === 'FPNF_SPOUT_READY') {
+      this.displayTransportDetail = undefined;
+      return;
+    }
+    if (event === 'FPNF_SPOUT_SOURCE_UNAVAILABLE') {
+      this.displayTransportDetail =
+        'VTube Studio API 已连接，但没有发现 Spout2 输出；请在 VTube Studio 中启用 Spout2。';
+      return;
+    }
+    if (event === 'FPNF_SPOUT_FRAME_UNAVAILABLE') {
+      this.displayTransportDetail =
+        'VTube Studio API 已连接，但 Spout2 模型画面无法接收；请让 VTube Studio 与桌宠使用同一块高性能显卡。';
+    }
   }
 
   public async setSettings(settings: VTubeStudioSettings): Promise<VTubeStudioOperationResult> {
     try {
+      const current = await this.store.get();
       await this.store.set(settings);
       this.mouseTrackingEnabled = settings.mouseTrackingEnabled;
-      this.disconnect();
-      this.connection = settings.enabled ? 'disconnected' : 'disabled';
+      if (current.enabled !== settings.enabled || current.port !== settings.port) {
+        this.disconnect();
+        this.connection = settings.enabled ? 'disconnected' : 'disabled';
+      } else if (!settings.enabled) {
+        this.connection = 'disabled';
+      }
       return { ok: true };
     } catch {
       return { ok: false, message: 'VTube Studio 设置无法保存。' };
     }
   }
 
-  public async authorize(): Promise<VTubeStudioOperationResult> {
+  public async authorize(): Promise<VTubeStudioAuthorizationResult> {
     let temporarySession: VTubeStudioApiSession | undefined;
     try {
       const settings = await this.store.get();
       this.disconnect();
       this.connection = 'awaiting-authorization';
-      temporarySession = this.createSession(settings.port);
-      await temporarySession.connect();
+      const connected = await this.connectUsingConfiguredOrDiscoveredPort(settings);
+      temporarySession = connected.session;
       const response = await temporarySession.request(
         'AuthenticationTokenRequest',
         {
@@ -291,10 +343,19 @@ export class VTubeStudioService {
       throwIfVTubeStudioError(response);
       await this.secrets.set(TOKEN_SECRET_ID, readAuthenticationToken(response));
       this.connection = 'disconnected';
-      return { ok: true, message: 'VTube Studio 已授权。' };
-    } catch {
+      return { ok: true, reason: 'authorized', message: 'VTube Studio 已授权。' };
+    } catch (error) {
       this.connection = 'disconnected';
-      return { ok: false, message: 'VTube Studio 授权未完成。' };
+      if (error instanceof VTubeStudioApiDisabledError) {
+        return { ok: false, reason: 'api-disabled', message: apiDisabledMessage };
+      }
+      return {
+        ok: false,
+        reason: isConnectionUnavailable(error) ? 'unavailable' : 'authorization-denied',
+        message: isConnectionUnavailable(error)
+          ? unavailableMessage
+          : 'VTube Studio 授权未完成；请在 VTube Studio 弹窗中点击“允许”。',
+      };
     } finally {
       temporarySession?.close();
     }
@@ -313,27 +374,35 @@ export class VTubeStudioService {
 
   private async performInspect(): Promise<VTubeStudioInspectResult> {
     try {
-      if (this.session?.isOpen && this.inventory) {
-        return { ok: true, inventory: this.inventory };
-      }
-      const settings = await this.store.get();
+      let settings = await this.store.get();
       this.mouseTrackingEnabled = settings.mouseTrackingEnabled;
-      const token = await this.secrets.get(TOKEN_SECRET_ID);
-      if (!token) {
-        return { ok: false, message: '请先完成 VTube Studio 插件授权。' };
+      let session = this.session;
+      if (!session?.isOpen) {
+        const token = await this.secrets.get(TOKEN_SECRET_ID);
+        if (!token) {
+          return { ok: false, message: '请先完成 VTube Studio 插件授权。' };
+        }
+        this.disconnect();
+        this.connection = 'connecting';
+        const connected = await this.connectUsingConfiguredOrDiscoveredPort(settings);
+        session = connected.session;
+        this.session = session;
+        const authentication = await session.request('AuthenticationRequest', {
+          pluginName: VTUBE_STUDIO_PLUGIN_NAME,
+          pluginDeveloper: VTUBE_STUDIO_PLUGIN_DEVELOPER,
+          authenticationToken: token,
+        });
+        try {
+          throwIfVTubeStudioError(authentication);
+          assertAuthenticated(authentication);
+        } catch (error) {
+          await this.secrets.delete?.(TOKEN_SECRET_ID).catch(() => undefined);
+          throw new VTubeStudioAuthorizationExpiredError(
+            'VTube Studio rejected the saved authorization.',
+            { cause: error },
+          );
+        }
       }
-      this.disconnect();
-      this.connection = 'connecting';
-      const session = this.createSession(settings.port);
-      this.session = session;
-      await session.connect();
-      const authentication = await session.request('AuthenticationRequest', {
-        pluginName: VTUBE_STUDIO_PLUGIN_NAME,
-        pluginDeveloper: VTUBE_STUDIO_PLUGIN_DEVELOPER,
-        authenticationToken: token,
-      });
-      throwIfVTubeStudioError(authentication);
-      assertAuthenticated(authentication);
       const model = await session.request('CurrentModelRequest');
       const hotkeys = await session.request('HotkeysInCurrentModelRequest');
       const expressions = await session.request('ExpressionStateRequest', {
@@ -342,9 +411,43 @@ export class VTubeStudioService {
       });
       const parameters = await session.request('Live2DParameterListRequest');
       const inventory = buildVTubeStudioInventory(model, hotkeys, expressions, parameters);
+      if (!inventory.model.loaded || !inventory.model.id) {
+        this.disconnect();
+        this.connection = 'disconnected';
+        return { ok: false, message: 'VTube Studio 当前没有加载可读取的模型。' };
+      }
+      let confirmed = resolveConfirmedModelMapping(
+        settings.modelMappings ?? {},
+        inventory.model.id,
+      );
+      if (!confirmed && Object.keys(settings.emotionExpressions ?? {}).length > 0) {
+        confirmed = {
+          modelName: inventory.model.name,
+          emotionExpressions: { ...settings.emotionExpressions },
+          actionHotkeys: {},
+        };
+        settings = {
+          ...settings,
+          emotionExpressions: {},
+          modelMappings: {
+            ...(settings.modelMappings ?? {}),
+            [inventory.model.id]: confirmed,
+          },
+        };
+        await this.store.set(settings);
+      }
       this.inventory = inventory;
       this.connection = 'connected';
-      return { ok: true, inventory };
+      return {
+        ok: true,
+        inventory,
+        mapping: {
+          modelId: inventory.model.id,
+          modelName: inventory.model.name,
+          confirmed,
+          suggestions: suggestVTubeStudioModelMapping(inventory),
+        },
+      };
     } catch (error) {
       console.warn(
         'Unable to inspect the current VTube Studio model.',
@@ -352,21 +455,67 @@ export class VTubeStudioService {
       );
       this.disconnect();
       this.connection = 'disconnected';
-      return { ok: false, message: '无法读取 VTube Studio 模型清单。' };
+      return {
+        ok: false,
+        reason:
+          error instanceof VTubeStudioApiDisabledError
+            ? 'api-disabled'
+            : error instanceof VTubeStudioAuthorizationExpiredError
+              ? 'authorization-denied'
+              : isConnectionUnavailable(error)
+                ? 'unavailable'
+                : undefined,
+        message:
+          error instanceof VTubeStudioApiDisabledError
+            ? apiDisabledMessage
+            : error instanceof VTubeStudioAuthorizationExpiredError
+              ? 'VTube Studio 授权已失效，需要重新授权。'
+              : isConnectionUnavailable(error)
+                ? unavailableMessage
+                : '无法读取 VTube Studio 模型清单；请确认 VTube Studio 已加载一个模型。',
+      };
     }
   }
 
-  public async present(input: VTubeStudioPresentationInput): Promise<boolean> {
-    if (!input.state && !input.emotion && !input.action) return false;
+  public async present(
+    input: VTubeStudioPresentationInput,
+  ): Promise<VTubeStudioPresentationResult> {
+    if (!input.state && !input.emotion && !input.action) {
+      return { ok: false, reason: 'invalid-intent', message: '没有可发送的角色动作。' };
+    }
     try {
-      const settings = await this.store.get();
-      if (!settings.enabled) return false;
-      const inspected = await this.inspect();
+      let settings = await this.store.get();
+      if (!settings.enabled) {
+        return { ok: false, reason: 'disabled', message: '请先启用 VTube Studio 显示。' };
+      }
+      const inspected =
+        this.session?.isOpen && this.inventory
+          ? { ok: true as const, inventory: this.inventory }
+          : await this.inspect();
       const session = this.session;
       const inventory = inspected.inventory;
-      if (!inspected.ok || !session?.isOpen || !inventory) return false;
+      if (!inspected.ok || !session?.isOpen || !inventory) {
+        return {
+          ok: false,
+          reason: inspected.message?.includes('授权') ? 'not-authorized' : 'connection-failed',
+          message: inspected.message ?? '无法连接并读取当前 VTube Studio 模型。',
+        };
+      }
+      if (!inventory.model.loaded || !inventory.model.id) {
+        return {
+          ok: false,
+          reason: 'model-not-loaded',
+          message: 'VTube Studio 当前没有加载可用模型。',
+        };
+      }
+      settings = await this.store.get();
+      const modelMapping = resolveConfirmedModelMapping(
+        settings.modelMappings ?? {},
+        inventory.model.id,
+      );
 
       let presented = false;
+      let missingEmotionMapping = false;
       if (input.state) {
         this.presentationState = input.state;
         this.startIdleMotion();
@@ -374,54 +523,69 @@ export class VTubeStudioService {
         presented = true;
       }
       if (input.emotion) {
-        const expressionState = await session.request('ExpressionStateRequest', {
-          details: true,
-          expressionFile: '',
-        });
-        inventory.expressions = parseExpressions(expressionState);
-        const directExpression = resolveExpressionForEmotion(inventory.expressions, input.emotion);
-        const emotionHotkey = directExpression
-          ? undefined
-          : resolveHotkeyForEmotion(inventory.hotkeys, input.emotion);
-        const expression =
-          directExpression ??
-          (emotionHotkey?.type === 'ToggleExpression'
-            ? inventory.expressions.find((candidate) => candidate.file === emotionHotkey.file)
-            : undefined);
-        const nextFile = expression?.file;
-        if (this.activeExpressionFile && this.activeExpressionFile !== nextFile) {
-          const response = await session.request('ExpressionActivationRequest', {
-            expressionFile: this.activeExpressionFile,
-            fadeTime: 0.2,
-            active: false,
+        if (input.emotion === 'neutral') {
+          const expressionState = await session.request('ExpressionStateRequest', {
+            details: true,
+            expressionFile: '',
           });
-          assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
+          inventory.expressions = parseExpressions(expressionState);
+          const filesToDeactivate = new Set(
+            selectControlledActiveExpressionFiles(inventory.expressions, modelMapping),
+          );
+          if (this.activeExpressionFile) filesToDeactivate.add(this.activeExpressionFile);
+          for (const expressionFile of filesToDeactivate) {
+            const response = await session.request('ExpressionActivationRequest', {
+              expressionFile,
+              fadeTime: 0.2,
+              active: false,
+            });
+            assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
+          }
           this.activeExpressionFile = undefined;
           presented = true;
-        }
-        if (expression?.active) {
-          presented = true;
-        } else if (nextFile) {
-          const response = await session.request('ExpressionActivationRequest', {
-            expressionFile: nextFile,
-            fadeTime: 0.2,
-            active: true,
+        } else {
+          const expressionState = await session.request('ExpressionStateRequest', {
+            details: true,
+            expressionFile: '',
           });
-          assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
-          this.activeExpressionFile = nextFile;
-          presented = true;
-        }
-        if (!expression && emotionHotkey?.type === 'TriggerAnimation') {
-          const response = await session.request('HotkeyTriggerRequest', {
-            hotkeyID: emotionHotkey.hotkeyId,
-          });
-          assertVTubeStudioResponseType(response, 'HotkeyTriggerResponse');
-          presented = true;
+          inventory.expressions = parseExpressions(expressionState);
+          const mappedExpressionFile = modelMapping?.emotionExpressions[input.emotion];
+          const expression = mappedExpressionFile
+            ? inventory.expressions.find((candidate) => candidate.file === mappedExpressionFile)
+            : undefined;
+          missingEmotionMapping = !expression;
+          const nextFile = expression?.file;
+          if (this.activeExpressionFile && this.activeExpressionFile !== nextFile) {
+            const response = await session.request('ExpressionActivationRequest', {
+              expressionFile: this.activeExpressionFile,
+              fadeTime: 0.2,
+              active: false,
+            });
+            assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
+            this.activeExpressionFile = undefined;
+            presented = true;
+          }
+          if (expression?.active) {
+            this.activeExpressionFile = nextFile;
+            presented = true;
+          } else if (nextFile) {
+            const response = await session.request('ExpressionActivationRequest', {
+              expressionFile: nextFile,
+              fadeTime: 0.2,
+              active: true,
+            });
+            assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
+            this.activeExpressionFile = nextFile;
+            presented = true;
+          }
         }
       }
 
       if (input.action) {
-        const hotkey = resolveAnimationHotkeyForAction(inventory.hotkeys, input.action);
+        const mappedHotkeyId = modelMapping?.actionHotkeys[input.action];
+        const hotkey = mappedHotkeyId
+          ? inventory.hotkeys.find((candidate) => candidate.hotkeyId === mappedHotkeyId)
+          : undefined;
         if (hotkey) {
           const response = await session.request('HotkeyTriggerRequest', {
             hotkeyID: hotkey.hotkeyId,
@@ -436,11 +600,29 @@ export class VTubeStudioService {
           }
         }
       }
-      return presented;
+      if (!presented || (missingEmotionMapping && !input.state && !input.action)) {
+        if (input.emotion && missingEmotionMapping) {
+          return {
+            ok: false,
+            reason: 'mapping-missing',
+            message: `当前模型没有可用的“${emotionLabels[input.emotion]}”表情映射。`,
+          };
+        }
+        return {
+          ok: false,
+          reason: 'mapping-missing',
+          message: '当前模型没有可用的动作映射。',
+        };
+      }
+      return { ok: true, reason: 'presented' };
     } catch {
       this.disconnect();
       this.connection = 'disconnected';
-      return false;
+      return {
+        ok: false,
+        reason: 'connection-failed',
+        message: 'VTube Studio 连接中断，未能发送角色动作。',
+      };
     }
   }
 
@@ -450,7 +632,10 @@ export class VTubeStudioService {
     try {
       const settings = await this.store.get();
       if (!settings.enabled) return { ok: false, message: '请先启用 VTube Studio 显示。' };
-      const inspected = await this.inspect();
+      const inspected =
+        this.session?.isOpen && this.inventory
+          ? { ok: true as const, inventory: this.inventory }
+          : await this.inspect();
       const session = this.session;
       const inventory = inspected.inventory;
       if (!inspected.ok || !session?.isOpen || !inventory) {
@@ -508,6 +693,35 @@ export class VTubeStudioService {
       this.connection = 'disconnected';
       this.session = undefined;
     });
+  }
+
+  private async connectUsingConfiguredOrDiscoveredPort(
+    initialSettings: VTubeStudioSettings,
+  ): Promise<{ session: VTubeStudioApiSession; settings: VTubeStudioSettings }> {
+    const directSession = this.createSession(initialSettings.port);
+    try {
+      await directSession.connect();
+      return { session: directSession, settings: initialSettings };
+    } catch (directError) {
+      directSession.close();
+      if (!isConnectionUnavailable(directError)) throw directError;
+      const discovered = await this.discoverApi().catch(() => ({ found: false as const }));
+      if (!discovered.found) throw directError;
+      const settings =
+        initialSettings.port === discovered.port
+          ? initialSettings
+          : { ...initialSettings, port: discovered.port };
+      if (settings !== initialSettings) await this.store.set(settings);
+      if (!discovered.active) throw new VTubeStudioApiDisabledError(apiDisabledMessage);
+      const discoveredSession = this.createSession(settings.port);
+      try {
+        await discoveredSession.connect();
+        return { session: discoveredSession, settings };
+      } catch (discoveredError) {
+        discoveredSession.close();
+        throw discoveredError;
+      }
+    }
   }
 
   private startIdleMotion(): void {

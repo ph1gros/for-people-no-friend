@@ -1,4 +1,5 @@
 import type { CharacterLore } from '../../core/character/character-lore';
+import { CHARACTER_EMOTIONS, type CharacterEmotion } from '../../core/character/character-reply';
 import type { CharacterPresentationPort } from '../../core/presentation/character-presentation';
 import {
   resolveAutomaticGlossarySourceWork,
@@ -14,7 +15,6 @@ import {
   type OpeningLineContext,
 } from '../../core/conversation/opening-line';
 import type { PublicLlmError } from '../../core/llm/contracts';
-import { SUPPORTED_MEDIA_PLAYERS } from '../../core/desktop/integration';
 import type { CharacterDisplayMode } from '../../shared/character-display-ipc';
 import type {
   MemoryCandidateRecord,
@@ -44,11 +44,14 @@ import type {
 import { tokenizeInputOverlayKeyDraft } from '../../shared/desktop-integration-ipc';
 import type { ConfigurableProviderId } from '../../shared/model-ipc';
 import {
+  BUNDLED_IREINA_SPEECH_PRESET,
   MAX_SPEECH_INPUT_AUDIO_BYTES,
+  MAX_SPEECH_WAKE_WORD_LENGTH,
   SPEECH_PUSH_TO_TALK_KEYS,
   type SpeechInputMode,
   type SpeechSettings,
   type SpeechStatus,
+  type SpeechWakeWordSource,
 } from '../../shared/speech-ipc';
 import {
   DEFAULT_VIEWEREX_SETTINGS,
@@ -57,7 +60,10 @@ import {
 } from '../../shared/viewerex-ipc';
 import {
   DEFAULT_VTUBE_STUDIO_SETTINGS,
+  type VTubeStudioConnectionReason,
+  type VTubeStudioInspectResult,
   type VTubeStudioInventory,
+  type VTubeStudioModelMapping,
   type VTubeStudioSettings,
   type VTubeStudioStatus,
 } from '../../shared/vtube-studio-ipc';
@@ -69,13 +75,17 @@ import {
 } from '../../shared/assistant-tools-ipc';
 import {
   DEFAULT_DESKTOP_LAYOUT_SETTINGS,
-  type CharacterPane,
   type DesktopLayoutSettings,
-  type WidgetAlignment,
 } from '../../shared/desktop-layout-ipc';
 import { SpeechTurnPipeline } from '../../core/speech/streaming-pipeline';
 import type { LoadedCharacter } from '../live2d/character-runtime';
 import { IpcSpeechSynthesisClient, WebAudioSpeechPlayer } from '../speech/speech-runtime';
+import {
+  resolveSpeechLanguage,
+  selectSpeechLanguage,
+  SPEECH_LANGUAGE_OPTIONS,
+  type SpeechLanguageSelection,
+} from '../speech/speech-language-options';
 import {
   ContinuousMicrophoneListener,
   type ContinuousListenerState,
@@ -84,6 +94,7 @@ import {
 import {
   combineFullListeningCommands,
   PendingVoiceCommandQueue,
+  resolvePreciseWakeWord,
   shouldCombineFullListeningCommands,
   WakeWordCommandSession,
 } from '../speech/wake-word-command';
@@ -120,6 +131,31 @@ const createButton = (label: string, className = ''): HTMLButtonElement => {
   button.className = className;
   button.textContent = label;
   return button;
+};
+
+type ButtonFeedbackState = 'pending' | 'success' | 'error';
+
+const buttonFeedbackTimers = new WeakMap<HTMLButtonElement, number>();
+
+const showButtonFeedback = (
+  button: HTMLButtonElement,
+  label: string,
+  state: ButtonFeedbackState,
+  restoreAfterMs?: number,
+): void => {
+  const existingTimer = buttonFeedbackTimers.get(button);
+  if (existingTimer !== undefined) window.clearTimeout(existingTimer);
+  const defaultLabel = button.dataset.defaultLabel ?? button.textContent ?? '';
+  button.dataset.defaultLabel = defaultLabel;
+  button.dataset.feedback = state;
+  button.textContent = label;
+  if (restoreAfterMs === undefined) return;
+  const timer = window.setTimeout(() => {
+    button.textContent = defaultLabel;
+    delete button.dataset.feedback;
+    buttonFeedbackTimers.delete(button);
+  }, restoreAfterMs);
+  buttonFeedbackTimers.set(button, timer);
 };
 
 const MAX_MICROPHONE_RECORDING_MS = 30_000;
@@ -284,10 +320,6 @@ export const initializeChat = async ({
   inputOverlay.append(inputOverlayLabel, inputOverlayKeys, inputOverlayMouse);
   desktopOverlayStack.append(mediaOverlay, inputOverlay);
 
-  const launcherButton = createButton('>>>', 'chat-launcher');
-  launcherButton.setAttribute('aria-label', '打开对话面板');
-  launcherButton.title = '向右拉开对话面板';
-
   const panel = document.createElement('section');
   panel.className = 'chat-panel';
 
@@ -304,16 +336,13 @@ export const initializeChat = async ({
   identity.append(replyAuthor, replyStatus);
   const assistantModeButton = createButton('工作模式 OFF', 'text-button assistant-mode-button');
   assistantModeButton.setAttribute('aria-pressed', 'false');
-  assistantModeButton.title = '开启后可使用网页和已选择工作区中的文件工具';
+  assistantModeButton.title = '开启后可做普通问答、联网查资料和已批准工作区任务';
   const assistantWorkspaceButton = createButton(
     '选择工作区',
     'secondary-button assistant-workspace-button',
   );
-  assistantWorkspaceButton.title = '选择小猫可以读取和修改的文件夹';
-  const collapseButton = createButton('<<<', 'text-button chat-collapse');
-  collapseButton.setAttribute('aria-label', '收起对话面板');
-  collapseButton.title = '收起对话面板';
-  panelHeader.append(identity, assistantModeButton, collapseButton);
+  assistantWorkspaceButton.title = '选择助手可以读取和修改的文件夹';
+  panelHeader.append(identity, assistantModeButton);
 
   const toolbar = document.createElement('div');
   toolbar.className = 'chat-toolbar';
@@ -326,7 +355,7 @@ export const initializeChat = async ({
   const speechInputModeToolbarButtons = new Map<SpeechInputMode, HTMLButtonElement>();
   for (const [mode, label, title] of [
     ['full', '完全', '完全：自动发送；2 秒内继续说会合并并重新思考'],
-    ['half', '精准', '精准：说“小猫 + 内容”才自动发送'],
+    ['half', '精准', '精准：先说设定的称呼才自动发送'],
     ['manual', '手动', '手动：点击说话或按住设置的键位录音'],
   ] as const) {
     const button = createButton(label, 'chat-toolbar__mode-button');
@@ -351,17 +380,17 @@ export const initializeChat = async ({
   const settingsButton = createButton('设置', 'chat-toolbar__button');
   toolbar.append(soundButton, speechInputModeToolbar, widgetsButton, settingsButton);
 
-  const subtitle = document.createElement('div');
-  subtitle.className = 'subtitle-bubble';
-  subtitle.hidden = true;
-  subtitle.setAttribute('aria-label', '当前回复正文');
+  const conversationList = document.createElement('div');
+  conversationList.className = 'conversation-list';
+  conversationList.setAttribute('aria-label', '当前对话');
+  conversationList.setAttribute('aria-live', 'polite');
 
   const composer = document.createElement('form');
   composer.className = 'chat-composer';
   const input = document.createElement('textarea');
   input.className = 'chat-composer__input';
   input.placeholder = '输入消息或任务…';
-  input.maxLength = 8_000;
+  input.maxLength = 16_000;
   input.rows = 1;
   input.setAttribute('aria-label', '对话内容');
   const sendButton = createButton('发送', 'chat-composer__send');
@@ -379,17 +408,22 @@ export const initializeChat = async ({
   stopSpeechButton.classList.add('chat-composer__stop-speech');
   const composerDropStatus = document.createElement('small');
   composerDropStatus.className = 'chat-composer__drop-status';
-  composerDropStatus.textContent = '工作模式开启后，可把文件拖到这里放入工作区';
+  composerDropStatus.textContent = '';
+  let composerDropStatusTimer: number | undefined;
+  const showComposerDropStatus = (message: string, clearAfterMs = 2_500): void => {
+    if (composerDropStatusTimer !== undefined) window.clearTimeout(composerDropStatusTimer);
+    composerDropStatusTimer = undefined;
+    composerDropStatus.textContent = message;
+    if (!message || clearAfterMs <= 0) return;
+    composerDropStatusTimer = window.setTimeout(() => {
+      composerDropStatus.textContent = '';
+      composerDropStatusTimer = undefined;
+    }, clearAfterMs);
+  };
   const composerActions = document.createElement('div');
   composerActions.className = 'chat-composer__actions';
   composerActions.append(microphoneButton, stopSpeechButton, stopButton, sendButton);
   composer.append(input, composerDropStatus, composerActions);
-
-  const resizeComposer = (): void => {
-    input.style.height = 'auto';
-    input.style.height = `${Math.min(input.scrollHeight, 104)}px`;
-  };
-  input.addEventListener('input', resizeComposer);
 
   const historyPanel = document.createElement('section');
   historyPanel.className = 'chat-drawer';
@@ -572,18 +606,18 @@ export const initializeChat = async ({
   const settingsTitle = document.createElement('strong');
   settingsTitle.textContent = '设置';
   const closeSettingsButton = createButton('关闭', 'text-button');
-  settingsHeader.append(settingsTitle, closeSettingsButton);
+  settingsHeader.append(settingsTitle);
 
   const scaleInput = document.createElement('input');
   scaleInput.type = 'range';
   scaleInput.min = String(MIN_WINDOW_SCALE);
   scaleInput.max = String(MAX_WINDOW_SCALE);
   scaleInput.step = '0.01';
-  scaleInput.value = '0.85';
+  scaleInput.value = '0.78';
   scaleInput.setAttribute('aria-label', '桌宠大小');
   const scaleOutput = document.createElement('output');
   scaleOutput.className = 'scale-output';
-  scaleOutput.textContent = '100%';
+  scaleOutput.textContent = '78%';
   const scaleControl = document.createElement('div');
   scaleControl.className = 'scale-control';
   scaleControl.append(scaleInput, scaleOutput);
@@ -592,48 +626,6 @@ export const initializeChat = async ({
   const scaleLabel = document.createElement('span');
   scaleLabel.textContent = '桌宠大小';
   scaleField.append(scaleLabel, scaleControl);
-
-  const characterPaneSelect = document.createElement('select');
-  for (const [value, label] of [
-    ['left', '模型在左，对话框在右'],
-    ['right', '模型在右，对话框在左'],
-  ] as const) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    characterPaneSelect.append(option);
-  }
-  const widgetAlignmentSelect = document.createElement('select');
-  for (const [value, label] of [
-    ['start', '底部靠左'],
-    ['center', '底部居中'],
-    ['end', '底部靠右'],
-  ] as const) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
-    widgetAlignmentSelect.append(option);
-  }
-  const layoutPositionPanel = document.createElement('section');
-  layoutPositionPanel.className = 'character-search layout-position-settings';
-  const layoutPositionTitle = document.createElement('strong');
-  layoutPositionTitle.textContent = '界面位置';
-  const layoutPositionHint = document.createElement('p');
-  layoutPositionHint.className = 'settings-status';
-  layoutPositionHint.textContent =
-    'Live2D 与对话框自动分居两侧，小组件固定在模型之外的底部预留区，只改变位置、不改变大小，也不会互相覆盖。VTube 原生层暂时固定在左侧兼容位置。';
-  const resetLayoutPositionButton = createButton('恢复默认位置', 'text-button');
-  const previewLayoutPositionButton = createButton('保存并预览位置', 'secondary-button');
-  const layoutPositionActions = document.createElement('div');
-  layoutPositionActions.className = 'settings-actions layout-position-actions';
-  layoutPositionActions.append(previewLayoutPositionButton, resetLayoutPositionButton);
-  layoutPositionPanel.append(
-    layoutPositionTitle,
-    layoutPositionHint,
-    createField('模型与对话框', characterPaneSelect),
-    createField('小组件位置', widgetAlignmentSelect),
-    layoutPositionActions,
-  );
 
   const providerSelect = document.createElement('select');
   for (const [value, label] of [
@@ -895,6 +887,8 @@ export const initializeChat = async ({
   for (const [value, label] of [
     ['disabled', '关闭'],
     ['openai-compatible', 'OpenAI 兼容 TTS（本机或在线）'],
+    ['genie-tts', '本机 Genie-TTS'],
+    ['fish-audio', 'Fish Audio（在线）'],
   ]) {
     const option = document.createElement('option');
     option.value = value;
@@ -911,9 +905,16 @@ export const initializeChat = async ({
   const speechVoiceInput = document.createElement('input');
   speechVoiceInput.maxLength = 256;
   speechVoiceInput.placeholder = '音色 / speaker ID';
+  const speechLanguageSelect = document.createElement('select');
+  for (const [value, label] of SPEECH_LANGUAGE_OPTIONS) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    speechLanguageSelect.append(option);
+  }
   const speechLanguageInput = document.createElement('input');
   speechLanguageInput.maxLength = 32;
-  speechLanguageInput.placeholder = 'zh-CN';
+  speechLanguageInput.placeholder = '例如：fr-FR';
   const speechFormatSelect = document.createElement('select');
   for (const format of ['wav', 'mp3', 'opus', 'aac', 'flac']) {
     const option = document.createElement('option');
@@ -942,7 +943,7 @@ export const initializeChat = async ({
   const speechInputModeInputs = new Map<SpeechInputMode, HTMLInputElement>();
   for (const [mode, label, detail] of [
     ['full', '完全', '持续听麦；自动发送，2 秒内继续说会合并并重新思考'],
-    ['half', '精准', '持续听麦；必须说“小猫 + 内容”才发送，降低误判'],
+    ['half', '精准', '持续听麦；必须先说设定的称呼才发送，降低误判'],
     ['manual', '手动', '点击“说话”，或按住设置键位录音；识别结果只填入输入框'],
   ] as const) {
     const option = document.createElement('label');
@@ -964,6 +965,23 @@ export const initializeChat = async ({
   }
   const readSpeechInputMode = (): SpeechInputMode =>
     [...speechInputModeInputs].find(([, input]) => input.checked)?.[0] ?? 'manual';
+  const speechWakeWordSourceSelect = document.createElement('select');
+  for (const [source, label] of [
+    ['character-name', '跟随当前角色名称'],
+    ['custom', '自定义称呼'],
+  ] as const) {
+    const option = document.createElement('option');
+    option.value = source;
+    option.textContent = label;
+    speechWakeWordSourceSelect.append(option);
+  }
+  const speechWakeWordSourceField = createField('精准模式称呼', speechWakeWordSourceSelect);
+  const speechCustomWakeWordInput = document.createElement('input');
+  speechCustomWakeWordInput.maxLength = MAX_SPEECH_WAKE_WORD_LENGTH;
+  speechCustomWakeWordInput.placeholder = '例如：阿响';
+  const speechCustomWakeWordField = createField('自定义称呼', speechCustomWakeWordInput);
+  const speechWakeWordHint = document.createElement('small');
+  speechWakeWordHint.className = 'settings-hint';
   const speechPushToTalkKeySelect = document.createElement('select');
   for (const key of SPEECH_PUSH_TO_TALK_KEYS) {
     const option = document.createElement('option');
@@ -1009,8 +1027,9 @@ export const initializeChat = async ({
   const speechProviderRoadmapList = document.createElement('ul');
   for (const description of [
     'OpenAI 兼容 TTS：已支持，可连接本地语音模型或 HTTPS 在线 TTS。',
-    '专用本地语音模型：已预留提供商位置，后续可独立增加。',
-    '更多在线 TTS：已预留接入位置，未接入前不会上传文字。',
+    'Genie-TTS：已支持连接本机 GPT-SoVITS V2 / V2ProPlus ONNX 服务。',
+    'Fish Audio：已支持官方在线接口；启用后文字会发送到 Fish Audio。',
+    'Piper：可通过本机 OpenAI 兼容桥接服务连接；传统 MoeGoe VITS 权重不能直接作为 Piper 模型。',
   ]) {
     const item = document.createElement('li');
     item.textContent = description;
@@ -1023,10 +1042,14 @@ export const initializeChat = async ({
   speechVoiceIdentityTitle.textContent = '语音模型与音色';
   const speechVoiceIdentityFields = document.createElement('div');
   speechVoiceIdentityFields.className = 'speech-voice-identity__fields';
-  speechVoiceIdentityFields.append(
-    createField('语音模型 ID', speechModelInput),
-    createField('音色 / Speaker ID', speechVoiceInput),
+  const speechModelField = createField('语音模型 ID', speechModelInput);
+  const speechVoiceField = createField('音色 / Speaker ID', speechVoiceInput);
+  const speechVoiceFieldLabel = speechVoiceField.firstElementChild as HTMLSpanElement;
+  const speechVoiceConfirmButton = createButton(
+    '确认',
+    'secondary-button speech-voice-identity__confirm',
   );
+  speechVoiceIdentityFields.append(speechModelField, speechVoiceField, speechVoiceConfirmButton);
   const speechVoiceIdentityHint = document.createElement('small');
   speechVoiceIdentityHint.className = 'settings-hint';
   speechVoiceIdentityHint.textContent =
@@ -1036,6 +1059,23 @@ export const initializeChat = async ({
     speechVoiceIdentityFields,
     speechVoiceIdentityHint,
   );
+  const speechLanguageField = createField('语言', speechLanguageSelect);
+  const speechCustomLanguageField = createField('自定义语言代码', speechLanguageInput);
+  const updateSpeechLanguageVisibility = (): void => {
+    speechCustomLanguageField.hidden = speechLanguageSelect.value !== 'custom';
+  };
+  const displaySpeechLanguage = (language: string): void => {
+    const selected = selectSpeechLanguage(language);
+    speechLanguageSelect.value = selected.selection;
+    speechLanguageInput.value = selected.customLanguage;
+    updateSpeechLanguageVisibility();
+  };
+  const readSpeechLanguage = (): string =>
+    resolveSpeechLanguage(
+      speechLanguageSelect.value as SpeechLanguageSelection,
+      speechLanguageInput.value,
+    );
+  displaySpeechLanguage('ja-JP');
   const speechOutputPane = document.createElement('section');
   speechOutputPane.className = 'display-mode-pane speech-settings__pane';
   speechOutputPane.append(
@@ -1043,9 +1083,10 @@ export const initializeChat = async ({
     speechHint,
     speechProviderRoadmap,
     createField('语音提供商', speechProviderSelect),
-    createField('兼容接口地址', speechBaseUrlInput),
+    createField('语音服务地址', speechBaseUrlInput),
     speechVoiceIdentityPanel,
-    createField('语言', speechLanguageInput),
+    speechLanguageField,
+    speechCustomLanguageField,
     createField('音频格式', speechFormatSelect),
     createField('语速', speechSpeedInput),
   );
@@ -1054,6 +1095,9 @@ export const initializeChat = async ({
   speechInputPane.append(
     speechInputEnabledHeading,
     speechInputModeFieldset,
+    speechWakeWordSourceField,
+    speechCustomWakeWordField,
+    speechWakeWordHint,
     speechPushToTalkKeyField,
     speechPushToTalkHint,
     createField('中文识别接口', speechTranscriptionBaseUrlInput),
@@ -1070,6 +1114,10 @@ export const initializeChat = async ({
   speechAssetsSummary.className = 'settings-status';
   speechAssetsSummary.textContent = '正在检查本地音色…';
   const exportLocalVoiceButton = createButton('导出当前音色', 'secondary-button');
+  const openSpeechTrainingSourcesButton = createButton('打开音源文件夹', 'secondary-button');
+  const speechAssetsActions = document.createElement('div');
+  speechAssetsActions.className = 'settings-actions local-asset-actions';
+  speechAssetsActions.append(exportLocalVoiceButton, openSpeechTrainingSourcesButton);
   const speechAssetsHint = document.createElement('small');
   speechAssetsHint.className = 'settings-hint';
   speechAssetsHint.textContent =
@@ -1077,7 +1125,7 @@ export const initializeChat = async ({
   speechAssetsCard.append(
     speechAssetsTitle,
     speechAssetsSummary,
-    exportLocalVoiceButton,
+    speechAssetsActions,
     speechAssetsHint,
   );
   const speechTrainingCard = document.createElement('section');
@@ -1087,26 +1135,17 @@ export const initializeChat = async ({
   const speechTrainingDescription = document.createElement('small');
   speechTrainingDescription.className = 'settings-hint';
   speechTrainingDescription.textContent =
-    '先把干净的单人日语音频放入训练音源文件夹，再启动独立训练工具。训练不会由桌宠自动开始，显存与进度留在独立窗口管理。';
-  const speechTrainingRightsLabel = document.createElement('label');
-  speechTrainingRightsLabel.className = 'settings-check-row';
-  const speechTrainingRightsInput = document.createElement('input');
-  speechTrainingRightsInput.type = 'checkbox';
-  const speechTrainingRightsText = document.createElement('span');
-  speechTrainingRightsText.textContent = '我确认只使用自己拥有或已获授权的声音素材';
-  speechTrainingRightsLabel.append(speechTrainingRightsInput, speechTrainingRightsText);
+    '训练工具是可选组件。安装后可从这里启动；不安装也不影响现成音色和其他 TTS。';
   const speechTrainingActions = document.createElement('div');
   speechTrainingActions.className = 'settings-actions local-asset-actions';
-  const openSpeechTrainingSourcesButton = createButton('打开音源文件夹', 'secondary-button');
   const launchSpeechTrainerButton = createButton('启动本地训练工具', 'secondary-button');
-  speechTrainingActions.append(openSpeechTrainingSourcesButton, launchSpeechTrainerButton);
+  speechTrainingActions.append(launchSpeechTrainerButton);
   const speechTrainingStatus = document.createElement('p');
   speechTrainingStatus.className = 'settings-status';
   speechTrainingStatus.setAttribute('role', 'status');
   speechTrainingCard.append(
     speechTrainingTitle,
     speechTrainingDescription,
-    speechTrainingRightsLabel,
     speechTrainingActions,
     speechTrainingStatus,
   );
@@ -1146,13 +1185,88 @@ export const initializeChat = async ({
   const speechCredentialPanel = document.createElement('section');
   speechCredentialPanel.className = 'character-search speech-credentials';
   const speechCredentialTitle = document.createElement('strong');
-  speechCredentialTitle.textContent = '语音服务凭据（输出与输入共用）';
+  speechCredentialTitle.textContent = '语音服务凭据';
   speechCredentialPanel.append(
     speechCredentialTitle,
     createField('语音 API Key', speechApiKeyInput),
     deleteSpeechSecretButton,
   );
   speechSettingsPanel.append(speechPageBody, speechCredentialPanel, speechStatus);
+  const speechOpenAiCompatibleOption = [...speechProviderSelect.options].find(
+    (option) => option.value === 'openai-compatible',
+  )!;
+  let bundledIreinaAvailable = false;
+  const updateSpeechProviderFields = (applyDefaults = false): void => {
+    const providerId = speechProviderSelect.value as SpeechSettings['providerId'];
+    speechVoiceConfirmButton.hidden = providerId === 'disabled';
+    speechVoiceFieldLabel.textContent = '音色 ID';
+    speechVoiceIdentityHint.textContent =
+      '模型决定使用哪套语音能力，音色 ID 决定该模型使用哪个说话人；确认后再点击右上角“保存”。';
+    speechBaseUrlInput.readOnly = providerId === 'fish-audio';
+    speechApiKeyInput.disabled = providerId === 'disabled' || providerId === 'genie-tts';
+    if (providerId === 'fish-audio') {
+      speechBaseUrlInput.value = 'https://api.fish.audio';
+      speechApiKeyInput.placeholder = 'Fish Audio API Key（必填）';
+      if (applyDefaults) {
+        speechModelInput.value = 's2-pro';
+        speechVoiceInput.value = '';
+        speechVoiceInput.placeholder = 'Fish Audio reference_id';
+        speechFormatSelect.value = 'mp3';
+        displaySpeechLanguage('en-US');
+        speechSpeedInput.value = '1';
+      }
+    } else if (providerId === 'genie-tts') {
+      speechApiKeyInput.placeholder = 'Genie-TTS 本机服务不使用密钥';
+      speechVoiceInput.placeholder = '已在 Genie 中加载的 character_name';
+      if (applyDefaults) {
+        speechBaseUrlInput.value = 'http://127.0.0.1:8000';
+        speechModelInput.value = 'gpt-sovits-v2proplus';
+        speechVoiceInput.value = '';
+        speechFormatSelect.value = 'wav';
+        speechSpeedInput.value = '1';
+      }
+    } else {
+      speechVoiceInput.placeholder = '音色 / speaker ID';
+      if (providerId === 'disabled') speechApiKeyInput.placeholder = '语音已关闭';
+      if (applyDefaults && providerId === 'openai-compatible') {
+        speechBaseUrlInput.value = bundledIreinaAvailable
+          ? BUNDLED_IREINA_SPEECH_PRESET.baseUrl
+          : 'http://127.0.0.1:8000/v1';
+        speechModelInput.value = bundledIreinaAvailable ? BUNDLED_IREINA_SPEECH_PRESET.modelId : '';
+        speechVoiceInput.value = bundledIreinaAvailable ? BUNDLED_IREINA_SPEECH_PRESET.voiceId : '';
+        speechFormatSelect.value = bundledIreinaAvailable
+          ? BUNDLED_IREINA_SPEECH_PRESET.responseFormat
+          : 'wav';
+        displaySpeechLanguage(BUNDLED_IREINA_SPEECH_PRESET.language);
+        speechSpeedInput.value = String(
+          bundledIreinaAvailable ? BUNDLED_IREINA_SPEECH_PRESET.speed : 1,
+        );
+      }
+    }
+  };
+  speechVoiceConfirmButton.addEventListener('click', () => {
+    if (!speechModelInput.value.trim()) {
+      speechStatus.textContent = '请填写语音模型 ID。';
+      showButtonFeedback(speechVoiceConfirmButton, '请检查', 'error', 1_200);
+      speechModelInput.focus();
+      return;
+    }
+    if (!speechVoiceInput.value.trim()) {
+      speechStatus.textContent = '请填写音色 ID。';
+      showButtonFeedback(speechVoiceConfirmButton, '请检查', 'error', 1_200);
+      speechVoiceInput.focus();
+      return;
+    }
+    if (!readSpeechLanguage()) {
+      speechStatus.textContent = '请填写自定义语言代码。';
+      showButtonFeedback(speechVoiceConfirmButton, '请检查', 'error', 1_200);
+      speechLanguageInput.focus();
+      return;
+    }
+    updateSpeechProviderFields();
+    showButtonFeedback(speechVoiceConfirmButton, '已确认 ✓', 'success', 1_200);
+    speechStatus.textContent = '音色已确认；请点击右上角“保存”使其生效。';
+  });
   showSpeechPage('output');
   const viewerExSettingsPanel = document.createElement('section');
   viewerExSettingsPanel.className = 'display-mode-pane';
@@ -1262,8 +1376,8 @@ export const initializeChat = async ({
   vTubeStudioMouseTrackingHint.textContent =
     '鼠标移动时由眼睛和头部平滑跟随；静止后逐渐恢复随机待机。';
   const vTubeStudioLaunchButton = createButton('启动 VTube Studio', 'secondary-button');
-  const vTubeStudioInstallModelButton = createButton('安装随包小猫模型', 'secondary-button');
-  const vTubeStudioConnectButton = createButton('授权并读取当前模型', 'secondary-button');
+  const vTubeStudioInstallModelButton = createButton('安装模型', 'secondary-button');
+  const vTubeStudioConnectButton = createButton('连接 VTube Studio', 'secondary-button');
   const vTubeStudioExpressionTestButton = createButton('测试惊讶表情', 'secondary-button');
   const vTubeStudioExpressionSelect = document.createElement('select');
   vTubeStudioExpressionSelect.setAttribute('aria-label', '要预览的 VTube Studio 表情');
@@ -1271,6 +1385,37 @@ export const initializeChat = async ({
   const vTubeStudioExpressionPreviewButton = createButton('预览并返回桌面', 'secondary-button');
   vTubeStudioExpressionPreviewButton.disabled = true;
   const vTubeStudioExpressionRestoreButton = createButton('关闭预览', 'text-button');
+  const vTubeStudioEmotionSelect = document.createElement('select');
+  for (const emotion of CHARACTER_EMOTIONS) {
+    if (emotion === 'neutral') continue;
+    const option = document.createElement('option');
+    option.value = emotion;
+    option.textContent = emotion;
+    vTubeStudioEmotionSelect.append(option);
+  }
+  const vTubeStudioMapExpressionButton = createButton('把所选表情映射到该情绪', 'secondary-button');
+  vTubeStudioMapExpressionButton.disabled = true;
+  const vTubeStudioConfirmSuggestionsButton = createButton(
+    '确认自动识别的映射',
+    'secondary-button',
+  );
+  vTubeStudioConfirmSuggestionsButton.disabled = true;
+  const vTubeStudioActionSelect = document.createElement('select');
+  for (const [action, label] of [
+    ['nod', '肯定 / 点头'],
+    ['shake', '否定 / 摇头'],
+  ] as const) {
+    const option = document.createElement('option');
+    option.value = action;
+    option.textContent = label;
+    vTubeStudioActionSelect.append(option);
+  }
+  const vTubeStudioActionHotkeySelect = document.createElement('select');
+  vTubeStudioActionHotkeySelect.disabled = true;
+  const vTubeStudioMapActionButton = createButton('把所选动画映射到该动作', 'secondary-button');
+  vTubeStudioMapActionButton.disabled = true;
+  const vTubeStudioMappingSummary = document.createElement('small');
+  vTubeStudioMappingSummary.className = 'settings-hint';
   const vTubeStudioExpressionActions = document.createElement('div');
   vTubeStudioExpressionActions.className = 'settings-actions';
   vTubeStudioExpressionActions.append(
@@ -1292,14 +1437,48 @@ export const initializeChat = async ({
   const vTubeStudioHint = document.createElement('small');
   vTubeStudioHint.className = 'settings-hint';
   vTubeStudioHint.textContent =
-    '启用后由 VTube Studio 负责角色显示，FPNF 不再加载内置凯尔希。仅连接 127.0.0.1；首次授权由 VTube Studio 弹窗确认，之后自动复用系统加密令牌。';
+    '连接时会自动寻找端口并请求 VTube Studio 授权；不用另外下载 Spout2，VTube Studio 和 FPNF 已包含显示所需组件。';
+  const vTubeStudioSetupNotice = document.createElement('p');
+  vTubeStudioSetupNotice.className = 'settings-status vtube-studio-setup-notice';
+  vTubeStudioSetupNotice.setAttribute('role', 'alert');
+  vTubeStudioSetupNotice.hidden = true;
+  const showVTubeStudioSetupNotice = (
+    reason?: VTubeStudioConnectionReason | 'spout-disabled',
+  ): void => {
+    if (!reason) {
+      vTubeStudioSetupNotice.hidden = true;
+      vTubeStudioSetupNotice.textContent = '';
+      return;
+    }
+    vTubeStudioSetupNotice.hidden = false;
+    vTubeStudioSetupNotice.textContent =
+      reason === 'api-disabled'
+        ? '只需在 VTube Studio 设置首页打开“允许插件 API 访问（Allow Plugin API access）”，然后回来再次点“连接 VTube Studio”。端口和授权都由 FPNF 自动处理。'
+        : reason === 'spout-disabled'
+          ? 'API 已连接。要在桌面显示模型，请在 VTube Studio 打开 Spout2 输出；无需下载安装 OBS 插件。'
+          : '请先启动 VTube Studio，然后再次点“连接 VTube Studio”。';
+  };
+  const vTubeStudioTroubleshooting = document.createElement('details');
+  vTubeStudioTroubleshooting.className = 'character-lore vtube-studio-troubleshooting';
+  const vTubeStudioTroubleshootingSummary = document.createElement('summary');
+  vTubeStudioTroubleshootingSummary.textContent = '连接故障排查';
+  const vTubeStudioTroubleshootingHint = document.createElement('small');
+  vTubeStudioTroubleshootingHint.className = 'settings-hint';
+  vTubeStudioTroubleshootingHint.textContent =
+    '一般无需修改。只有自动发现失败时，才把 VTube Studio 中显示的 Plugin API 端口填到这里。';
+  vTubeStudioTroubleshooting.append(
+    vTubeStudioTroubleshootingSummary,
+    vTubeStudioTroubleshootingHint,
+    createField('手动端口', vTubeStudioPortInput),
+  );
   const vTubeStudioGuide = document.createElement('details');
   vTubeStudioGuide.className = 'character-lore vtube-studio-guide';
   const vTubeStudioGuideSummary = document.createElement('summary');
   vTubeStudioGuideSummary.textContent = '新模型接入与调教参考';
   const vTubeStudioGuideList = document.createElement('ul');
   for (const item of [
-    '先授权并读取模型，确认头部角度、眼球、睁眼参数以及表情清单是否存在。',
+    '先启动 VTube Studio、加载模型，并在主设置页开启“允许插件 API 访问”；默认端口 8001，被占用时实际端口可能变成 8002 或更高。',
+    '再授权并读取模型，在 VTube Studio 弹窗中点“允许”，确认头部角度、眼球、睁眼参数以及表情清单是否存在。',
     '关闭 VTube Studio 人脸追踪，避免和 FPNF 的随机待机、眨眼、鼠标追踪互相抢参数。',
     '逐个预览表情，再让 AI 接管；参数范围不同的模型要单独校准，不能直接照搬 0～1。',
     '休息状态会慢慢闭眼和点头；鼠标靠近只微睁，收到消息后缓慢完全醒来。',
@@ -1313,25 +1492,62 @@ export const initializeChat = async ({
   vTubeStudioSettingsPanel.append(
     vTubeStudioSettingsHeading,
     vTubeStudioHint,
+    vTubeStudioSetupNotice,
     vTubeStudioMouseTrackingHeading,
     vTubeStudioMouseTrackingHint,
-    createField('Plugin API 端口', vTubeStudioPortInput),
     vTubeStudioLaunchButton,
     vTubeStudioInstallModelButton,
     vTubeStudioConnectButton,
     vTubeStudioExpressionTestButton,
     createField('逐个查看模型表情', vTubeStudioExpressionSelect),
     vTubeStudioExpressionActions,
+    createField('映射为角色情绪', vTubeStudioEmotionSelect),
+    vTubeStudioMapExpressionButton,
+    vTubeStudioConfirmSuggestionsButton,
+    createField('角色动作', vTubeStudioActionSelect),
+    createField('模型动画热键', vTubeStudioActionHotkeySelect),
+    vTubeStudioMapActionButton,
+    vTubeStudioMappingSummary,
     vTubeStudioStatus,
     vTubeStudioInventory,
     vTubeStudioParameterDetails,
+    vTubeStudioTroubleshooting,
     vTubeStudioGuide,
   );
+  let vTubeStudioEmotionMappings: Partial<Record<CharacterEmotion, string>> = {};
+  let vTubeStudioActionMappings: Record<string, string> = {};
+  let vTubeStudioModelMappings: Record<string, VTubeStudioModelMapping> = {};
+  let currentVTubeStudioMapping: VTubeStudioInspectResult['mapping'];
+  const renderVTubeStudioMappings = (): void => {
+    const emotionEntries = Object.entries(vTubeStudioEmotionMappings);
+    const actionEntries = Object.entries(vTubeStudioActionMappings);
+    const suggestionCount = currentVTubeStudioMapping
+      ? Object.keys(currentVTubeStudioMapping.suggestions.emotionExpressions).length +
+        Object.keys(currentVTubeStudioMapping.suggestions.actionHotkeys).length
+      : 0;
+    vTubeStudioMappingSummary.textContent = currentVTubeStudioMapping
+      ? [
+          `当前模型：${currentVTubeStudioMapping.modelName}`,
+          emotionEntries.length
+            ? `已确认表情：${emotionEntries.map(([emotion, file]) => `${emotion} → ${file}`).join('；')}`
+            : '尚未确认表情映射',
+          actionEntries.length
+            ? `已确认动作：${actionEntries.map(([action]) => action).join('、')}`
+            : '点头、摇头会使用内置轻动作；也可绑定模型动画',
+          suggestionCount ? `自动识别到 ${suggestionCount} 项候选，确认后才会交给 AI 使用。` : '',
+        ]
+          .filter(Boolean)
+          .join('；')
+      : '连接并读取模型后，会为每个模型单独保存表情和动作映射。';
+  };
+  renderVTubeStudioMappings();
   const readVTubeStudioSettings = (): VTubeStudioSettings => ({
     ...DEFAULT_VTUBE_STUDIO_SETTINGS,
     enabled: vTubeStudioEnabledInput.checked,
     port: Number(vTubeStudioPortInput.value),
     mouseTrackingEnabled: vTubeStudioMouseTrackingInput.checked,
+    emotionExpressions: {},
+    modelMappings: { ...vTubeStudioModelMappings },
   });
 
   const live2DSettingsPanel = document.createElement('section');
@@ -1429,13 +1645,12 @@ export const initializeChat = async ({
           : 'off';
   const readAvailablePresentationActions = (): string[] =>
     readCharacterDisplayMode() === 'vtube-studio'
-      ? ['nod']
+      ? ['nod', 'shake']
       : (getCharacter()?.availableActions ?? []);
   const displayCharacterDisplayMode = (mode: CharacterDisplayMode): void => {
     activeCharacterDisplayMode = mode;
     setDisplayModeInputs(mode);
     showDisplayTab(mode === 'off' ? selectedDisplayTab : mode);
-    characterPaneSelect.disabled = mode === 'vtube-studio';
     root.dataset.characterPane =
       mode === 'vtube-studio' ? 'left' : currentDesktopLayoutSettings.characterPane;
     onDisplayModeChanged(mode);
@@ -1598,7 +1813,8 @@ export const initializeChat = async ({
   mediaWidgetTitle.textContent = '听歌控制';
   const mediaWidgetHint = document.createElement('small');
   mediaWidgetHint.className = 'settings-hint';
-  mediaWidgetHint.textContent = `当前适配：${SUPPORTED_MEDIA_PLAYERS.map(({ name }) => name).join('、')}。开启后悬浮控制条会固定保留。`;
+  mediaWidgetHint.textContent =
+    '读取并控制 Windows 当前媒体会话，包括网易云音乐、QQ 音乐、Spotify、Apple Music 和支持系统媒体控制的其他播放器。开启后悬浮控制条会固定保留。';
   mediaWidgetHeader.append(backFromMediaWidgetButton, mediaWidgetTitle, mediaControlInput);
   mediaWidget.append(mediaWidgetHeader, mediaWidgetHint, mediaActions);
   const widgetsStatus = document.createElement('p');
@@ -1661,7 +1877,7 @@ export const initializeChat = async ({
   const assistantWorkspaceHint = document.createElement('small');
   assistantWorkspaceHint.className = 'settings-hint';
   assistantWorkspaceHint.textContent =
-    '选择一个允许小猫处理的文件夹。工作模式开启后可以读取和修改其中的文件，也可以查找网页；对话中的写入仍会确认，主动拖入的文件会直接复制到工作区且不覆盖同名文件。';
+    '选择工作区即授权助手直接读取、搜索、修改和打开其中的安全文件。工作模式开启后，可把文本或文件拖到整个对话区。工作区外文件操作、脚本或程序打开、固定项目检查仍会显示实际目标并逐次确认；主动拖入文件不会覆盖同名文件。';
   const assistantWorkspaceStatus = document.createElement('p');
   assistantWorkspaceStatus.className = 'settings-status';
   assistantWorkspaceStatus.setAttribute('role', 'status');
@@ -1673,7 +1889,6 @@ export const initializeChat = async ({
   );
   modelSettingsSection.append(
     scaleField,
-    layoutPositionPanel,
     createField('提供商', providerSelect),
     createField('模型名称', modelInput),
     baseUrlField,
@@ -1685,51 +1900,18 @@ export const initializeChat = async ({
   );
 
   const readDesktopLayoutSettings = (): DesktopLayoutSettings => ({
-    characterPane: characterPaneSelect.value as CharacterPane,
-    widgetAlignment: widgetAlignmentSelect.value as WidgetAlignment,
+    ...currentDesktopLayoutSettings,
   });
   const displayDesktopLayoutSettings = (settings: DesktopLayoutSettings): void => {
     currentDesktopLayoutSettings = settings;
-    characterPaneSelect.value = settings.characterPane;
-    widgetAlignmentSelect.value = settings.widgetAlignment;
     root.dataset.characterPane =
       activeCharacterDisplayMode === 'vtube-studio' ? 'left' : settings.characterPane;
     root.dataset.widgetAlignment = settings.widgetAlignment;
   };
-  const previewDesktopLayoutSettings = (): void =>
-    displayDesktopLayoutSettings(readDesktopLayoutSettings());
-  characterPaneSelect.addEventListener('change', previewDesktopLayoutSettings);
-  widgetAlignmentSelect.addEventListener('change', previewDesktopLayoutSettings);
-  resetLayoutPositionButton.addEventListener('click', () => {
-    displayDesktopLayoutSettings({ ...DEFAULT_DESKTOP_LAYOUT_SETTINGS });
-    settingsStatus.textContent = '已恢复默认位置预览；点击“保存”后生效。';
-  });
-  previewLayoutPositionButton.addEventListener('click', () => {
-    void (async () => {
-      if (!api) return;
-      previewLayoutPositionButton.disabled = true;
-      try {
-        displayDesktopLayoutSettings(
-          await api.setDesktopLayoutSettings({ settings: readDesktopLayoutSettings() }),
-        );
-        closeDrawers();
-        setPanelExpanded(true, 'chat');
-        setReplyStatus(
-          activeCharacterDisplayMode === 'vtube-studio'
-            ? '小组件位置已预览；VTube 模型暂固定在左侧'
-            : '界面位置已保存并预览',
-        );
-      } catch {
-        settingsStatus.textContent = '界面位置无法保存，请重试。';
-      } finally {
-        previewLayoutPositionButton.disabled = false;
-      }
-    })();
-  });
 
   const assistantSettingsSection = createSettingsSection(
     '工作模式',
-    '单独管理小猫可以读取和修改的工作区，以及网页工具的使用边界。',
+    '像小型 Agent 一样处理问答、资料和代码；工作区与已启用小组件采用范围授权，越界和高风险操作逐次确认。',
   );
   const assistantModeComparison = document.createElement('div');
   assistantModeComparison.className = 'mode-comparison';
@@ -1767,8 +1949,13 @@ export const initializeChat = async ({
     createModeComparisonCard(
       '工作模式',
       'ON',
-      '在对话中拆解任务，并使用已授权的文件和网页工具完成实际工作。',
-      ['查看和读取所选文件夹', '对话写入前确认；拖入文件直接接收', '搜索并读取公开网页'],
+      '在对话中拆解任务，并使用已授权的代码、文件和网页工具完成实际工作。',
+      [
+        '普通问答、联网搜索与公开网页阅读',
+        '所选工作区内文件操作直接执行',
+        '工作区外文件、脚本和项目检查前确认',
+        '已启用小组件的固定能力直接执行',
+      ],
     ),
   );
   const assistantInterfacePanel = document.createElement('section');
@@ -1777,9 +1964,10 @@ export const initializeChat = async ({
   assistantInterfaceTitle.textContent = '当前工作接口';
   const assistantInterfaceList = document.createElement('ul');
   for (const description of [
-    '文件接口：列出文件、读取文件、新建或修改文件。',
+    '文件接口：列出、搜索、读取、新建、精确修改或打开文件。',
     '网页接口：搜索网页、读取 HTTPS 公开页面。',
-    '安全边界：文件只能在所选工作区内；写入仍需单次确认。',
+    '授权边界：工作区内直接操作；工作区外真实路径与可执行文件逐次确认。',
+    '小组件边界：启用听歌控制即授权上一首、播放/暂停和下一首。',
   ]) {
     const item = document.createElement('li');
     item.textContent = description;
@@ -1946,10 +2134,11 @@ export const initializeChat = async ({
   settingsLayout.append(settingsNavigation, settingsContent);
   showSettingsPage(selectedSettingsPage);
 
-  const settingsFooter = document.createElement('footer');
-  settingsFooter.className = 'settings-footer';
-  settingsFooter.append(settingsStatus, settingsActions);
-  settingsPanel.append(settingsHeader, settingsLayout, settingsFooter);
+  const settingsHeaderActions = document.createElement('div');
+  settingsHeaderActions.className = 'settings-header-actions';
+  settingsHeaderActions.append(settingsStatus, settingsActions, closeSettingsButton);
+  settingsHeader.append(settingsHeaderActions);
+  settingsPanel.append(settingsHeader, settingsLayout);
 
   const actionDialog = document.createElement('dialog');
   actionDialog.className = 'app-dialog';
@@ -1984,7 +2173,7 @@ export const initializeChat = async ({
 
   panel.append(
     panelHeader,
-    subtitle,
+    conversationList,
     composer,
     toolbar,
     soundPanel,
@@ -1992,7 +2181,7 @@ export const initializeChat = async ({
     debugPanel,
     settingsPanel,
   );
-  shell.append(launcherButton, panel);
+  shell.append(panel);
   root.append(shell, desktopOverlayStack, actionDialog);
 
   const loreTextareas = [
@@ -2057,6 +2246,25 @@ export const initializeChat = async ({
   let lastFullVoiceCommand: { text: string; endedAt: number } | undefined;
   let pendingCombinedVoiceCommand: { text: string; endedAt: number } | undefined;
   let controllerDisposed = false;
+  const currentPreciseWakeWord = (): string =>
+    resolvePreciseWakeWord(
+      currentSpeechStatus?.settings.wakeWordSource ?? 'character-name',
+      currentSpeechStatus?.settings.customWakeWord ?? '',
+      profile?.name ?? '桌宠',
+    );
+  const updatePreciseWakeWordFields = (): void => {
+    const custom = speechWakeWordSourceSelect.value === 'custom';
+    speechCustomWakeWordField.hidden = !custom;
+    speechCustomWakeWordInput.disabled = !custom;
+    const draft = resolvePreciseWakeWord(
+      speechWakeWordSourceSelect.value as SpeechWakeWordSource,
+      speechCustomWakeWordInput.value,
+      characterNameInput.value.trim() || profile?.name || '桌宠',
+    );
+    speechWakeWordHint.textContent = `精准模式当前称呼：“${draft}”。请在同一句开头先说这个称呼。`;
+    const toolbarButton = speechInputModeToolbarButtons.get('half');
+    if (toolbarButton) toolbarButton.title = `精准：说“${draft} + 内容”才自动发送`;
+  };
   const speechPlayer = new WebAudioSpeechPlayer();
   const speechClient = api ? new IpcSpeechSynthesisClient(api) : undefined;
   const isKittenProfile = (): boolean =>
@@ -2077,8 +2285,6 @@ export const initializeChat = async ({
       emotion: 'neutral',
       action: 'drowsy',
     });
-    subtitle.hidden = false;
-    subtitle.textContent = line.displayText;
     setReplyStatus('有点困了');
     renderHistory();
     const speechTurn = beginSpeechTurn(createRequestId('idle-speech'));
@@ -2101,11 +2307,7 @@ export const initializeChat = async ({
     const inputMode = currentSpeechStatus?.settings.inputMode ?? 'manual';
     if (inputMode !== 'manual') {
       const listening = continuousMicrophoneListener?.active === true;
-      microphoneButton.textContent = listening
-        ? inputMode === 'full'
-          ? '完全监听中'
-          : '精准监听中'
-        : '开启监听';
+      microphoneButton.textContent = listening ? '在听...' : '开启监听';
       microphoneButton.setAttribute('aria-pressed', String(listening));
       microphoneButton.disabled =
         !currentSpeechStatus?.input.available ||
@@ -2165,7 +2367,6 @@ export const initializeChat = async ({
       const transcript = await transcribeMicrophoneAudio(audio);
       if (!transcript) return;
       input.value = transcript;
-      resizeComposer();
       input.focus();
       speechStatus.textContent = '中文已经填入输入框；确认后再点“发送”。';
     } catch {
@@ -2272,14 +2473,8 @@ export const initializeChat = async ({
 
   const displayContinuousListenerState = (state: ContinuousListenerState): void => {
     const inputMode = currentSpeechStatus?.settings.inputMode ?? 'manual';
-    microphoneButton.textContent =
-      state === 'hearing'
-        ? '正在听…'
-        : state === 'processing'
-          ? '正在识别…'
-          : inputMode === 'full'
-            ? '完全监听中'
-            : '精准监听中';
+    const preciseWakeWord = currentPreciseWakeWord();
+    microphoneButton.textContent = state === 'processing' ? '识别...' : '在听...';
     microphoneButton.setAttribute('aria-pressed', 'true');
     speechStatus.textContent =
       state === 'hearing'
@@ -2287,8 +2482,8 @@ export const initializeChat = async ({
         : state === 'processing'
           ? '正在识别这一句话…'
           : inputMode === 'full'
-            ? '完全监听中：自动发送；2 秒内继续说会合并并重新思考。点击按钮可暂停。'
-            : '精准监听中：必须说“小猫 + 内容”才自动发送。点击按钮可暂停。';
+            ? '完全模式：自动发送；2 秒内继续说会合并并重新思考。点击按钮可暂停。'
+            : `精准模式：必须说“${preciseWakeWord} + 内容”才自动发送。点击按钮可暂停。`;
   };
 
   const stopContinuousListening = async (message?: string): Promise<void> => {
@@ -2312,7 +2507,6 @@ export const initializeChat = async ({
       lastFullVoiceCommand = { text, endedAt };
     }
     input.value = text;
-    resizeComposer();
     speechStatus.textContent = message;
     composer.requestSubmit();
   };
@@ -2361,9 +2555,10 @@ export const initializeChat = async ({
   ): Promise<void> => {
     const transcript = await transcribeMicrophoneAudio(audio);
     if (!transcript) return;
-    const command = wakeWordCommands.handle(transcript);
+    const preciseWakeWord = currentPreciseWakeWord();
+    const command = wakeWordCommands.handle(transcript, preciseWakeWord);
     if (command.kind === 'ignored') {
-      speechStatus.textContent = '没有听到开头的“小猫”，未发送。';
+      speechStatus.textContent = `没有听到开头的“${preciseWakeWord}”，未发送。`;
       return;
     }
     if (command.kind === 'armed') {
@@ -2379,7 +2574,7 @@ export const initializeChat = async ({
       Boolean(activeRequestId || activeSpeechTurn);
     if (shouldCombineWithActiveFullTurn && previousFullVoiceCommand) {
       const text = combineFullListeningCommands(previousFullVoiceCommand.text, command.text);
-      if (text.length > 8_000) {
+      if (text.length > 16_000) {
         speechStatus.textContent = '连续语音合并后过长；请等当前回复结束后再说。';
         return;
       }
@@ -2547,12 +2742,8 @@ export const initializeChat = async ({
       : '尚未选择工作区；网页查找仍可用，文件工具暂不可用。';
     assistantWorkspaceButton.title = workspaceName
       ? `当前文件工具只允许访问“${workspaceName}”；点击更换`
-      : '选择小猫可以读取和修改的文件夹；未选择时仍可查网页';
-    composerDropStatus.textContent = assistantModeEnabled
-      ? workspaceName
-        ? '把文件拖到这里，即可安全放入当前工作区'
-        : '请先在设置中选择工作区，再拖入文件'
-      : '工作模式开启后，可把文件拖到这里放入工作区';
+      : '选择助手可以读取和修改的文件夹；未选择时仍可查网页';
+    showComposerDropStatus('');
   };
 
   const loadAssistantToolStatus = async (): Promise<void> => {
@@ -2576,8 +2767,8 @@ export const initializeChat = async ({
     `${profile?.userDisplayName || '你'}，我在。`;
 
   const displayOpeningLine = (line: string): void => {
-    subtitle.hidden = false;
-    subtitle.textContent = line;
+    activeReply = line;
+    renderConversationTimeline();
     setReplyStatus('先和你说了一句');
   };
 
@@ -2614,8 +2805,8 @@ export const initializeChat = async ({
     latestContextDebug = undefined;
     memoryRecords = [];
     memoryCandidates = [];
-    subtitle.hidden = true;
-    subtitle.textContent = '';
+    activeReply = '';
+    renderConversationTimeline();
     replyStateLabel = '随时可以开始聊天';
     renderContextDebug();
     renderMemories();
@@ -2701,7 +2892,6 @@ export const initializeChat = async ({
     shell.classList.toggle('chat-shell--expanded', expanded);
     root.classList.toggle('chat-expanded', expanded);
     root.classList.toggle('settings-expanded', expanded && panelView === 'settings');
-    launcherButton.setAttribute('aria-expanded', String(expanded));
     if (expanded) requestAnimationFrame(() => input.focus());
     window.setTimeout(() => window.dispatchEvent(new Event('resize')), 240);
   };
@@ -2814,7 +3004,45 @@ export const initializeChat = async ({
     }
   };
 
+  const renderConversationTimeline = (): void => {
+    conversationList.replaceChildren();
+    const visibleMessages = activeReply
+      ? [
+          ...messages,
+          {
+            id: 'active-reply',
+            role: 'assistant' as const,
+            content: activeReply,
+            createdAt: Date.now(),
+            status: 'complete' as const,
+          },
+        ]
+      : messages;
+    if (visibleMessages.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'conversation-list__empty';
+      empty.textContent = '还没有对话，开始聊吧。';
+      conversationList.append(empty);
+      return;
+    }
+    for (const message of visibleMessages) {
+      const item = document.createElement('article');
+      item.className = `conversation-message conversation-message--${message.role}`;
+      const content = document.createElement('p');
+      content.textContent = message.content;
+      item.append(content);
+      if (message.status === 'cancelled') {
+        const status = document.createElement('small');
+        status.textContent = '已停止';
+        item.append(status);
+      }
+      conversationList.append(item);
+    }
+    conversationList.scrollTop = conversationList.scrollHeight;
+  };
+
   const renderHistory = (): void => {
+    renderConversationTimeline();
     historyList.replaceChildren();
     if (messages.length === 0) {
       const empty = document.createElement('p');
@@ -2826,12 +3054,9 @@ export const initializeChat = async ({
     for (const message of messages) {
       const item = document.createElement('article');
       item.className = `history-message history-message--${message.role}`;
-      const author = document.createElement('strong');
-      author.textContent =
-        message.role === 'user' ? (profile?.userDisplayName ?? '你') : characterDisplayName();
       const content = document.createElement('p');
       content.textContent = message.content;
-      item.append(author, content);
+      item.append(content);
       if (message.status === 'cancelled') {
         const status = document.createElement('small');
         status.textContent = '已停止';
@@ -3261,9 +3486,7 @@ export const initializeChat = async ({
     if (event.type === 'text-delta') {
       activeReply += event.text;
       activeSpeechTurn?.appendText(event.text);
-      subtitle.hidden = false;
-      subtitle.textContent = activeReply;
-      subtitle.scrollTop = subtitle.scrollHeight;
+      renderConversationTimeline();
       setReplyStatus('正在回复…');
       void getPresentation()?.setState('talking');
       return;
@@ -3278,8 +3501,8 @@ export const initializeChat = async ({
           title: event.title,
           message: event.description,
           details:
-            '文件操作只会发生在你选择的工作区内。Main Process 会再次校验相对路径并拒绝目录穿越、符号链接和超大文件。',
-          confirmLabel: '允许本次写入',
+            '这是一次超出当前范围授权或可能执行代码的操作。Main Process 已解析实际目标；本次允许不会自动授权其他路径或操作。',
+          confirmLabel: '允许本次操作',
         });
         await api?.resolveAssistantToolApproval({
           requestId: event.requestId,
@@ -3290,8 +3513,7 @@ export const initializeChat = async ({
       return;
     }
     if (event.type === 'completed') {
-      subtitle.hidden = false;
-      subtitle.textContent = event.assistantMessage.content;
+      activeReply = '';
       setReplyStatus('回复完成');
       messages.push(event.assistantMessage);
       renderHistory();
@@ -3323,8 +3545,7 @@ export const initializeChat = async ({
       if (!pendingCombinedVoiceCommand) pendingVoiceCommands.clear();
       stopSpeech('conversation-cancelled');
       if (event.assistantMessage) {
-        subtitle.hidden = false;
-        subtitle.textContent = event.assistantMessage.content;
+        activeReply = '';
         messages.push(event.assistantMessage);
         renderHistory();
       }
@@ -3340,11 +3561,10 @@ export const initializeChat = async ({
       input.focus();
       return;
     }
-    subtitle.hidden = !activeReply;
     pendingVoiceCommands.clear();
     pendingCombinedVoiceCommand = undefined;
     stopSpeech('conversation-error');
-    if (activeReply) subtitle.textContent = activeReply;
+    renderConversationTimeline();
     setReplyStatus(errorMessages[event.error.code] ?? event.error.message);
     activeRequestId = undefined;
     idleCompanion.reset();
@@ -3865,11 +4085,11 @@ export const initializeChat = async ({
       desktopStatus.settings.inputOverlayEnabled && desktopStatus.inputOverlayActive;
     const widgetReserve =
       mediaWidgetVisible && inputWidgetVisible
-        ? 112
+        ? 128
         : inputWidgetVisible
-          ? 68
+          ? 84
           : mediaWidgetVisible
-            ? 44
+            ? 60
             : 0;
     root.classList.toggle('desktop-widgets-active', widgetReserve > 0);
     root.style.setProperty('--desktop-widget-reserve', `${widgetReserve}px`);
@@ -3926,7 +4146,7 @@ export const initializeChat = async ({
     speechBaseUrlInput.value = status.settings.baseUrl;
     speechModelInput.value = status.settings.modelId;
     speechVoiceInput.value = status.settings.voiceId;
-    speechLanguageInput.value = status.settings.language;
+    displaySpeechLanguage(status.settings.language);
     speechFormatSelect.value = status.settings.responseFormat;
     speechSpeedInput.value = String(status.settings.speed);
     speechVolumeInput.value = String(status.settings.volume);
@@ -3934,15 +4154,23 @@ export const initializeChat = async ({
     speechPlayer.setVolume(status.settings.volume);
     speechInputEnabledInput.checked = status.settings.inputEnabled;
     renderToolbarSpeechInputMode(status.settings.inputMode);
+    speechWakeWordSourceSelect.value = status.settings.wakeWordSource;
+    speechCustomWakeWordInput.value = status.settings.customWakeWord;
+    updatePreciseWakeWordFields();
     speechPushToTalkKeySelect.value = status.settings.pushToTalkKey;
     const speechInputMode = speechInputModeInputs.get(status.settings.inputMode);
     if (speechInputMode) speechInputMode.checked = true;
     speechTranscriptionBaseUrlInput.value = status.settings.transcriptionBaseUrl;
     speechTranscriptionModelInput.value = status.settings.transcriptionModelId;
     speechTranscriptionLanguageInput.value = status.settings.transcriptionLanguage;
+    updateSpeechProviderFields();
     speechApiKeyInput.placeholder = status.apiKeySaved
       ? '已安全保存；留空保留'
-      : '本机免密接口可留空';
+      : status.settings.providerId === 'fish-audio'
+        ? 'Fish Audio API Key（必填）'
+        : status.settings.providerId === 'genie-tts'
+          ? 'Genie-TTS 本机服务不使用密钥'
+          : '本机免密接口可留空';
     deleteSpeechSecretButton.hidden = !status.apiKeySaved;
     speechStatus.textContent = `${status.output.detail} ${status.input.detail}`;
     microphoneButton.hidden = !status.input.available;
@@ -3954,6 +4182,11 @@ export const initializeChat = async ({
   const displayLocalSpeechAssetStatus = (
     status: Awaited<ReturnType<NonNullable<typeof api>['getLocalSpeechAssetStatus']>>,
   ): void => {
+    bundledIreinaAvailable = status.voiceAvailable;
+    speechOpenAiCompatibleOption.textContent = status.voiceAvailable
+      ? '本机 Style-Bert-VITS2'
+      : 'OpenAI 兼容 TTS（本机或在线）';
+    updateSpeechProviderFields();
     exportLocalVoiceButton.disabled = !status.voiceAvailable;
     openSpeechTrainingSourcesButton.disabled = !status.trainingSourceReady;
     launchSpeechTrainerButton.disabled = !status.trainingToolAvailable;
@@ -3984,9 +4217,42 @@ export const initializeChat = async ({
   };
 
   let currentVTubeStudioInventory: VTubeStudioInventory | undefined;
-  const displayVTubeStudioInventory = (inventory?: VTubeStudioInventory): void => {
+  const selectCurrentVTubeStudioMapping = (): void => {
+    const modelId = currentVTubeStudioInventory?.model.id;
+    if (!modelId || !currentVTubeStudioMapping) {
+      vTubeStudioEmotionMappings = {};
+      vTubeStudioActionMappings = {};
+      vTubeStudioConfirmSuggestionsButton.disabled = true;
+      renderVTubeStudioMappings();
+      return;
+    }
+    const confirmed = vTubeStudioModelMappings[modelId] ?? currentVTubeStudioMapping.confirmed;
+    vTubeStudioEmotionMappings = { ...(confirmed?.emotionExpressions ?? {}) };
+    vTubeStudioActionMappings = { ...(confirmed?.actionHotkeys ?? {}) };
+    const suggestions = currentVTubeStudioMapping.suggestions;
+    vTubeStudioConfirmSuggestionsButton.disabled =
+      Object.keys(suggestions.emotionExpressions).length === 0 &&
+      Object.keys(suggestions.actionHotkeys).length === 0;
+    renderVTubeStudioMappings();
+  };
+  const updateCurrentVTubeStudioModelMapping = (): boolean => {
+    const model = currentVTubeStudioInventory?.model;
+    if (!model?.id) return false;
+    vTubeStudioModelMappings[model.id] = {
+      modelName: model.name,
+      emotionExpressions: { ...vTubeStudioEmotionMappings },
+      actionHotkeys: { ...vTubeStudioActionMappings },
+    };
+    return true;
+  };
+  const displayVTubeStudioInventory = (
+    inventory?: VTubeStudioInventory,
+    mapping?: VTubeStudioInspectResult['mapping'],
+  ): void => {
     currentVTubeStudioInventory = inventory;
+    currentVTubeStudioMapping = mapping;
     vTubeStudioExpressionSelect.replaceChildren();
+    vTubeStudioActionHotkeySelect.replaceChildren();
     vTubeStudioParameterDetails.hidden = !inventory?.parameters.length;
     vTubeStudioParameterList.textContent = inventory?.parameters.length
       ? inventory.parameters
@@ -4001,6 +4267,18 @@ export const initializeChat = async ({
       : '查看模型参数';
     vTubeStudioExpressionSelect.disabled = !inventory?.expressions.length;
     vTubeStudioExpressionPreviewButton.disabled = !inventory?.expressions.length;
+    vTubeStudioMapExpressionButton.disabled = !inventory?.expressions.length;
+    const actionHotkeys =
+      inventory?.hotkeys.filter((hotkey) => hotkey.type === 'TriggerAnimation') ?? [];
+    for (const hotkey of actionHotkeys) {
+      const option = document.createElement('option');
+      option.value = hotkey.hotkeyId;
+      option.textContent = `${hotkey.name}${hotkey.file ? `（${hotkey.file}）` : ''}`;
+      vTubeStudioActionHotkeySelect.append(option);
+    }
+    vTubeStudioActionHotkeySelect.disabled = actionHotkeys.length === 0;
+    vTubeStudioMapActionButton.disabled = actionHotkeys.length === 0;
+    selectCurrentVTubeStudioMapping();
     if (!inventory) {
       vTubeStudioInventory.textContent = '';
       return;
@@ -4025,32 +4303,52 @@ export const initializeChat = async ({
   const displayVTubeStudioStatus = (status: VTubeStudioStatus): void => {
     vTubeStudioPortInput.value = String(status.settings.port);
     vTubeStudioMouseTrackingInput.checked = status.settings.mouseTrackingEnabled;
+    vTubeStudioModelMappings = { ...(status.settings.modelMappings ?? {}) };
+    selectCurrentVTubeStudioMapping();
     vTubeStudioStatus.textContent = status.detail;
-    vTubeStudioConnectButton.textContent = status.authorized
-      ? '连接并读取当前模型'
-      : '授权并读取当前模型';
+    vTubeStudioConnectButton.textContent = '连接 VTube Studio';
+    if (status.detail.includes('没有发现 Spout2 输出')) {
+      showVTubeStudioSetupNotice('spout-disabled');
+    }
+    vTubeStudioInstallModelButton.hidden = !status.bundledModelAvailable;
   };
 
   let vTubeStudioInspectionInFlight = false;
-  const inspectSelectedVTubeStudio = async (): Promise<void> => {
-    if (!api || vTubeStudioInspectionInFlight) return;
+  const inspectSelectedVTubeStudio = async (): Promise<boolean> => {
+    if (!api || vTubeStudioInspectionInFlight) return false;
     vTubeStudioInspectionInFlight = true;
     displayVTubeStudioInventory();
     try {
       const status = await api.getVTubeStudioStatus();
       displayVTubeStudioStatus(status);
-      if (!status.settings.enabled || !status.authorized) return;
+      if (!status.settings.enabled || !status.authorized) return false;
       vTubeStudioStatus.textContent = '正在读取当前模型、表情和动画…';
       const inspected = await api.inspectVTubeStudio();
       if (!inspected.ok) {
+        if (inspected.reason === 'api-disabled') {
+          showVTubeStudioSetupNotice(inspected.reason);
+        }
         vTubeStudioStatus.textContent = inspected.message ?? '无法读取 VTube Studio 模型。';
-        return;
+        return false;
       }
-      displayVTubeStudioInventory(inspected.inventory);
+      showVTubeStudioSetupNotice();
+      displayVTubeStudioInventory(inspected.inventory, inspected.mapping);
       displayVTubeStudioStatus(await api.getVTubeStudioStatus());
+      return true;
     } finally {
       vTubeStudioInspectionInFlight = false;
     }
+  };
+  const activateConnectedVTubeStudio = async (): Promise<boolean> => {
+    if (!api) return false;
+    const displayResult = await api.setCharacterDisplayMode({ mode: 'vtube-studio' });
+    if (!displayResult.ok) {
+      vTubeStudioStatus.textContent =
+        displayResult.message ?? 'VTube Studio 已连接，但角色显示方式无法启用。';
+      return false;
+    }
+    displayCharacterDisplayMode(displayResult.mode);
+    return true;
   };
   const inspectVTubeStudioWhenSelected = (): void => {
     if (readCharacterDisplayMode() === 'vtube-studio') {
@@ -4139,10 +4437,6 @@ export const initializeChat = async ({
     }
     const providerId = providerSelect.value as ConfigurableProviderId;
     const modelId = modelInput.value.trim();
-    if (!modelId) {
-      statusTarget.textContent = '请填写模型名称。';
-      return false;
-    }
     const updatedName = characterNameInput.value.trim();
     const updatedProfile: CharacterProfile = {
       ...profile,
@@ -4167,7 +4461,9 @@ export const initializeChat = async ({
             }
           : {}),
       }),
-      api.setConversationConfiguration({ selection: { providerId, modelId } }),
+      modelId
+        ? api.setConversationConfiguration({ selection: { providerId, modelId } })
+        : Promise.resolve({ ok: true } as const),
       api.setCharacterProfile(updatedProfile),
       apiKeyInput.value.trim()
         ? api.setProviderSecret({ providerId, apiKey: apiKeyInput.value })
@@ -4192,12 +4488,14 @@ export const initializeChat = async ({
       baseUrl: speechBaseUrlInput.value.trim(),
       modelId: speechModelInput.value.trim(),
       voiceId: speechVoiceInput.value.trim(),
-      language: speechLanguageInput.value.trim(),
+      language: readSpeechLanguage(),
       responseFormat: speechFormatSelect.value as SpeechSettings['responseFormat'],
       speed: Number(speechSpeedInput.value),
       volume: Number(speechVolumeInput.value),
       inputEnabled: speechInputEnabledInput.checked,
       inputMode: readSpeechInputMode(),
+      wakeWordSource: speechWakeWordSourceSelect.value as SpeechWakeWordSource,
+      customWakeWord: speechCustomWakeWordInput.value.trim(),
       pushToTalkKey: speechPushToTalkKeySelect.value as SpeechSettings['pushToTalkKey'],
       transcriptionBaseUrl: speechTranscriptionBaseUrlInput.value.trim(),
       transcriptionModelId: speechTranscriptionModelInput.value.trim(),
@@ -4256,7 +4554,7 @@ export const initializeChat = async ({
     apiKeyInput.value = '';
     remoteApiKeyInput.value = '';
     speechApiKeyInput.value = '';
-    statusTarget.textContent = '已保存。';
+    statusTarget.textContent = modelId ? '已保存。' : '其他设置已保存；AI 对话模型尚未配置。';
     if (refreshCharacter || characterProfileChanged) {
       await refreshActiveCharacter();
     } else {
@@ -4442,9 +4740,11 @@ export const initializeChat = async ({
   });
   characterNameInput.addEventListener('change', () => {
     characterSearchNameInput.value = characterNameInput.value;
+    updatePreciseWakeWordFields();
   });
   characterSearchNameInput.addEventListener('change', () => {
     characterNameInput.value = characterSearchNameInput.value;
+    updatePreciseWakeWordFields();
     if (characterSearchNameInput.value.trim() && characterSearchNameInput.value.trim() !== '桌宠') {
       characterSearchStatus.textContent = '要联网查找这个角色吗？填写作品名会更准确。';
     }
@@ -4458,6 +4758,8 @@ export const initializeChat = async ({
     speechVolumeOutput.textContent = `${Math.round(volume * 100)}%`;
     speechPlayer.setVolume(volume);
   });
+  speechWakeWordSourceSelect.addEventListener('change', updatePreciseWakeWordFields);
+  speechCustomWakeWordInput.addEventListener('input', updatePreciseWakeWordFields);
   speechVolumeInput.addEventListener('change', () => {
     void (async () => {
       if (!api || !currentSpeechStatus) return;
@@ -4507,7 +4809,7 @@ export const initializeChat = async ({
           inputMode === 'full'
             ? '完全模式已开启：自动发送；2 秒内继续说会合并并重新思考。'
             : inputMode === 'half'
-              ? '精准模式已开启：必须在同一句中说“小猫 + 内容”才会自动发送。'
+              ? `精准模式已开启：必须在同一句中说“${currentPreciseWakeWord()} + 内容”才会自动发送。`
               : `已切换为手动模式：点击“说话”或按住 ${status.settings.pushToTalkKey} 录音，只会填入输入框。`;
       })();
     });
@@ -4515,52 +4817,70 @@ export const initializeChat = async ({
 
   const containsDraggedFiles = (event: DragEvent): boolean =>
     Array.from(event.dataTransfer?.types ?? []).includes('Files');
+  const containsDraggedText = (event: DragEvent): boolean =>
+    Array.from(event.dataTransfer?.types ?? []).includes('text/plain');
+  const containsSupportedDrop = (event: DragEvent): boolean =>
+    containsDraggedFiles(event) || containsDraggedText(event);
   const preventWindowFileNavigation = (event: DragEvent): void => {
     if (containsDraggedFiles(event)) event.preventDefault();
   };
-  const handleComposerDragOver = (event: DragEvent): void => {
-    if (!containsDraggedFiles(event)) return;
+  const handlePanelDragOver = (event: DragEvent): void => {
+    if (panelView !== 'chat' || !containsSupportedDrop(event)) return;
     event.preventDefault();
     event.stopPropagation();
     if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-    composer.classList.add('is-file-drop-active');
+    panel.classList.add('is-drop-active');
   };
-  const handleComposerDragLeave = (event: DragEvent): void => {
+  const handlePanelDragLeave = (event: DragEvent): void => {
     const next = event.relatedTarget;
-    if (!(next instanceof Node) || !composer.contains(next)) {
-      composer.classList.remove('is-file-drop-active');
+    if (!(next instanceof Node) || !panel.contains(next)) {
+      panel.classList.remove('is-drop-active');
     }
   };
-  const handleComposerDrop = (event: DragEvent): void => {
-    if (!containsDraggedFiles(event)) return;
+  const handlePanelDrop = (event: DragEvent): void => {
+    if (panelView !== 'chat' || !containsSupportedDrop(event)) return;
     event.preventDefault();
     event.stopPropagation();
-    composer.classList.remove('is-file-drop-active');
-    void (async () => {
-      if (!api) return;
-      if (!assistantModeEnabled) {
-        composerDropStatus.textContent = '请先开启工作模式，再拖入文件';
+    panel.classList.remove('is-drop-active');
+    if (!assistantModeEnabled) {
+      showComposerDropStatus('请先开启工作模式，再拖入文本或文件');
+      return;
+    }
+    if (!containsDraggedFiles(event)) {
+      const droppedText = event.dataTransfer?.getData('text/plain').trim() ?? '';
+      if (!droppedText) return;
+      const separator = input.value && !input.value.endsWith('\n') ? '\n' : '';
+      const remainingLength = input.maxLength - input.value.length - separator.length;
+      if (remainingLength <= 0) {
+        showComposerDropStatus('输入内容已达到长度上限');
         return;
       }
+      input.value += `${separator}${droppedText.slice(0, remainingLength)}`;
+      input.focus();
+      showComposerDropStatus('已把拖入文本放进输入框');
+      return;
+    }
+    void (async () => {
+      if (!api) return;
       if (!assistantWorkspaceConfigured) {
-        composerDropStatus.textContent = '请先在设置中选择工作区';
+        showComposerDropStatus('请先在设置中选择工作区');
         return;
       }
       const files = Array.from(event.dataTransfer?.files ?? []);
       if (files.length === 0 || files.length > MAX_DROPPED_WORKSPACE_FILES) {
-        composerDropStatus.textContent = `一次最多拖入 ${MAX_DROPPED_WORKSPACE_FILES} 个文件`;
+        showComposerDropStatus(`一次最多拖入 ${MAX_DROPPED_WORKSPACE_FILES} 个文件`);
         return;
       }
       const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
       if (files.some((file) => file.size > MAX_DROPPED_WORKSPACE_FILE_BYTES)) {
-        composerDropStatus.textContent = '单个文件不能超过 16 MB';
+        showComposerDropStatus('单个文件不能超过 16 MB');
         return;
       }
       if (totalBytes > MAX_DROPPED_WORKSPACE_TOTAL_BYTES) {
-        composerDropStatus.textContent = '本次文件总大小不能超过 64 MB';
+        showComposerDropStatus('本次文件总大小不能超过 64 MB');
         return;
       }
-      composerDropStatus.textContent = '正在放入工作区…';
+      showComposerDropStatus('正在放入工作区…', 0);
       try {
         const result = await api.importDroppedWorkspaceFiles({
           assistantMode: assistantModeEnabled,
@@ -4571,18 +4891,18 @@ export const initializeChat = async ({
             })),
           ),
         });
-        composerDropStatus.textContent = result.message;
+        showComposerDropStatus(result.message);
         setReplyStatus(result.ok ? `已接收 ${result.imported.length} 个文件` : '文件未导入');
       } catch {
-        composerDropStatus.textContent = '文件导入失败，聊天仍可继续';
+        showComposerDropStatus('文件导入失败，聊天仍可继续');
       }
     })();
   };
   window.addEventListener('dragover', preventWindowFileNavigation);
   window.addEventListener('drop', preventWindowFileNavigation);
-  composer.addEventListener('dragover', handleComposerDragOver);
-  composer.addEventListener('dragleave', handleComposerDragLeave);
-  composer.addEventListener('drop', handleComposerDrop);
+  panel.addEventListener('dragover', handlePanelDragOver);
+  panel.addEventListener('dragleave', handlePanelDragLeave);
+  panel.addEventListener('drop', handlePanelDrop);
 
   soundButton.addEventListener('click', () => {
     setPanelExpanded(true, 'chat');
@@ -4648,10 +4968,6 @@ export const initializeChat = async ({
   closeSoundButton.addEventListener('click', closeDrawers);
   closeDebugButton.addEventListener('click', closeDrawers);
   closeSettingsButton.addEventListener('click', closeDrawers);
-  launcherButton.addEventListener('click', () => {
-    void showOpeningLineIfReady();
-    setPanelExpanded(true, 'chat');
-  });
   assistantModeButton.addEventListener('click', () => {
     assistantModeEnabled = !assistantModeEnabled;
     displayAssistantMode(
@@ -4677,10 +4993,6 @@ export const initializeChat = async ({
         assistantWorkspaceButton.disabled = false;
       }
     })();
-  });
-  collapseButton.addEventListener('click', () => {
-    closeDrawers();
-    setPanelExpanded(false);
   });
   memoryFilter.addEventListener('change', renderMemories);
   automaticMemoryInput.addEventListener('change', () => {
@@ -4876,6 +5188,27 @@ export const initializeChat = async ({
     connectionStatus.textContent = '';
     void updateSecretStatus();
   });
+  speechProviderSelect.addEventListener('change', () => {
+    speechApiKeyInput.value = '';
+    updateSpeechProviderFields(true);
+    speechStatus.textContent =
+      speechProviderSelect.value === 'fish-audio'
+        ? '启用后，待合成文字会发送到 Fish Audio；API Key 只保存在本机安全存储。'
+        : speechProviderSelect.value === 'genie-tts'
+          ? '只连接本机 Genie-TTS；请先在 Genie 中加载角色和参考音频。'
+          : '语音设置尚未保存。';
+  });
+  speechVoiceInput.addEventListener('input', () => {
+    updateSpeechProviderFields();
+  });
+  speechLanguageSelect.addEventListener('change', () => {
+    updateSpeechLanguageVisibility();
+    updateSpeechProviderFields();
+    if (speechLanguageSelect.value === 'custom') speechLanguageInput.focus();
+  });
+  for (const input of [speechBaseUrlInput, speechModelInput, speechLanguageInput]) {
+    input.addEventListener('input', () => updateSpeechProviderFields());
+  }
   allowRemoteComplexTasksInput.addEventListener('change', () => {
     updateCollaborationVisibility();
     void updateSecretStatus();
@@ -4899,11 +5232,35 @@ export const initializeChat = async ({
   });
   settingsPanel.addEventListener('submit', (event) => {
     event.preventDefault();
-    void saveSettings();
+    void (async () => {
+      saveButton.disabled = true;
+      showButtonFeedback(saveButton, '保存中…', 'pending');
+      try {
+        const saved = await saveSettings();
+        if (saved) {
+          showButtonFeedback(saveButton, '已保存 ✓', 'success', 1_500);
+        } else {
+          showButtonFeedback(saveButton, '保存失败', 'error', 1_500);
+        }
+      } catch {
+        settingsStatus.textContent = '保存失败，请重试。';
+        showButtonFeedback(saveButton, '保存失败', 'error', 1_500);
+      } finally {
+        saveButton.disabled = false;
+      }
+    })();
   });
   testButton.addEventListener('click', () => {
     void (async () => {
-      if (!api || !(await saveSettings(connectionStatus, false))) {
+      if (!api) {
+        return;
+      }
+      if (!modelInput.value.trim()) {
+        connectionStatus.textContent = '请填写 AI 对话模型名称。';
+        modelInput.focus();
+        return;
+      }
+      if (!(await saveSettings(connectionStatus, false))) {
         return;
       }
       connectionStatus.textContent = '正在测试连接…';
@@ -5001,7 +5358,9 @@ export const initializeChat = async ({
       if (!api) return;
       vTubeStudioConnectButton.disabled = true;
       displayVTubeStudioInventory();
+      showVTubeStudioSetupNotice();
       try {
+        setDisplayModeInputs('vtube-studio');
         const saved = await api.setVTubeStudioSettings({ settings: readVTubeStudioSettings() });
         if (!saved.ok) {
           vTubeStudioStatus.textContent = saved.message ?? 'VTube Studio 设置无法保存。';
@@ -5009,17 +5368,33 @@ export const initializeChat = async ({
         }
         let status = await api.getVTubeStudioStatus();
         displayVTubeStudioStatus(status);
+        if (status.authorized) {
+          const connected = await inspectSelectedVTubeStudio();
+          status = await api.getVTubeStudioStatus();
+          if (connected) {
+            await activateConnectedVTubeStudio();
+            return;
+          }
+          if (status.authorized) return;
+          vTubeStudioStatus.textContent = '授权已失效，正在重新请求 VTube Studio 授权…';
+        }
         if (!status.authorized) {
           vTubeStudioStatus.textContent = '请在 VTube Studio 弹窗中点“允许”…';
           const authorization = await api.authorizeVTubeStudio();
           if (!authorization.ok) {
+            if (authorization.reason === 'api-disabled') {
+              showVTubeStudioSetupNotice(authorization.reason);
+            } else if (authorization.reason === 'unavailable') {
+              showVTubeStudioSetupNotice(authorization.reason);
+            }
             vTubeStudioStatus.textContent = authorization.message ?? 'VTube Studio 授权未完成。';
             return;
           }
           status = await api.getVTubeStudioStatus();
           displayVTubeStudioStatus(status);
         }
-        await inspectSelectedVTubeStudio();
+        const connected = await inspectSelectedVTubeStudio();
+        if (connected) await activateConnectedVTubeStudio();
       } finally {
         vTubeStudioConnectButton.disabled = false;
       }
@@ -5055,9 +5430,12 @@ export const initializeChat = async ({
       vTubeStudioExpressionTestButton.disabled = true;
       vTubeStudioStatus.textContent = '正在发送本机惊讶表情测试…';
       try {
-        const sent = await api.presentInVTubeStudio({ emotion: 'surprised' });
-        if (!sent) {
-          vTubeStudioStatus.textContent = '测试未发送；请先授权并读取当前模型。';
+        const result = await api.presentInVTubeStudio({ emotion: 'surprised' });
+        if (!result.ok) {
+          vTubeStudioStatus.textContent =
+            result.reason === 'mapping-missing'
+              ? '当前模型没有可用的“惊讶”表情映射；请先逐个预览并保存映射。'
+              : (result.message ?? 'VTube Studio 表情测试未发送。');
           return;
         }
         vTubeStudioStatus.textContent = '惊讶表情已发送，3 秒后恢复中性。';
@@ -5080,7 +5458,7 @@ export const initializeChat = async ({
       vTubeStudioStatus.textContent =
         result.message ?? (result.ok ? '表情预览已开启。' : '预览失败。');
       vTubeStudioExpressionPreviewButton.disabled = false;
-      if (result.ok) setPanelExpanded(false);
+      if (result.ok) closeDrawers();
     })();
   });
   vTubeStudioExpressionRestoreButton.addEventListener('click', () => {
@@ -5091,7 +5469,81 @@ export const initializeChat = async ({
       vTubeStudioStatus.textContent =
         result.message ?? (result.ok ? '表情预览已关闭。' : '恢复失败。');
       vTubeStudioExpressionRestoreButton.disabled = false;
-      if (result.ok) setPanelExpanded(false);
+      if (result.ok) closeDrawers();
+    })();
+  });
+  vTubeStudioMapExpressionButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api || !currentVTubeStudioInventory) return;
+      const expression =
+        currentVTubeStudioInventory.expressions[Number(vTubeStudioExpressionSelect.value)];
+      const emotion = vTubeStudioEmotionSelect.value as CharacterEmotion;
+      if (!expression || !CHARACTER_EMOTIONS.includes(emotion)) return;
+      vTubeStudioEmotionMappings[emotion] = expression.file;
+      updateCurrentVTubeStudioModelMapping();
+      renderVTubeStudioMappings();
+      showButtonFeedback(vTubeStudioMapExpressionButton, '正在保存…', 'pending');
+      const result = await api.setVTubeStudioSettings({ settings: readVTubeStudioSettings() });
+      vTubeStudioStatus.textContent = result.ok
+        ? `已为当前模型确认“${expression.name}”对应 ${emotion}。`
+        : (result.message ?? 'VTube Studio 表情映射无法保存。');
+      showButtonFeedback(
+        vTubeStudioMapExpressionButton,
+        result.ok ? '已确认 ✓' : '保存失败',
+        result.ok ? 'success' : 'error',
+        1_200,
+      );
+    })();
+  });
+  vTubeStudioConfirmSuggestionsButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api || !currentVTubeStudioMapping) return;
+      vTubeStudioEmotionMappings = {
+        ...currentVTubeStudioMapping.suggestions.emotionExpressions,
+        ...vTubeStudioEmotionMappings,
+      };
+      vTubeStudioActionMappings = {
+        ...currentVTubeStudioMapping.suggestions.actionHotkeys,
+        ...vTubeStudioActionMappings,
+      };
+      if (!updateCurrentVTubeStudioModelMapping()) return;
+      renderVTubeStudioMappings();
+      showButtonFeedback(vTubeStudioConfirmSuggestionsButton, '正在保存…', 'pending');
+      const result = await api.setVTubeStudioSettings({ settings: readVTubeStudioSettings() });
+      vTubeStudioStatus.textContent = result.ok
+        ? `已确认“${currentVTubeStudioMapping.modelName}”的自动识别映射。`
+        : (result.message ?? '自动识别映射无法保存。');
+      showButtonFeedback(
+        vTubeStudioConfirmSuggestionsButton,
+        result.ok ? '已确认 ✓' : '保存失败',
+        result.ok ? 'success' : 'error',
+        1_200,
+      );
+    })();
+  });
+  vTubeStudioMapActionButton.addEventListener('click', () => {
+    void (async () => {
+      if (!api || !currentVTubeStudioInventory) return;
+      const action = vTubeStudioActionSelect.value;
+      const hotkeyId = vTubeStudioActionHotkeySelect.value;
+      const hotkey = currentVTubeStudioInventory.hotkeys.find(
+        (candidate) => candidate.hotkeyId === hotkeyId && candidate.type === 'TriggerAnimation',
+      );
+      if (!hotkey || (action !== 'nod' && action !== 'shake')) return;
+      vTubeStudioActionMappings[action] = hotkey.hotkeyId;
+      if (!updateCurrentVTubeStudioModelMapping()) return;
+      renderVTubeStudioMappings();
+      showButtonFeedback(vTubeStudioMapActionButton, '正在保存…', 'pending');
+      const result = await api.setVTubeStudioSettings({ settings: readVTubeStudioSettings() });
+      vTubeStudioStatus.textContent = result.ok
+        ? `已为当前模型确认“${hotkey.name}”对应 ${action}。`
+        : (result.message ?? 'VTube Studio 动作映射无法保存。');
+      showButtonFeedback(
+        vTubeStudioMapActionButton,
+        result.ok ? '已确认 ✓' : '保存失败',
+        result.ok ? 'success' : 'error',
+        1_200,
+      );
     })();
   });
   exportLocalVoiceButton.addEventListener('click', () => {
@@ -5117,11 +5569,6 @@ export const initializeChat = async ({
     operation: () => ReturnType<NonNullable<typeof api>['openSpeechTrainingSources']>,
   ): Promise<void> => {
     if (!api) return;
-    if (!speechTrainingRightsInput.checked) {
-      speechTrainingStatus.textContent = '请先确认声音素材的使用权。';
-      speechTrainingRightsInput.focus();
-      return;
-    }
     button.disabled = true;
     try {
       const result = await operation();
@@ -5136,13 +5583,11 @@ export const initializeChat = async ({
   };
   openSpeechTrainingSourcesButton.addEventListener('click', () => {
     void runSpeechTrainingAction(openSpeechTrainingSourcesButton, () =>
-      api!.openSpeechTrainingSources({ confirmedRights: true }),
+      api!.openSpeechTrainingSources(),
     );
   });
   launchSpeechTrainerButton.addEventListener('click', () => {
-    void runSpeechTrainingAction(launchSpeechTrainerButton, () =>
-      api!.launchSpeechTrainer({ confirmedRights: true }),
-    );
+    void runSpeechTrainingAction(launchSpeechTrainerButton, () => api!.launchSpeechTrainer());
   });
   importLive2DModelButton.addEventListener('click', () => {
     void (async () => {
@@ -5197,8 +5642,7 @@ export const initializeChat = async ({
       const result = await api.clearConversationHistory();
       if (result.ok) {
         messages = [];
-        subtitle.hidden = true;
-        subtitle.textContent = '';
+        activeReply = '';
         setReplyStatus('对话已清空');
         renderHistory();
       }
@@ -5251,9 +5695,7 @@ export const initializeChat = async ({
     openingLineGeneration += 1;
     activeReply = '';
     input.value = '';
-    resizeComposer();
-    subtitle.hidden = false;
-    subtitle.textContent = '';
+    renderConversationTimeline();
     setReplyStatus('正在思考…');
     setGenerating(true);
     void getPresentation()?.setState('thinking');
@@ -5282,6 +5724,8 @@ export const initializeChat = async ({
       });
   });
 
+  setPanelExpanded(true, 'chat');
+
   if (api) {
     try {
       const [loadedMessages, loadedMemories] = await Promise.all([
@@ -5297,8 +5741,8 @@ export const initializeChat = async ({
       void showOpeningLineIfReady();
       idleCompanion.start();
     } catch {
-      subtitle.hidden = false;
-      subtitle.textContent = '无法读取本地对话设置。';
+      activeReply = '无法读取本地对话设置。';
+      renderConversationTimeline();
     }
   } else {
     input.disabled = true;
@@ -5314,6 +5758,7 @@ export const initializeChat = async ({
 
   return () => {
     controllerDisposed = true;
+    if (composerDropStatusTimer !== undefined) window.clearTimeout(composerDropStatusTimer);
     pushToTalkPressed = false;
     if (microphoneRecorder?.state === 'recording') microphoneRecorder.stop();
     releaseMicrophone();
@@ -5336,9 +5781,9 @@ export const initializeChat = async ({
     windowScaleSync?.dispose();
     window.removeEventListener('dragover', preventWindowFileNavigation);
     window.removeEventListener('drop', preventWindowFileNavigation);
-    composer.removeEventListener('dragover', handleComposerDragOver);
-    composer.removeEventListener('dragleave', handleComposerDragLeave);
-    composer.removeEventListener('drop', handleComposerDrop);
+    panel.removeEventListener('dragover', handlePanelDragOver);
+    panel.removeEventListener('dragleave', handlePanelDragLeave);
+    panel.removeEventListener('drop', handlePanelDrop);
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
     shell.remove();

@@ -33,6 +33,7 @@ describe('bundled VTube Studio model installer', () => {
     await writeFile(path.join(source, 'model', 'source.psd'), 'excluded');
     const installer = new BundledVTubeModelInstaller(source, [steam]);
 
+    await expect(installer.isAvailable()).resolves.toBe(true);
     await expect(installer.install()).resolves.toMatchObject({ ok: true });
     await expect(
       readFile(path.join(destination, 'FPNF-Kitten', 'model', 'kitten.moc3'), 'utf8'),
@@ -45,6 +46,7 @@ describe('bundled VTube Studio model installer', () => {
   it('fails closed when the release contains no model manifest', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'fpnf-vtube-installer-'));
     const installer = new BundledVTubeModelInstaller(directory, [path.join(directory, 'Steam')]);
+    await expect(installer.isAvailable()).resolves.toBe(false);
     await expect(installer.install()).resolves.toEqual({
       ok: false,
       message: '安装包中没有可再分发的 VTube Studio 模型。',

@@ -40,7 +40,7 @@ describe('conversation IPC validation', () => {
     expect(() =>
       parseStartConversationInput({
         requestId: 'chat_1',
-        message: 'x'.repeat(8_001),
+        message: 'x'.repeat(16_001),
         availableActions: [],
       }),
     ).toThrow();

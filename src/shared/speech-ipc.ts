@@ -1,10 +1,30 @@
-export const SPEECH_PROVIDER_IDS = ['disabled', 'openai-compatible'] as const;
+export const SPEECH_PROVIDER_IDS = [
+  'disabled',
+  'openai-compatible',
+  'genie-tts',
+  'fish-audio',
+] as const;
 export type SpeechProviderId = (typeof SPEECH_PROVIDER_IDS)[number];
+
+export const BUNDLED_IREINA_SPEECH_PRESET = Object.freeze({
+  providerId: 'openai-compatible',
+  baseUrl: 'http://127.0.0.1:9881/v1',
+  engineDisplayName: 'Style-Bert-VITS2',
+  voiceDisplayName: '伊蕾娜',
+  modelId: 'style-bert-vits2',
+  voiceId: 'ireina',
+  language: 'ja-JP',
+  responseFormat: 'wav',
+  speed: 0.9,
+} as const);
 
 export const SPEECH_AUDIO_FORMATS = ['wav', 'mp3', 'opus', 'aac', 'flac'] as const;
 export type SpeechAudioFormat = (typeof SPEECH_AUDIO_FORMATS)[number];
 export const SPEECH_INPUT_MODES = ['full', 'half', 'manual'] as const;
 export type SpeechInputMode = (typeof SPEECH_INPUT_MODES)[number];
+export const SPEECH_WAKE_WORD_SOURCES = ['character-name', 'custom'] as const;
+export type SpeechWakeWordSource = (typeof SPEECH_WAKE_WORD_SOURCES)[number];
+export const MAX_SPEECH_WAKE_WORD_LENGTH = 32;
 export const SPEECH_PUSH_TO_TALK_KEYS = [
   'F6',
   'F7',
@@ -35,29 +55,39 @@ export interface SpeechSettings {
   volume: number;
   inputEnabled: boolean;
   inputMode: SpeechInputMode;
+  wakeWordSource: SpeechWakeWordSource;
+  customWakeWord: string;
   pushToTalkKey: SpeechPushToTalkKey;
   transcriptionBaseUrl: string;
   transcriptionModelId: string;
   transcriptionLanguage: string;
 }
 
-export const DEFAULT_SPEECH_SETTINGS: Readonly<SpeechSettings> = Object.freeze({
+export const createInitialSpeechSettings = (bundledVoiceAvailable: boolean): SpeechSettings => ({
   enabled: false,
-  providerId: 'openai-compatible',
-  baseUrl: 'http://127.0.0.1:9881/v1',
-  modelId: 'ireina',
-  voiceId: 'ireina',
-  language: 'ja-JP',
-  responseFormat: 'wav',
-  speed: 0.9,
+  providerId: bundledVoiceAvailable ? BUNDLED_IREINA_SPEECH_PRESET.providerId : 'disabled',
+  baseUrl: bundledVoiceAvailable
+    ? BUNDLED_IREINA_SPEECH_PRESET.baseUrl
+    : 'http://127.0.0.1:8000/v1',
+  modelId: bundledVoiceAvailable ? BUNDLED_IREINA_SPEECH_PRESET.modelId : '',
+  voiceId: bundledVoiceAvailable ? BUNDLED_IREINA_SPEECH_PRESET.voiceId : '',
+  language: BUNDLED_IREINA_SPEECH_PRESET.language,
+  responseFormat: BUNDLED_IREINA_SPEECH_PRESET.responseFormat,
+  speed: BUNDLED_IREINA_SPEECH_PRESET.speed,
   volume: 0.6,
   inputEnabled: false,
   inputMode: 'manual',
+  wakeWordSource: 'character-name',
+  customWakeWord: '',
   pushToTalkKey: 'F8',
   transcriptionBaseUrl: 'http://127.0.0.1:9880/v1',
   transcriptionModelId: 'SenseVoiceSmall',
   transcriptionLanguage: 'zh-CN',
 });
+
+export const DEFAULT_SPEECH_SETTINGS: Readonly<SpeechSettings> = Object.freeze(
+  createInitialSpeechSettings(false),
+);
 
 export interface SpeechProviderCapability {
   providerId: SpeechProviderId;
@@ -163,6 +193,8 @@ export const parseSpeechSettings = (value: unknown): SpeechSettings => {
       'volume',
       'inputEnabled',
       'inputMode',
+      'wakeWordSource',
+      'customWakeWord',
       'pushToTalkKey',
       'transcriptionBaseUrl',
       'transcriptionModelId',
@@ -198,6 +230,13 @@ export const parseSpeechSettings = (value: unknown): SpeechSettings => {
     (record.inputMode !== undefined &&
       (typeof record.inputMode !== 'string' ||
         !SPEECH_INPUT_MODES.includes(record.inputMode as SpeechInputMode))) ||
+    (record.wakeWordSource !== undefined &&
+      (typeof record.wakeWordSource !== 'string' ||
+        !SPEECH_WAKE_WORD_SOURCES.includes(record.wakeWordSource as SpeechWakeWordSource))) ||
+    (record.customWakeWord !== undefined &&
+      (typeof record.customWakeWord !== 'string' ||
+        record.customWakeWord.trim().length > MAX_SPEECH_WAKE_WORD_LENGTH ||
+        containsControlCharacters(record.customWakeWord.trim()))) ||
     (record.pushToTalkKey !== undefined &&
       (typeof record.pushToTalkKey !== 'string' ||
         !SPEECH_PUSH_TO_TALK_KEYS.includes(record.pushToTalkKey as SpeechPushToTalkKey))) ||
@@ -224,6 +263,14 @@ export const parseSpeechSettings = (value: unknown): SpeechSettings => {
     typeof record.inputMode === 'string'
       ? (record.inputMode as SpeechInputMode)
       : DEFAULT_SPEECH_SETTINGS.inputMode;
+  const wakeWordSource =
+    typeof record.wakeWordSource === 'string'
+      ? (record.wakeWordSource as SpeechWakeWordSource)
+      : DEFAULT_SPEECH_SETTINGS.wakeWordSource;
+  const customWakeWord =
+    typeof record.customWakeWord === 'string'
+      ? record.customWakeWord.trim()
+      : DEFAULT_SPEECH_SETTINGS.customWakeWord;
   const pushToTalkKey =
     typeof record.pushToTalkKey === 'string'
       ? (record.pushToTalkKey as SpeechPushToTalkKey)
@@ -247,6 +294,12 @@ export const parseSpeechSettings = (value: unknown): SpeechSettings => {
   if (inputEnabled && !transcriptionModelId) {
     throw new Error('Enabled speech input requires a transcription model.');
   }
+  if (
+    wakeWordSource === 'custom' &&
+    (!customWakeWord || !/[^\s,，。.!！?？:：;；、~～-]/u.test(customWakeWord))
+  ) {
+    throw new Error('A custom precise-listening name is required.');
+  }
   return {
     enabled: record.enabled,
     providerId,
@@ -259,6 +312,8 @@ export const parseSpeechSettings = (value: unknown): SpeechSettings => {
     volume,
     inputEnabled,
     inputMode,
+    wakeWordSource,
+    customWakeWord,
     pushToTalkKey,
     transcriptionBaseUrl,
     transcriptionModelId,

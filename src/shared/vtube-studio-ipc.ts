@@ -9,6 +9,19 @@ export interface VTubeStudioSettings {
   enabled: boolean;
   port: number;
   mouseTrackingEnabled: boolean;
+  emotionExpressions: Partial<Record<CharacterEmotion, string>>;
+  modelMappings?: Record<string, VTubeStudioModelMapping>;
+}
+
+export interface VTubeStudioModelMapping {
+  modelName: string;
+  emotionExpressions: Partial<Record<CharacterEmotion, string>>;
+  actionHotkeys: Record<string, string>;
+}
+
+export interface VTubeStudioModelMappingSuggestion {
+  emotionExpressions: Partial<Record<CharacterEmotion, string>>;
+  actionHotkeys: Record<string, string>;
 }
 
 export type VTubeStudioConnectionState =
@@ -62,6 +75,7 @@ export interface VTubeStudioStatus {
   settings: VTubeStudioSettings;
   connection: VTubeStudioConnectionState;
   authorized: boolean;
+  bundledModelAvailable: boolean;
   detail: string;
 }
 
@@ -70,8 +84,22 @@ export interface VTubeStudioOperationResult {
   message?: string;
 }
 
+export type VTubeStudioConnectionReason =
+  'authorized' | 'api-disabled' | 'unavailable' | 'authorization-denied';
+
+export interface VTubeStudioAuthorizationResult extends VTubeStudioOperationResult {
+  reason: VTubeStudioConnectionReason;
+}
+
 export interface VTubeStudioInspectResult extends VTubeStudioOperationResult {
+  reason?: VTubeStudioConnectionReason;
   inventory?: VTubeStudioInventory;
+  mapping?: {
+    modelId: string;
+    modelName: string;
+    confirmed?: VTubeStudioModelMapping;
+    suggestions: VTubeStudioModelMappingSuggestion;
+  };
 }
 
 export interface SetVTubeStudioSettingsInput {
@@ -84,6 +112,19 @@ export interface VTubeStudioPresentationInput {
   action?: string;
 }
 
+export type VTubeStudioPresentationReason =
+  | 'presented'
+  | 'disabled'
+  | 'not-authorized'
+  | 'model-not-loaded'
+  | 'mapping-missing'
+  | 'connection-failed'
+  | 'invalid-intent';
+
+export interface VTubeStudioPresentationResult extends VTubeStudioOperationResult {
+  reason: VTubeStudioPresentationReason;
+}
+
 export type VTubeStudioExpressionPreviewInput =
   { active: true; expressionIndex: number } | { active: false };
 
@@ -91,6 +132,8 @@ export const DEFAULT_VTUBE_STUDIO_SETTINGS: VTubeStudioSettings = Object.freeze(
   enabled: false,
   port: DEFAULT_VTUBE_STUDIO_PORT,
   mouseTrackingEnabled: false,
+  emotionExpressions: Object.freeze({}),
+  modelMappings: Object.freeze({}),
 });
 
 const asRecord = (value: unknown, label: string): Record<string, unknown> => {
@@ -103,12 +146,98 @@ const asRecord = (value: unknown, label: string): Record<string, unknown> => {
 const PRESENTATION_STATES = new Set<CharacterPresentationState>(['idle', 'thinking', 'talking']);
 const EMOTIONS = new Set<string>(CHARACTER_EMOTIONS);
 const ACTION_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const containsControlCharacters = (value: string): boolean =>
+  Array.from(value).some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f;
+  });
+
+const parseEmotionExpressions = (value: unknown): Partial<Record<CharacterEmotion, string>> => {
+  const rawEmotionExpressions = asRecord(value ?? {}, 'VTube Studio emotion expression mappings');
+  if (Object.keys(rawEmotionExpressions).length > CHARACTER_EMOTIONS.length) {
+    throw new Error('Too many VTube Studio emotion expression mappings.');
+  }
+  const emotionExpressions: Partial<Record<CharacterEmotion, string>> = {};
+  for (const [emotion, expressionFile] of Object.entries(rawEmotionExpressions)) {
+    if (
+      !EMOTIONS.has(emotion) ||
+      typeof expressionFile !== 'string' ||
+      expressionFile.length > 256 ||
+      !expressionFile.toLowerCase().endsWith('.exp3.json') ||
+      expressionFile.includes('/') ||
+      expressionFile.includes('\\') ||
+      containsControlCharacters(expressionFile)
+    ) {
+      throw new Error('The VTube Studio emotion expression mapping is invalid.');
+    }
+    emotionExpressions[emotion as CharacterEmotion] = expressionFile;
+  }
+  return emotionExpressions;
+};
+
+const parseModelMappings = (value: unknown): Record<string, VTubeStudioModelMapping> => {
+  const rawMappings = asRecord(value ?? {}, 'VTube Studio model mappings');
+  if (Object.keys(rawMappings).length > 32) {
+    throw new Error('Too many VTube Studio model mappings.');
+  }
+  const mappings: Record<string, VTubeStudioModelMapping> = {};
+  for (const [modelId, rawMapping] of Object.entries(rawMappings)) {
+    if (
+      modelId.length < 1 ||
+      modelId.length > 128 ||
+      containsControlCharacters(modelId) ||
+      modelId.includes('/') ||
+      modelId.includes('\\')
+    ) {
+      throw new Error('The VTube Studio model ID is invalid.');
+    }
+    const mapping = asRecord(rawMapping, 'VTube Studio model mapping');
+    if (
+      Object.keys(mapping).some(
+        (key) => !['modelName', 'emotionExpressions', 'actionHotkeys'].includes(key),
+      ) ||
+      typeof mapping.modelName !== 'string' ||
+      mapping.modelName.length > 256 ||
+      containsControlCharacters(mapping.modelName)
+    ) {
+      throw new Error('The VTube Studio model mapping is invalid.');
+    }
+    const rawActionHotkeys = asRecord(mapping.actionHotkeys ?? {}, 'VTube Studio action mappings');
+    if (Object.keys(rawActionHotkeys).length > 32) {
+      throw new Error('Too many VTube Studio action mappings.');
+    }
+    const actionHotkeys: Record<string, string> = {};
+    for (const [action, hotkeyId] of Object.entries(rawActionHotkeys)) {
+      if (
+        !ACTION_PATTERN.test(action) ||
+        typeof hotkeyId !== 'string' ||
+        hotkeyId.length < 1 ||
+        hotkeyId.length > 256 ||
+        containsControlCharacters(hotkeyId)
+      ) {
+        throw new Error('The VTube Studio action mapping is invalid.');
+      }
+      actionHotkeys[action] = hotkeyId;
+    }
+    mappings[modelId] = {
+      modelName: mapping.modelName,
+      emotionExpressions: parseEmotionExpressions(mapping.emotionExpressions),
+      actionHotkeys,
+    };
+  }
+  return mappings;
+};
 
 export const parseVTubeStudioSettings = (value: unknown): VTubeStudioSettings => {
   const record = asRecord(value, 'VTube Studio settings');
   if (
     Object.keys(record).some(
-      (key) => key !== 'enabled' && key !== 'port' && key !== 'mouseTrackingEnabled',
+      (key) =>
+        key !== 'enabled' &&
+        key !== 'port' &&
+        key !== 'mouseTrackingEnabled' &&
+        key !== 'emotionExpressions' &&
+        key !== 'modelMappings',
     )
   ) {
     throw new Error('The VTube Studio settings contain an unknown field.');
@@ -129,10 +258,13 @@ export const parseVTubeStudioSettings = (value: unknown): VTubeStudioSettings =>
   ) {
     throw new Error('The VTube Studio mouse tracking switch must be boolean.');
   }
+  const emotionExpressions = parseEmotionExpressions(record.emotionExpressions);
   return {
     enabled: record.enabled,
     port: record.port as number,
     mouseTrackingEnabled: record.mouseTrackingEnabled ?? false,
+    emotionExpressions,
+    modelMappings: parseModelMappings(record.modelMappings),
   };
 };
 

@@ -3,6 +3,9 @@ import { describe, expect, it } from 'vitest';
 import type { SpeechAudioChunk, SpeechOutput } from '../src/core/speech/contracts';
 import { SpeechTurnCoordinator } from '../src/core/speech/contracts';
 import {
+  BUNDLED_IREINA_SPEECH_PRESET,
+  createInitialSpeechSettings,
+  DEFAULT_SPEECH_SETTINGS,
   parseCancelSpeechInput,
   parseSetSpeechSecretInput,
   parseSpeechSettings,
@@ -23,6 +26,30 @@ class FakeSpeechOutput implements SpeechOutput {
 }
 
 describe('speech contracts', () => {
+  it('keeps private bundled voice defaults separate from the public no-assets default', () => {
+    expect(BUNDLED_IREINA_SPEECH_PRESET).toMatchObject({
+      engineDisplayName: 'Style-Bert-VITS2',
+      voiceDisplayName: '伊蕾娜',
+      modelId: 'style-bert-vits2',
+      voiceId: 'ireina',
+      language: 'ja-JP',
+    });
+    expect(DEFAULT_SPEECH_SETTINGS).toMatchObject({
+      enabled: false,
+      providerId: 'disabled',
+      modelId: '',
+      voiceId: '',
+    });
+    expect(createInitialSpeechSettings(false)).toEqual(DEFAULT_SPEECH_SETTINGS);
+    expect(createInitialSpeechSettings(true)).toMatchObject({
+      providerId: BUNDLED_IREINA_SPEECH_PRESET.providerId,
+      baseUrl: BUNDLED_IREINA_SPEECH_PRESET.baseUrl,
+      modelId: BUNDLED_IREINA_SPEECH_PRESET.modelId,
+      voiceId: BUNDLED_IREINA_SPEECH_PRESET.voiceId,
+      language: BUNDLED_IREINA_SPEECH_PRESET.language,
+    });
+  });
+
   it('streams fake audio and keeps stopping safe when speech is unavailable', async () => {
     const output = new FakeSpeechOutput();
     const coordinator = new SpeechTurnCoordinator(output);
@@ -35,6 +62,30 @@ describe('speech contracts', () => {
     expect(chunks[0]?.text).toBe('你好');
     await expect(coordinator.stop()).resolves.toBeUndefined();
     expect(output.stopped).toBeGreaterThan(0);
+  });
+
+  it('validates a precise-listening name source and bounded custom name', () => {
+    expect(
+      parseSpeechSettings({
+        ...DEFAULT_SPEECH_SETTINGS,
+        wakeWordSource: 'custom',
+        customWakeWord: '阿响',
+      }),
+    ).toMatchObject({ wakeWordSource: 'custom', customWakeWord: '阿响' });
+    expect(() =>
+      parseSpeechSettings({
+        ...DEFAULT_SPEECH_SETTINGS,
+        wakeWordSource: 'custom',
+        customWakeWord: '   ',
+      }),
+    ).toThrow();
+    expect(() =>
+      parseSpeechSettings({
+        ...DEFAULT_SPEECH_SETTINGS,
+        wakeWordSource: 'custom',
+        customWakeWord: 'a'.repeat(33),
+      }),
+    ).toThrow();
   });
 
   it('validates bounded speech settings, secrets and request IDs', () => {

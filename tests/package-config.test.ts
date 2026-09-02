@@ -13,6 +13,7 @@ interface PackageManifest {
     npmRebuild?: unknown;
     asarUnpack?: unknown;
     files?: unknown;
+    extraResources?: unknown;
     win?: { target?: unknown; icon?: unknown; executableName?: unknown };
   };
 }
@@ -21,7 +22,7 @@ describe('Windows portable package configuration', () => {
   it('keeps application dependencies inside ASAR and excludes development-only path trees', () => {
     const manifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as PackageManifest;
 
-    expect(manifest.version).toBe('1.6.0');
+    expect(manifest.version).toBe('1.7.0');
     expect(manifest.productName).toBe('For People No Friend');
     expect(manifest.build?.appId).toBe('com.ph1gros.forpeoplenofriend');
     expect(manifest.build?.asar).toEqual({ smartUnpack: false });
@@ -35,6 +36,35 @@ describe('Windows portable package configuration', () => {
     expect(manifest.build?.win?.executableName).toBe('For People No Friend');
     expect(manifest.build?.files).toEqual(
       expect.arrayContaining(['build/icon.png', '!**/*.map', '!**/*.d.ts', '!**/*.ts']),
+    );
+    expect(manifest.build?.files).not.toContain('assets/**/*');
+    expect(manifest.build?.files).toEqual(
+      expect.arrayContaining([
+        '!dist/renderer/models/local/model.json',
+        '!dist/renderer/models/local/heibaiMaoMao/**/*',
+        '!dist/renderer/models/local/kaltsit-work/**/*',
+        '!dist/renderer/models/local/凯尔希live2d/**/*',
+      ]),
+    );
+    expect(manifest.build?.extraResources).toEqual(
+      expect.arrayContaining([
+        {
+          from: 'resources/voice-runtime/ireina_tts_service.py',
+          to: 'voice-runtime/ireina_tts_service.py',
+        },
+        {
+          from: 'resources/speech-input-runtime/sensevoice_asr_service.py',
+          to: 'speech-input-runtime/sensevoice_asr_service.py',
+        },
+      ]),
+    );
+    expect(manifest.build?.extraResources).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ from: 'resources/character-suite' })]),
+    );
+    expect(manifest.build?.extraResources).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: expect.stringContaining('PRIVATE_ASSET_NOTICE') }),
+      ]),
     );
   });
 });

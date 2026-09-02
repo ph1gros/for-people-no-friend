@@ -86,6 +86,20 @@ describe('VTube Studio idle motion', () => {
     expect(at(motion, 2_200) - at(baseline, 2_200)).toBeCloseTo(0);
   });
 
+  it('synthesizes one bounded head shake and returns to idle', () => {
+    const baseline = new VTubeStudioIdleMotion(0, () => 0.5);
+    const motion = new VTubeStudioIdleMotion(0, () => 0.5);
+    expect(motion.triggerAction('shake', 1_000)).toBe(true);
+
+    const at = (source: VTubeStudioIdleMotion, now: number): number =>
+      Object.fromEntries(source.frame(now, 'idle').map(({ id, value }) => [id, value])).FaceAngleX;
+    expect(at(motion, 1_175) - at(baseline, 1_175)).toBeGreaterThan(1.5);
+    expect(at(motion, 1_525) - at(baseline, 1_525)).toBeLessThan(-4);
+    expect(at(motion, 1_875) - at(baseline, 1_875)).toBeGreaterThan(4);
+    expect(at(motion, 2_225) - at(baseline, 2_225)).toBeLessThan(-1.5);
+    expect(at(motion, 2_400) - at(baseline, 2_400)).toBeCloseTo(0);
+  });
+
   it('occasionally nods while idle but yields to mouse tracking and conversation', () => {
     const idle = new VTubeStudioIdleMotion(0, () => 0);
     const tracked = new VTubeStudioIdleMotion(0, () => 0);

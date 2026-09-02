@@ -5,6 +5,7 @@ import type { CharacterProfile } from '../../core/conversation/character-profile
 const normalize = (value: string): string => value.normalize('NFKC').trim().toLowerCase();
 
 export const resolveCharacterMemoryNamespace = (profile: CharacterProfile): string => {
+  if (profile.id === 'default-character') return 'default-character';
   const canonicalName = normalize(profile.lore?.canonicalName ?? profile.name);
   const sourceWork = normalize(profile.lore?.sourceWork ?? '');
   if (

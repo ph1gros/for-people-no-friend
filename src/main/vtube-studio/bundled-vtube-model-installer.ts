@@ -68,10 +68,15 @@ export class BundledVTubeModelInstaller {
     private readonly steamRootCandidates: readonly string[],
   ) {}
 
+  public async isAvailable(): Promise<boolean> {
+    const sourceRoot = await existingDirectory(this.sourceRoot);
+    return Boolean(sourceRoot && (await this.containsModelManifest(sourceRoot)));
+  }
+
   public async install(): Promise<VTubeStudioOperationResult> {
     try {
       const sourceRoot = await existingDirectory(this.sourceRoot);
-      if (!sourceRoot || !(await this.containsModelManifest(sourceRoot))) {
+      if (!sourceRoot || !(await this.isAvailable())) {
         return { ok: false, message: '安装包中没有可再分发的 VTube Studio 模型。' };
       }
       const destinationParent = await this.findVTubeModelDirectory();

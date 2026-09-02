@@ -1,7 +1,7 @@
 {
   "name": "for-people-no-friend",
   "productName": "For People No Friend",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "description": "A local-first Windows AI character companion built with Electron, TypeScript, and Vite.",
   "main": "dist-electron/main/index.js",
@@ -69,9 +69,14 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
-      "assets/**/*",
       "build/icon.png",
       "package.json",
+      "!dist/renderer/models/local/model.json",
+      "!dist/renderer/models/local/heibaiMaoMao/**/*",
+      "!dist/renderer/models/local/kaltsit-work/**/*",
+      "!dist/renderer/models/local/凯尔希live2d/**/*",
+      "!dist/renderer/models/kaltsit-work.example.json",
+      "!dist/renderer/models/model.example.json",
       "!**/*.map",
       "!**/*.d.ts",
       "!**/*.ts"
@@ -86,8 +91,12 @@
         "to": "native/vtube-studio-spout/LICENSE.spout2.txt"
       },
       {
-        "from": "resources/character-suite",
-        "to": "character-suite"
+        "from": "resources/voice-runtime/ireina_tts_service.py",
+        "to": "voice-runtime/ireina_tts_service.py"
+      },
+      {
+        "from": "resources/speech-input-runtime/sensevoice_asr_service.py",
+        "to": "speech-input-runtime/sensevoice_asr_service.py"
       }
     ],
     "win": {

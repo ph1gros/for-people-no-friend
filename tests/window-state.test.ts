@@ -17,9 +17,9 @@ describe('window state', () => {
   it('places a new deskpet near the bottom-right of the primary work area', () => {
     expect(createDefaultWindowState(primaryWorkArea)).toEqual({
       version: 5,
-      x: 1590,
-      y: 574,
-      scale: 0.85,
+      x: 1615,
+      y: 610,
+      scale: 0.78,
     });
   });
 
@@ -82,14 +82,14 @@ describe('window state', () => {
     });
   });
 
-  it('keeps chat beside Live2D and gives settings a dedicated large layout', () => {
+  it('uses the same large window for conversation and settings', () => {
     expect(stateToBounds({ version: 5, x: 120, y: 80, scale: 0.85 }, true)).toEqual({
       x: 120,
       y: 80,
-      width: 612,
-      height: 442,
+      width: 935,
+      height: 646,
     });
-    expect(boundsToState({ x: 120, y: 80, width: 612, height: 442 })).toEqual({
+    expect(boundsToState({ x: 120, y: 80, width: 935, height: 646 }, true)).toEqual({
       version: 5,
       x: 120,
       y: 80,
@@ -103,12 +103,12 @@ describe('window state', () => {
     });
   });
 
-  it('migrates old default scales onto the new 85 percent baseline', () => {
+  it('migrates old default scales onto the new 78 percent baseline', () => {
     expect(parseWindowState({ version: 1, x: 10, y: 20, scale: 1 })).toEqual({
       version: 5,
       x: 10,
       y: 20,
-      scale: 0.85,
+      scale: 0.78,
     });
     expect(parseWindowState({ version: 2, x: 10, y: 20, scale: 1.2 })).toEqual({
       version: 5,
@@ -120,13 +120,13 @@ describe('window state', () => {
       version: 5,
       x: 10,
       y: 20,
-      scale: 0.85,
+      scale: 0.78,
     });
     expect(parseWindowState({ version: 4, x: 10, y: 20, scale: 0.8 })).toEqual({
       version: 5,
       x: 10,
       y: 20,
-      scale: 0.85,
+      scale: 0.78,
     });
   });
 });

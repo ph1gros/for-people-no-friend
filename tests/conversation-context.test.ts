@@ -42,6 +42,12 @@ describe('conversation context assembly', () => {
     expect(prompt).not.toContain('跨会话摘要');
   });
 
+  it('explains agreement and disagreement actions instead of exposing opaque English IDs', () => {
+    const prompt = buildConversationSystemPrompt(DEFAULT_CHARACTER_PROFILE, ['nod', 'shake']);
+    expect(prompt).toContain('nod：明确肯定、同意或赞成时点头');
+    expect(prompt).toContain('shake：明确否定、拒绝或不同意时摇头');
+  });
+
   it('adds temporary emotional guidance without turning it into relationship memory', () => {
     const prompt = buildConversationSystemPrompt(
       KALTSIT_CHARACTER_PROFILE,

@@ -15,7 +15,7 @@ V1.6 把程序从单一内嵌 Live2D 聊天桌宠扩展为本地角色服务：�
 ## 此公开包不包含
 
 - 小黑猫 / heibaiMaoMao VTube Studio 模型。
-- 伊雷娜训练音色、ONNX/Safetensors 权重、训练录音或训练环境。
+- 伊蕾娜训练音色、ONNX/Safetensors 权重、训练录音或训练环境。
 - 任何 API Key、VTube Studio 授权令牌、对话、记忆或本机工作区数据。
 
 上述两个二进制资源的公开再分发授权仍在确认，因此只保存在用户的私人“待授权”备份中。程序可使用用户自行合法取得并配置的 VTube Studio 模型和 OpenAI 兼容 TTS/ASR。

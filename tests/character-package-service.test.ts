@@ -5,7 +5,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { CharacterPackageManifest } from '../src/core/character/character-package';
-import { DEFAULT_CHARACTER_PROFILE } from '../src/core/conversation/character-profile';
+import {
+  DEFAULT_CHARACTER_PROFILE,
+  KALTSIT_CHARACTER_PROFILE,
+} from '../src/core/conversation/character-profile';
 import { createCharacterPackageArchive } from '../src/main/character/character-package-archive';
 import { inspectCharacterPackageArchive } from '../src/main/character/character-package-archive';
 import { CharacterPackageService } from '../src/main/character/character-package-service';
@@ -128,7 +131,7 @@ describe('character package service', () => {
     await writeFile(path.join(modelRoot, 'role', 'texture.png'), 'fake-texture');
     await writeFile(path.join(modelRoot, 'role', 'idle.motion3.json'), '{}');
     await writeFile(path.join(modelRoot, 'live2dcubismcore.min.js'), 'must-not-export');
-    const profiles = new CharacterProfileStore(directory);
+    const profiles = new CharacterProfileStore(directory, KALTSIT_CHARACTER_PROFILE);
     const service = new CharacterPackageService(directory, profiles, '1.4.0', modelRoot);
 
     const inspected = inspectCharacterPackageArchive((await service.exportActive()).bytes);

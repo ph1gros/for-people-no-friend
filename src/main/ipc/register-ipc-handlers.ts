@@ -100,10 +100,7 @@ import {
   parseImportDroppedWorkspaceFilesInput,
   parseResolveAssistantToolApprovalInput,
 } from '../../shared/assistant-tools-ipc';
-import {
-  parseConfirmAuthorizedVoiceUseInput,
-  type LocalAssetOperationResult,
-} from '../../shared/local-asset-ipc';
+import type { LocalAssetOperationResult } from '../../shared/local-asset-ipc';
 import type { LocalSpeechAssetService } from '../speech/local-speech-asset-service';
 import type { BundledVTubeModelInstaller } from '../vtube-studio/bundled-vtube-model-installer';
 
@@ -380,7 +377,7 @@ export const registerIpcHandlers = (
       return { workspaceConfigured: false, webAvailable: false, canceled: true };
     }
     const selection = await showOpenDialog(windows, {
-      title: '选择小猫可以处理的工作文件夹',
+      title: '选择助手可以处理的工作文件夹',
       properties: ['openDirectory'],
     });
     const selected = selection.filePaths[0];
@@ -943,13 +940,11 @@ export const registerIpcHandlers = (
       }
     },
   );
-  const openAuthorizedSpeechAsset = async (
-    input: unknown,
+  const openSpeechAsset = async (
     resolvePath: () => string,
     unavailableMessage: string,
   ): Promise<LocalAssetOperationResult> => {
     try {
-      parseConfirmAuthorizedVoiceUseInput(input);
       if (!localSpeechAssets) throw new Error(unavailableMessage);
       const errorMessage = await shell.openPath(resolvePath());
       if (errorMessage) throw new Error(errorMessage);
@@ -962,21 +957,16 @@ export const registerIpcHandlers = (
       };
     }
   };
-  ipcMain.handle(IPC_CHANNELS.openSpeechTrainingSources, (event, input: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.openSpeechTrainingSources, (event) => {
     requireTrustedSender(event, windows);
-    return openAuthorizedSpeechAsset(
-      input,
+    return openSpeechAsset(
       () => localSpeechAssets!.getTrainingSourcePath(),
       '训练音源文件夹不可用。',
     );
   });
-  ipcMain.handle(IPC_CHANNELS.launchSpeechTrainer, (event, input: unknown) => {
+  ipcMain.handle(IPC_CHANNELS.launchSpeechTrainer, (event) => {
     requireTrustedSender(event, windows);
-    return openAuthorizedSpeechAsset(
-      input,
-      () => localSpeechAssets!.getTrainerPath(),
-      '本地训练工具不可用。',
-    );
+    return openSpeechAsset(() => localSpeechAssets!.getTrainerPath(), '本地训练工具不可用。');
   });
   ipcMain.handle(IPC_CHANNELS.getViewerExStatus, (event) => {
     requireTrustedSender(event, windows);
@@ -997,9 +987,15 @@ export const registerIpcHandlers = (
     requireTrustedSender(event, windows);
     return viewerEx?.present(parseViewerExPresentationInput(input)) ?? false;
   });
-  ipcMain.handle(IPC_CHANNELS.getVTubeStudioStatus, (event) => {
+  ipcMain.handle(IPC_CHANNELS.getVTubeStudioStatus, async (event) => {
     requireTrustedSender(event, windows);
-    return vTubeStudio?.getStatus();
+    const status = await vTubeStudio?.getStatus();
+    return status
+      ? {
+          ...status,
+          bundledModelAvailable: (await bundledVTubeModel?.isAvailable()) ?? false,
+        }
+      : undefined;
   });
   ipcMain.handle(IPC_CHANNELS.launchVTubeStudio, async (event) => {
     requireTrustedSender(event, windows);
@@ -1059,6 +1055,12 @@ export const registerIpcHandlers = (
   });
   ipcMain.handle(IPC_CHANNELS.presentInVTubeStudio, (event, input: unknown) => {
     requireTrustedSender(event, windows);
-    return vTubeStudio?.present(parseVTubeStudioPresentationInput(input)) ?? false;
+    return (
+      vTubeStudio?.present(parseVTubeStudioPresentationInput(input)) ?? {
+        ok: false,
+        reason: 'connection-failed',
+        message: 'VTube Studio 适配器不可用。',
+      }
+    );
   });
 };

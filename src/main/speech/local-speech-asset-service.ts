@@ -11,6 +11,7 @@ import {
 import path from 'node:path';
 
 import type { LocalSpeechAssetStatus } from '../../shared/local-asset-ipc';
+import { BUNDLED_IREINA_SPEECH_PRESET } from '../../shared/speech-ipc';
 
 const VOICE_DIRECTORY_NAME = '伊雷娜音色_最终版';
 const TRAINING_DIRECTORY_NAME = 'style-bert-vits2-standalone';
@@ -80,7 +81,7 @@ export class LocalSpeechAssetService {
       this.isDirectory(this.getTrainingSourcePath()),
     ]);
     return {
-      voiceName: '伊雷娜（JP-Extra）',
+      voiceName: `${BUNDLED_IREINA_SPEECH_PRESET.voiceDisplayName}（JP-Extra）`,
       voiceAvailable:
         REQUIRED_VOICE_FILES.every((fileName) =>
           voiceFiles.some((file) => file.name === fileName),
@@ -111,7 +112,10 @@ export class LocalSpeechAssetService {
       throw new Error('当前本地音色成品不完整，无法导出。');
     }
     const exportedBytes = files.reduce((total, file) => total + file.bytes, 0);
-    const destination = await createUniqueDirectory(destinationRoot, 'FPNF-伊雷娜-JP-Extra-音色');
+    const destination = await createUniqueDirectory(
+      destinationRoot,
+      `FPNF-${BUNDLED_IREINA_SPEECH_PRESET.voiceDisplayName}-JP-Extra-音色`,
+    );
     try {
       for (const file of files) {
         await copyFile(file.source, path.join(destination, file.name));

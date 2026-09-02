@@ -502,7 +502,35 @@ describe('desktop integration boundaries', () => {
           ],
         }),
       ),
-    ).toEqual({ supported: true, sessionAvailable: true, source: 'chrome.exe' });
+    ).toEqual({
+      supported: true,
+      sessionAvailable: true,
+      playing: true,
+      title: 'Browser Video',
+      source: 'chrome.exe',
+    });
+    expect(
+      parseWindowsMediaStateOutput(
+        JSON.stringify({
+          supported: true,
+          sessions: [
+            {
+              current: true,
+              playing: true,
+              title: '新版网易云歌曲',
+              artist: '测试歌手',
+              source: 'com.ncm.desktop',
+            },
+          ],
+        }),
+      ),
+    ).toMatchObject({
+      sessionAvailable: true,
+      playing: true,
+      title: '新版网易云歌曲',
+      artist: '测试歌手',
+      source: 'com.ncm.desktop',
+    });
     expect(resolveSupportedMediaPlayer('SpotifyAB.SpotifyMusic!Spotify')?.name).toBe('Spotify');
     expect(resolveSupportedMediaPlayer('AppleInc.AppleMusic.exe')?.name).toBe('Apple Music');
     expect(() => parseWindowsMediaStateOutput('{"supported":"yes"}')).toThrow();
@@ -526,12 +554,31 @@ describe('desktop integration boundaries', () => {
     const next = buildWindowsMediaControlScript('TrySkipNextAsync');
 
     expect(playPause).toContain('$manager.GetSessions()');
-    expect(playPause).toContain('$supportedSourcePattern');
+    expect(playPause).toContain('$current = $manager.GetCurrentSession()');
+    expect(playPause).not.toContain('$supportedSourcePattern');
     expect(playPause).toContain('TryTogglePlayPauseAsync');
     expect(playPause).toContain('keybd_event(0xB3');
     expect(previous).toContain('keybd_event(0xB1');
     expect(next).toContain('keybd_event(0xB0');
     expect(playPause).not.toContain('Start-Process');
+  });
+
+  it('keeps a current NetEase session visible when other media sessions make the response large', () => {
+    const sessions = Array.from({ length: 16 }, (_value, index) => ({
+      current: index === 15,
+      playing: index === 15,
+      title: index === 15 ? '当前网易云歌曲' : `后台媒体 ${index} ${'曲'.repeat(300)}`,
+      artist: `测试歌手 ${'手'.repeat(300)}`,
+      source: index === 15 ? 'cloudmusic.exe' : `browser-${index}-${'x'.repeat(250)}.exe`,
+    }));
+
+    expect(
+      parseWindowsMediaStateOutput(JSON.stringify({ supported: true, sessions })),
+    ).toMatchObject({
+      playerId: 'netease-cloud-music',
+      playing: true,
+      title: '当前网易云歌曲',
+    });
   });
 
   it('does not invoke Windows media control on unsupported platforms', async () => {

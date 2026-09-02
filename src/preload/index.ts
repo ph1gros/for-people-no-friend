@@ -67,7 +67,6 @@ import type {
   ImportDroppedWorkspaceFilesInput,
   ResolveAssistantToolApprovalInput,
 } from '../shared/assistant-tools-ipc';
-import type { ConfirmAuthorizedVoiceUseInput } from '../shared/local-asset-ipc';
 
 const deskpetApi: DeskpetApi = Object.freeze({
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.getAppVersion) as Promise<string>,
@@ -364,12 +363,12 @@ const deskpetApi: DeskpetApi = Object.freeze({
     >,
   exportLocalVoice: () =>
     ipcRenderer.invoke(IPC_CHANNELS.exportLocalVoice) as ReturnType<DeskpetApi['exportLocalVoice']>,
-  openSpeechTrainingSources: (input: ConfirmAuthorizedVoiceUseInput) =>
-    ipcRenderer.invoke(IPC_CHANNELS.openSpeechTrainingSources, input) as ReturnType<
+  openSpeechTrainingSources: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.openSpeechTrainingSources) as ReturnType<
       DeskpetApi['openSpeechTrainingSources']
     >,
-  launchSpeechTrainer: (input: ConfirmAuthorizedVoiceUseInput) =>
-    ipcRenderer.invoke(IPC_CHANNELS.launchSpeechTrainer, input) as ReturnType<
+  launchSpeechTrainer: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.launchSpeechTrainer) as ReturnType<
       DeskpetApi['launchSpeechTrainer']
     >,
   getViewerExStatus: () =>

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type {
   OpenAICompatibleSpeechAdapter,
@@ -11,7 +11,7 @@ import type {
 import { normalizeJapaneseSpeechText, SpeechService } from '../src/main/speech/speech-service';
 import type { SecretStore } from '../src/main/security/secret-store';
 import type { SpeechConfigStore } from '../src/main/storage/speech-config-store';
-import type { SpeechSettings } from '../src/shared/speech-ipc';
+import { BUNDLED_IREINA_SPEECH_PRESET, type SpeechSettings } from '../src/shared/speech-ipc';
 
 const enabledSettings = (): SpeechSettings => ({
   enabled: true,
@@ -25,6 +25,8 @@ const enabledSettings = (): SpeechSettings => ({
   volume: 0.6,
   inputEnabled: true,
   inputMode: 'manual',
+  wakeWordSource: 'character-name',
+  customWakeWord: '',
   pushToTalkKey: 'F8',
   transcriptionBaseUrl: 'http://127.0.0.1:9880/v1',
   transcriptionModelId: 'SenseVoiceSmall',
@@ -60,6 +62,10 @@ describe('speech service', () => {
       {
         transcribe: async () => ({ text: '你好。' }),
       } as OpenAICompatibleTranscriptionAdapter,
+      undefined,
+      undefined,
+      {},
+      async () => true,
     );
 
     await expect(service.getStatus()).resolves.toMatchObject({
@@ -75,6 +81,93 @@ describe('speech service', () => {
     await expect(service.setSettings({ ...settings, enabled: false })).resolves.toEqual({
       ok: true,
     });
+  });
+
+  it('does not advertise local speech input when the configured service is not reachable', async () => {
+    const service = new SpeechService(
+      { get: async () => enabledSettings(), set: async () => undefined } as SpeechConfigStore,
+      { get: async () => undefined, has: async () => false } as unknown as SecretStore,
+      {
+        synthesize: async () => ({ audio: new Uint8Array([1]), mimeType: 'audio/wav' }),
+      } as OpenAICompatibleSpeechAdapter,
+      {
+        transcribe: async () => ({ text: '不应调用。' }),
+      } as OpenAICompatibleTranscriptionAdapter,
+      undefined,
+      undefined,
+      {},
+      async () => false,
+    );
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      input: {
+        available: false,
+        modes: [],
+        dataDestination: 'this-device',
+        detail: '本机语音识别服务未安装或未启动；文字聊天和语音输出不受影响。',
+      },
+    });
+  });
+
+  it('starts an optional local input runtime before probing continuous-listening readiness', async () => {
+    let runtimeStarted = false;
+    const ensureInputRuntime = vi.fn(async () => {
+      runtimeStarted = true;
+      return true;
+    });
+    const probeInputReadiness = vi.fn(async () => runtimeStarted);
+    const service = new SpeechService(
+      {
+        get: async () => ({ ...enabledSettings(), inputMode: 'full' }),
+        set: async () => undefined,
+      } as SpeechConfigStore,
+      { get: async () => undefined, has: async () => false } as unknown as SecretStore,
+      {
+        synthesize: async () => ({ audio: new Uint8Array([1]), mimeType: 'audio/wav' }),
+      } as OpenAICompatibleSpeechAdapter,
+      {
+        transcribe: async () => ({ text: '你好。' }),
+      } as OpenAICompatibleTranscriptionAdapter,
+      undefined,
+      undefined,
+      {},
+      probeInputReadiness,
+      ensureInputRuntime,
+    );
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      input: { available: true, modes: ['full', 'half', 'manual'] },
+    });
+    expect(ensureInputRuntime).toHaveBeenCalledOnce();
+    expect(probeInputReadiness).toHaveBeenCalledOnce();
+  });
+
+  it('does not advertise the bundled local voice before its model is ready', async () => {
+    const ensureBundledRuntime = vi.fn(async () => false);
+    const service = new SpeechService(
+      {
+        get: async () => ({
+          ...enabledSettings(),
+          ...BUNDLED_IREINA_SPEECH_PRESET,
+        }),
+        set: async () => undefined,
+      } as SpeechConfigStore,
+      { get: async () => undefined, has: async () => false } as unknown as SecretStore,
+      {
+        synthesize: async () => ({ audio: new Uint8Array([1]), mimeType: 'audio/wav' }),
+      } as OpenAICompatibleSpeechAdapter,
+      undefined,
+      undefined,
+      ensureBundledRuntime,
+    );
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      output: {
+        available: false,
+        detail: '本机 Style-Bert-VITS2 运行时未就绪；文字回复仍可正常使用。',
+      },
+    });
+    expect(ensureBundledRuntime).toHaveBeenCalledOnce();
   });
 
   it('sends bounded WAV input to transcription and returns text without exposing audio', async () => {
@@ -121,7 +214,10 @@ describe('speech service', () => {
       },
     } as OpenAICompatibleSpeechAdapter;
     const service = new SpeechService(
-      { get: async () => enabledSettings(), set: async () => undefined } as SpeechConfigStore,
+      {
+        get: async () => ({ ...enabledSettings(), language: 'ja-JP' }),
+        set: async () => undefined,
+      } as SpeechConfigStore,
       {
         has: async () => true,
         get: async () => 'fake-key',

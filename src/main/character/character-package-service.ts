@@ -189,7 +189,7 @@ export class CharacterPackageService {
     );
     const profile: CharacterProfile = {
       ...inspected.manifest.character,
-      live2dModelId: inspected.manifest.modelManifest ? `package-${packageId}` : 'local-model',
+      live2dModelId: inspected.manifest.modelManifest ? `package-${packageId}` : 'no-model',
     };
     let movedOldDirectory = false;
     let profileChanged = false;

@@ -22,7 +22,7 @@ export const DEFAULT_CHARACTER_PROFILE: CharacterProfile = {
   userDisplayName: '你',
   bio: '陪伴在桌面上的 AI 角色。',
   personaPrompt: '保持自然、真诚、简洁的交流风格。不要假装拥有未提供的记忆或能力。',
-  live2dModelId: 'local-model',
+  live2dModelId: 'no-model',
   memoryNamespace: 'default-character',
 };
 

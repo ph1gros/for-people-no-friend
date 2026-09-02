@@ -1,7 +1,16 @@
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-import { app, globalShortcut, net, protocol, safeStorage, screen, type Tray } from 'electron';
+import {
+  app,
+  globalShortcut,
+  net,
+  protocol,
+  safeStorage,
+  screen,
+  shell,
+  type Tray,
+} from 'electron';
 
 import { CharacterPackageService } from './character/character-package-service';
 import { CharacterResearchService } from './character/character-research-service';
@@ -16,7 +25,7 @@ import { ModelRuntime } from './llm/model-runtime';
 import { MemoryService } from './memory/memory-service';
 import { SecretStore } from './security/secret-store';
 import { CharacterProfileStore } from './storage/character-profile-store';
-import { KITTEN_CHARACTER_PROFILE } from '../core/conversation/character-profile';
+import { DEFAULT_CHARACTER_PROFILE } from '../core/conversation/character-profile';
 import { CharacterDisplayConfigStore } from './storage/character-display-config-store';
 import { CharacterKnowledgeStore } from './storage/character-knowledge-store';
 import { ConversationStore } from './storage/conversation-store';
@@ -29,10 +38,18 @@ import { WindowManager } from './windows/window-manager';
 import { resolveBundledModelRoot } from './windows/window-assets';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { OpenAICompatibleSpeechAdapter } from '../adapters/speech/openai-compatible-tts';
+import { FishAudioSpeechAdapter } from '../adapters/speech/fish-audio-tts';
+import { GenieTtsAdapter } from '../adapters/speech/genie-tts';
 import { OpenAICompatibleTranscriptionAdapter } from '../adapters/speech/openai-compatible-asr';
 import { SpeechService } from './speech/speech-service';
 import { LocalSpeechAssetService } from './speech/local-speech-asset-service';
-import { BundledSpeechRuntime } from './speech/bundled-speech-runtime';
+import {
+  BundledSpeechInputRuntime,
+  BundledSpeechRuntime,
+  resolveBundledSpeechInputRuntimeCandidate,
+  resolveBundledSpeechRuntimeSources,
+} from './speech/bundled-speech-runtime';
+import { probeLoopbackSpeechService } from './speech/loopback-speech-service-probe';
 import { BundledVTubeModelInstaller } from './vtube-studio/bundled-vtube-model-installer';
 import { SpeechConfigStore } from './storage/speech-config-store';
 import { ViewerExConfigStore } from './storage/viewerex-config-store';
@@ -43,6 +60,7 @@ import { VTubeStudioSpoutOverlay } from './vtube-studio/vtube-studio-spout-overl
 import { Live2DModelImportService } from './live2d/live2d-model-import-service';
 import { cursorProximityToArea, normalizeCursorToWorkArea } from './ipc/global-tracking';
 import { AssistantToolService } from './assistant/assistant-tool-service';
+import { createProjectCheckRunner } from './assistant/project-check-runner';
 import { AssistantWorkspaceStore } from './storage/assistant-workspace-store';
 import { DesktopLayoutStore } from './storage/desktop-layout-store';
 
@@ -77,6 +95,7 @@ if (!hasSingleInstanceLock) {
   let speechService: SpeechService | undefined;
   let localSpeechAssets: LocalSpeechAssetService | undefined;
   let bundledSpeechRuntime: BundledSpeechRuntime | undefined;
+  let bundledSpeechInputRuntime: BundledSpeechInputRuntime | undefined;
   let bundledVTubeModel: BundledVTubeModelInstaller | undefined;
   let viewerExService: ViewerExService | undefined;
   let vTubeStudioService: VTubeStudioService | undefined;
@@ -88,12 +107,18 @@ if (!hasSingleInstanceLock) {
   app.on('second-instance', () => windowManager?.show());
 
   void app.whenReady().then(async () => {
-    windowManager = new WindowManager();
-    vTubeStudioSpoutOverlay = new VTubeStudioSpoutOverlay(() => windowManager?.getWindow());
+    windowManager = new WindowManager((expanded) =>
+      vTubeStudioSpoutOverlay?.setSettingsPanelExpanded(expanded),
+    );
+    vTubeStudioSpoutOverlay = new VTubeStudioSpoutOverlay(
+      () => windowManager?.getWindow(),
+      undefined,
+      (event) => vTubeStudioService?.setDisplayTransportDiagnostic(event),
+    );
     const userDataPath = app.getPath('userData');
     desktopLayout = new DesktopLayoutStore(userDataPath);
     const providerConfiguration = new ProviderConfigStore(userDataPath);
-    const characterProfiles = new CharacterProfileStore(userDataPath, KITTEN_CHARACTER_PROFILE);
+    const characterProfiles = new CharacterProfileStore(userDataPath, DEFAULT_CHARACTER_PROFILE);
     characterDisplayConfiguration = new CharacterDisplayConfigStore(userDataPath);
     characterPackages = new CharacterPackageService(
       userDataPath,
@@ -126,7 +151,19 @@ if (!hasSingleInstanceLock) {
       new SafeDiagnosticLog(userDataPath),
     );
     bundledSpeechRuntime = new BundledSpeechRuntime(
-      path.join(process.resourcesPath, 'voice-runtime'),
+      resolveBundledSpeechRuntimeSources({
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath,
+        packaged: app.isPackaged,
+      }),
+    );
+    const bundledSpeechRoot = await bundledSpeechRuntime.resolveAvailableRoot();
+    bundledSpeechInputRuntime = new BundledSpeechInputRuntime(
+      resolveBundledSpeechInputRuntimeCandidate({
+        appPath: app.getAppPath(),
+        resourcesPath: process.resourcesPath,
+        packaged: app.isPackaged,
+      }),
     );
     bundledVTubeModel = new BundledVTubeModelInstaller(
       path.join(process.resourcesPath, 'character-suite', 'vtube-model'),
@@ -135,8 +172,17 @@ if (!hasSingleInstanceLock) {
         path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Steam'),
       ],
     );
+    localSpeechAssets = new LocalSpeechAssetService(
+      path.join(app.getAppPath(), 'data'),
+      path.join(
+        bundledSpeechRoot ?? path.join(process.resourcesPath, 'voice-runtime'),
+        'voice',
+        'ireina',
+      ),
+    );
+    const bundledVoiceAvailable = (await localSpeechAssets.getStatus()).voiceAvailable;
     speechService = new SpeechService(
-      new SpeechConfigStore(userDataPath),
+      new SpeechConfigStore(userDataPath, bundledVoiceAvailable),
       secrets,
       new OpenAICompatibleSpeechAdapter({
         fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
@@ -146,12 +192,16 @@ if (!hasSingleInstanceLock) {
       }),
       (text, signal) => modelRuntime!.translateSpeechToJapanese(text, signal),
       () => bundledSpeechRuntime!.ensureRunning(),
-    );
-    localSpeechAssets = new LocalSpeechAssetService(
-      path.join(app.getAppPath(), 'data'),
-      app.isPackaged
-        ? path.join(process.resourcesPath, 'voice-runtime', 'voice', 'ireina')
-        : undefined,
+      {
+        genieTts: new GenieTtsAdapter({
+          fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+        }),
+        fishAudio: new FishAudioSpeechAdapter({
+          fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+        }),
+      },
+      (baseUrl) => probeLoopbackSpeechService(baseUrl, (input, init) => net.fetch(input, init)),
+      () => bundledSpeechInputRuntime!.ensureRunning(),
     );
     viewerExService = new ViewerExService(new ViewerExConfigStore(userDataPath));
     vTubeStudioService = new VTubeStudioService(
@@ -185,6 +235,12 @@ if (!hasSingleInstanceLock) {
       modelRuntime,
       new AssistantWorkspaceStore(userDataPath),
       (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      {
+        openPath: (target) => shell.openPath(target),
+        sendMediaCommand: (command) =>
+          desktopIntegrations?.sendMediaCommand(command) ?? Promise.resolve(false),
+        runProjectCheck: createProjectCheckRunner(),
+      },
     );
     conversationRuntime = new ConversationRuntime(
       modelRuntime,
@@ -271,6 +327,8 @@ if (!hasSingleInstanceLock) {
     speechService = undefined;
     bundledSpeechRuntime?.dispose();
     bundledSpeechRuntime = undefined;
+    bundledSpeechInputRuntime?.dispose();
+    bundledSpeechInputRuntime = undefined;
     bundledVTubeModel = undefined;
     viewerExService?.dispose();
     viewerExService = undefined;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <limits>
 #include <string>
@@ -10,15 +11,19 @@
 
 #include "Spout.h"
 
+extern "C" {
+__declspec(dllexport) DWORD NvOptimusEnablement = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+
 namespace {
 
 constexpr wchar_t kWindowClassName[] = L"FpnfVTubeStudioSpoutOverlay";
 constexpr UINT_PTR kFrameTimer = 1;
 constexpr UINT kMinimumFps = 15;
 constexpr UINT kMaximumFps = 60;
-constexpr int kWidgetSafeAreaHeight = 112;
+constexpr int kWidgetSafeAreaHeight = 128;
 constexpr float kExpandedChatMinimumAspect = 0.95F;
-constexpr float kSettingsLayoutMinimumAspect = 1.42F;
 
 struct Options {
   HWND owner = nullptr;
@@ -83,6 +88,11 @@ struct OverlayState {
   std::vector<std::uint8_t> source_pixels;
   unsigned int source_width = 0;
   unsigned int source_height = 0;
+  unsigned int consecutive_source_failures = 0;
+  unsigned int consecutive_frame_failures = 0;
+  bool source_failure_reported = false;
+  bool frame_failure_reported = false;
+  bool ready_reported = false;
   DibSurface target;
 
   ~OverlayState() {
@@ -90,6 +100,11 @@ struct OverlayState {
     if (owns_opengl_context) receiver.CloseOpenGL();
   }
 };
+
+void emit_diagnostic(const char* event) {
+  std::fprintf(stderr, "%s\n", event);
+  std::fflush(stderr);
+}
 
 bool parse_unsigned(const wchar_t* value, unsigned long long& parsed) {
   if (!value || !*value) return false;
@@ -155,6 +170,13 @@ bool parse_options(int count, wchar_t** values, Options& options) {
 }
 
 bool initialize_spout(OverlayState& state) {
+  char sender_adapter[256]{};
+  if (state.receiver.GetSenderAdapter(state.options.sender.c_str(), sender_adapter,
+                                      sizeof(sender_adapter)) >= 0) {
+    emit_diagnostic("FPNF_SPOUT_SENDER_ADAPTER_FOUND");
+  }
+  state.receiver.SetPreferredAdapter(2);
+  state.receiver.SetAutoShare(true);
   if (!state.receiver.CreateOpenGL()) return false;
   state.owns_opengl_context = true;
   state.receiver.SetReceiverName(state.options.sender.c_str());
@@ -168,8 +190,16 @@ bool ensure_source_buffer(OverlayState& state) {
   DWORD format = 0;
   if (!state.receiver.GetSenderInfo(
           state.options.sender.c_str(), width, height, share_handle, format)) {
+    state.consecutive_source_failures += 1;
+    if (state.consecutive_source_failures >= state.options.fps * 3 &&
+        !state.source_failure_reported) {
+      emit_diagnostic("FPNF_SPOUT_SOURCE_UNAVAILABLE");
+      state.source_failure_reported = true;
+    }
     return false;
   }
+  state.consecutive_source_failures = 0;
+  state.source_failure_reported = false;
   if (width == 0 || height == 0 || width > 8192 || height > 8192) return false;
   if (width == state.source_width && height == state.source_height &&
       !state.source_pixels.empty()) {
@@ -274,36 +304,43 @@ void render_frame(HWND window, OverlayState& state) {
     ShowWindow(window, SW_HIDE);
     return;
   }
-  const float owner_aspect = width / static_cast<float>(height);
-  if (owner_aspect >= kSettingsLayoutMinimumAspect) {
-    ShowWindow(window, SW_HIDE);
-    return;
-  }
-  const bool expanded_chat = owner_aspect > kExpandedChatMinimumAspect;
-  const int render_width = expanded_chat ? width / 2 : width;
-  RECT overlay_bounds{bounds.left, bounds.top, bounds.left + render_width, bounds.bottom};
   if (!ensure_source_buffer(state)) {
     ShowWindow(window, SW_HIDE);
     return;
   }
   if (!state.receiver.ReceiveImage(state.source_pixels.data(), GL_BGRA, false)) {
+    state.consecutive_frame_failures += 1;
+    if (state.consecutive_frame_failures >= state.options.fps * 3 &&
+        !state.frame_failure_reported) {
+      emit_diagnostic("FPNF_SPOUT_FRAME_UNAVAILABLE");
+      state.frame_failure_reported = true;
+    }
     ShowWindow(window, SW_HIDE);
     return;
   }
+  state.consecutive_frame_failures = 0;
+  state.frame_failure_reported = false;
   if (state.receiver.GetSenderWidth() != state.source_width ||
       state.receiver.GetSenderHeight() != state.source_height) {
     state.source_pixels.clear();
     return;
   }
+  if (!state.ready_reported) {
+    emit_diagnostic("FPNF_SPOUT_READY");
+    state.ready_reported = true;
+  }
+
+  const float owner_aspect = width / static_cast<float>(height);
+  const bool expanded_chat = owner_aspect > kExpandedChatMinimumAspect;
+  const int render_width = expanded_chat ? width / 2 : width;
+  RECT overlay_bounds{bounds.left, bounds.top, bounds.left + render_width, bounds.bottom};
   if (!state.target.resize(render_width, height)) return;
 
   const int widget_safe_area = std::min(kWidgetSafeAreaHeight, height / 3);
   scale_frame(state, height - widget_safe_area);
-  SetWindowPos(window, HWND_TOPMOST, overlay_bounds.left, overlay_bounds.top,
+  SetWindowPos(window, nullptr, overlay_bounds.left, overlay_bounds.top,
                render_width, height,
-               SWP_NOACTIVATE | SWP_SHOWWINDOW);
-  SetWindowPos(state.options.owner, HWND_TOPMOST, 0, 0, 0, 0,
-               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+               SWP_NOZORDER | SWP_NOACTIVATE | SWP_SHOWWINDOW);
   update_layered_window(window, state, overlay_bounds);
 }
 
@@ -335,7 +372,9 @@ LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LPARAM lp
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
-  SetProcessDPIAware();
+  if (!SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+    SetProcessDPIAware();
+  }
 
   int argument_count = 0;
   wchar_t** arguments = CommandLineToArgvW(GetCommandLineW(), &argument_count);
@@ -359,8 +398,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
 
   const HWND window = CreateWindowExW(
       WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-      kWindowClassName, L"FPNF VTube Studio Model", WS_POPUP,
-      0, 0, 1, 1, nullptr, nullptr, instance, &state);
+       kWindowClassName, L"FPNF VTube Studio Model", WS_POPUP,
+       0, 0, 1, 1, state.options.owner, nullptr, instance, &state);
   if (!window) return 5;
 
   SetTimer(window, kFrameTimer, std::max<UINT>(16, 1000 / options.fps), nullptr);

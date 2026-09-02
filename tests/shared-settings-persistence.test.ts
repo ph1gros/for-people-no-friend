@@ -13,7 +13,7 @@ import { ProviderConfigStore } from '../src/main/storage/provider-config-store';
 import { WorkGlossaryStore } from '../src/main/storage/work-glossary-store';
 import { WindowStateStore } from '../src/main/windows/window-state';
 import { SpeechConfigStore } from '../src/main/storage/speech-config-store';
-import { DEFAULT_SPEECH_SETTINGS } from '../src/shared/speech-ipc';
+import { createInitialSpeechSettings, DEFAULT_SPEECH_SETTINGS } from '../src/shared/speech-ipc';
 
 describe('shared settings persistence contract', () => {
   let directory: string | undefined;
@@ -51,6 +51,45 @@ describe('shared settings persistence contract', () => {
 
     await new SpeechConfigStore(directory).set({ ...DEFAULT_SPEECH_SETTINGS, speed: 0.95 });
     await expect(new SpeechConfigStore(directory).get()).resolves.toMatchObject({ speed: 0.95 });
+  });
+
+  it('migrates the legacy Ireina model id without changing its voice id', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-speech-model-id-'));
+    await writeFile(
+      path.join(directory, 'speech.v1.json'),
+      JSON.stringify({
+        version: 3,
+        settings: {
+          ...createInitialSpeechSettings(true),
+          modelId: 'ireina',
+          voiceId: 'ireina',
+        },
+      }),
+      'utf8',
+    );
+
+    await expect(new SpeechConfigStore(directory, true).get()).resolves.toMatchObject({
+      modelId: 'style-bert-vits2',
+      voiceId: 'ireina',
+    });
+  });
+
+  it('removes the obsolete disabled Ireina placeholder when the package has no voice assets', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-speech-no-assets-'));
+    await writeFile(
+      path.join(directory, 'speech.v1.json'),
+      JSON.stringify({
+        version: 3,
+        settings: createInitialSpeechSettings(true),
+      }),
+      'utf8',
+    );
+
+    await expect(new SpeechConfigStore(directory, false).get()).resolves.toMatchObject({
+      providerId: 'disabled',
+      modelId: '',
+      voiceId: '',
+    });
   });
 
   it('migrates older desktop settings to both default shortcuts', async () => {
@@ -157,6 +196,8 @@ describe('shared settings persistence contract', () => {
       speed: 1.05,
       volume: 0.42,
       inputMode: 'half',
+      wakeWordSource: 'custom',
+      customWakeWord: '阿响',
       pushToTalkKey: 'F10',
     });
     await expect(new SpeechConfigStore(directory).get()).resolves.toMatchObject({
@@ -165,6 +206,8 @@ describe('shared settings persistence contract', () => {
       voiceId: 'fake-voice',
       volume: 0.42,
       inputMode: 'half',
+      wakeWordSource: 'custom',
+      customWakeWord: '阿响',
       pushToTalkKey: 'F10',
     });
 

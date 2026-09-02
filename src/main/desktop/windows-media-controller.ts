@@ -22,7 +22,8 @@ const WINDOWS_MEDIA_VIRTUAL_KEYS = {
   TrySkipPreviousAsync: '0xB1',
 } as const satisfies Readonly<Record<WindowsSessionMethod, string>>;
 const COMMAND_TIMEOUT_MS = 6_000;
-const STATE_RESPONSE_MAX_BYTES = 16_384;
+const COMMAND_RESPONSE_MAX_BYTES = 8_192;
+const STATE_RESPONSE_MAX_BYTES = 65_536;
 
 export type WindowsMediaSessionInvoker = (method: WindowsSessionMethod) => Promise<boolean>;
 export type WindowsMediaStateInvoker = () => Promise<MediaSessionState>;
@@ -64,8 +65,7 @@ try {
         $sessions += $candidate
       }
     }
-    $supportedSourcePattern = '(?i)(cloudmusic|netease|orpheus|qq\s*music|qq\s*音乐|kugou|apple\s*music|spotify)'
-    foreach ($session in $sessions | Where-Object { [string]$_.SourceAppUserModelId -match $supportedSourcePattern }) {
+    foreach ($session in $sessions) {
       try {
         $result = Await-WinRtOperation ($session.${method}()) ([bool])
         if ($result) { exit 0 }
@@ -120,6 +120,11 @@ try {
   $manager = Await-WinRtOperation ($managerType::RequestAsync()) $managerType
   $current = $manager.GetCurrentSession()
   $currentSource = if ($null -ne $current) { [string]$current.SourceAppUserModelId } else { '' }
+  function Limit-DeskpetMediaText($value, [int]$maximumLength) {
+    $text = [string]$value
+    if ($text.Length -le $maximumLength) { return $text }
+    return $text.Substring(0, $maximumLength)
+  }
   $items = @()
   foreach ($session in @($manager.GetSessions()) | Select-Object -First 16) {
     try {
@@ -129,9 +134,9 @@ try {
       $items += [ordered]@{
         current = $source -eq $currentSource
         playing = $playback.PlaybackStatus.ToString() -eq 'Playing'
-        title = [string]$properties.Title
-        artist = [string]$properties.Artist
-        source = $source
+        title = Limit-DeskpetMediaText $properties.Title 300
+        artist = Limit-DeskpetMediaText $properties.Artist 300
+        source = Limit-DeskpetMediaText $source 256
       }
     } catch {
       # Skip one malformed media session without hiding other supported players.
@@ -195,27 +200,16 @@ export const parseWindowsMediaStateOutput = (output: string): MediaSessionState 
       player: resolveSupportedMediaPlayer(source),
     };
   });
-  const supportedSessions = sessions.filter((session) => session.player);
   const selected =
-    supportedSessions.find((session) => session.playing) ??
-    supportedSessions.find((session) => session.current) ??
-    supportedSessions[0];
-  if (!selected?.player) {
-    const current =
-      sessions.find((session) => session.playing) ??
-      sessions.find((session) => session.current) ??
-      sessions[0];
-    return {
-      supported: true,
-      sessionAvailable: sessions.length > 0,
-      ...(current?.source ? { source: current.source } : {}),
-    };
-  }
+    sessions.find((session) => session.current && session.playing) ??
+    sessions.find((session) => session.playing) ??
+    sessions.find((session) => session.current) ??
+    sessions[0];
+  if (!selected) return { supported: true, sessionAvailable: false };
   return {
     supported: true,
     sessionAvailable: true,
-    playerId: selected.player.id,
-    playerName: selected.player.name,
+    ...(selected.player ? { playerId: selected.player.id, playerName: selected.player.name } : {}),
     playing: selected.playing,
     ...(selected.title ? { title: selected.title } : {}),
     ...(selected.artist ? { artist: selected.artist } : {}),
@@ -248,7 +242,7 @@ export const invokeWindowsMediaSessionMethod = async (method: unknown): Promise<
       {
         timeout: COMMAND_TIMEOUT_MS,
         windowsHide: true,
-        maxBuffer: 1_024,
+        maxBuffer: COMMAND_RESPONSE_MAX_BYTES,
       },
       (error) => resolve(!error),
     );

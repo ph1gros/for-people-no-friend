@@ -7,6 +7,10 @@ describe('settings renderer regression wiring', () => {
   const source = readFileSync(resolve('src/renderer/chat/chat-controller.ts'), 'utf8');
   const indexSource = readFileSync(resolve('src/renderer/index.ts'), 'utf8');
   const styles = readFileSync(resolve('src/renderer/styles.css'), 'utf8');
+  const speechLanguageSource = readFileSync(
+    resolve('src/renderer/speech/speech-language-options.ts'),
+    'utf8',
+  );
   const registry = readFileSync(resolve('src/renderer/widgets/widget-registry.ts'), 'utf8');
   const windowIpcSource = readFileSync(resolve('src/shared/window-ipc.ts'), 'utf8');
 
@@ -144,12 +148,22 @@ describe('settings renderer regression wiring', () => {
   it('wires optional speech through the narrow API and keeps an immediate stop control', () => {
     expect(source).toContain("speechSettingsTitle.textContent = '声音与音频生成'");
     expect(source).toContain("['openai-compatible', 'OpenAI 兼容 TTS（本机或在线）']");
+    expect(source).toContain('speechOpenAiCompatibleOption.textContent = status.voiceAvailable');
+    expect(source).toContain("? '本机 Style-Bert-VITS2'");
     expect(source).toContain("['output', '声音与音频生成', speechOutputPane]");
     expect(source).toContain("['input', '中文麦克风输入', speechInputPane]");
     expect(source).toContain("showSpeechPage('output')");
-    expect(source).toContain('专用本地语音模型：已预留提供商位置');
-    expect(source).toContain('更多在线 TTS：已预留接入位置');
+    expect(source).toContain('Genie-TTS：已支持连接本机 GPT-SoVITS V2 / V2ProPlus ONNX 服务');
+    expect(source).toContain('Fish Audio：已支持官方在线接口');
     expect(source).toContain('api.setSpeechSettings({ settings: speechSettings })');
+    expect(source).toContain("['character-name', '跟随当前角色名称']");
+    expect(source).toContain("['custom', '自定义称呼']");
+    expect(source).toContain("createField('精准模式称呼', speechWakeWordSourceSelect)");
+    expect(source).toContain("createField('自定义称呼', speechCustomWakeWordInput)");
+    expect(source).toContain('wakeWordSource: speechWakeWordSourceSelect.value');
+    expect(source).toContain('customWakeWord: speechCustomWakeWordInput.value.trim()');
+    expect(source).toContain('resolvePreciseWakeWord(');
+    expect(source).toContain("profile?.name ?? '桌宠'");
     expect(source).toContain('api.setSpeechSecret({ apiKey: speechApiKeyInput.value })');
     expect(source).toContain("stopSpeechButton = createButton('停声'");
     expect(source).toContain("stopSpeechButton.addEventListener('click'");
@@ -160,7 +174,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain(
       "['full', '完全', '持续听麦；自动发送，2 秒内继续说会合并并重新思考']",
     );
-    expect(source).toContain("['half', '精准', '持续听麦；必须说“小猫 + 内容”才发送，降低误判']");
+    expect(source).toContain("['half', '精准', '持续听麦；必须先说设定的称呼才发送，降低误判']");
     expect(source).toContain(
       "['manual', '手动', '点击“说话”，或按住设置键位录音；识别结果只填入输入框']",
     );
@@ -169,12 +183,25 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('event.key === speechSettings.pushToTalkKey');
     expect(source).toContain('void startMicrophoneRecording(true)');
     expect(source).toContain('new ContinuousMicrophoneListener({');
-    expect(source).toContain('wakeWordCommands.handle(transcript)');
+    expect(source).toContain('wakeWordCommands.handle(transcript, preciseWakeWord)');
     expect(source).toContain('activeSpeechTurn?.appendText(event.text)');
     expect(source).toContain('getPresentation()?.updateSpeechLevel(level)');
     expect(source).toContain("speechVolumeInput.value = '0.6'");
     expect(source).toContain('speechPlayer.setVolume(volume)');
     expect(source).toContain('settings: { ...currentSpeechStatus.settings, volume }');
+    expect(source).toContain("createButton('打开音源文件夹', 'secondary-button')");
+    expect(source).toContain("createButton('启动本地训练工具', 'secondary-button')");
+    expect(source).toContain(
+      'speechAssetsActions.append(exportLocalVoiceButton, openSpeechTrainingSourcesButton)',
+    );
+    expect(source).toContain('speechTrainingActions.append(launchSpeechTrainerButton)');
+    expect(source).not.toContain(
+      'speechTrainingActions.append(openSpeechTrainingSourcesButton, launchSpeechTrainerButton)',
+    );
+    expect(source).toContain('api!.openSpeechTrainingSources()');
+    expect(source).toContain('api!.launchSpeechTrainer()');
+    expect(source).not.toContain('我确认只使用自己拥有或已获授权的声音素材');
+    expect(source).not.toContain('请先确认声音素材的使用权。');
   });
 
   it('keeps ViewerEX optional, loopback-scoped, and separate from model files and audio', () => {
@@ -197,6 +224,17 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain("vTubeStudioMouseTrackingTitle.textContent = '鼠标追踪'");
     expect(source).toContain('mouseTrackingEnabled: vTubeStudioMouseTrackingInput.checked');
     expect(source).toContain('const authorization = await api.authorizeVTubeStudio()');
+    expect(source).toContain('const activateConnectedVTubeStudio = async (): Promise<boolean>');
+    expect(source).toContain("api.setCharacterDisplayMode({ mode: 'vtube-studio' })");
+    expect(source).toContain("setDisplayModeInputs('vtube-studio');");
+    expect(source).toContain('const connected = await inspectSelectedVTubeStudio();');
+    expect(source).toContain("createButton('连接 VTube Studio', 'secondary-button')");
+    expect(source).toContain("vTubeStudioTroubleshootingSummary.textContent = '连接故障排查'");
+    expect(source).toContain("createField('手动端口', vTubeStudioPortInput)");
+    expect(source).toContain('不用另外下载 Spout2');
+    expect(source).toContain("authorization.reason === 'api-disabled'");
+    expect(source).toContain("inspected.reason === 'api-disabled'");
+    expect(source).toContain('vTubeStudioSetupNotice.hidden = false');
     expect(source).toContain('const inspected = await api.inspectVTubeStudio()');
     expect(source).toContain("vTubeStudioExpressionTestButton = createButton('测试惊讶表情'");
     expect(source).toContain("vTubeStudioExpressionPreviewButton = createButton('预览并返回桌面'");
@@ -206,9 +244,13 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('api.previewVTubeStudioExpression({ active: true, expressionIndex })');
     expect(source).toContain('api.previewVTubeStudioExpression({ active: false })');
     expect(source).toContain("api.presentInVTubeStudio({ emotion: 'surprised' })");
+    expect(source).toContain("result.reason === 'mapping-missing'");
+    expect(source).toContain('当前模型没有可用的“惊讶”表情映射');
     expect(source).toContain("api.presentInVTubeStudio({ emotion: 'neutral' })");
     expect(source).toContain('仅连接 127.0.0.1');
-    expect(source).toContain('首次授权由 VTube Studio 弹窗确认');
+    expect(source).toContain('连接时会自动寻找端口并请求 VTube Studio 授权');
+    expect(source).toContain('允许插件 API 访问（Allow Plugin API access）');
+    expect(source).toContain('授权已失效，正在重新请求 VTube Studio 授权');
     expect(source).toContain('const inspectSelectedVTubeStudio = async ()');
     expect(source).toContain('const hotkeyNames = inventory.hotkeys.map((hotkey) => hotkey.name)');
     expect(source).toContain("loadedCharacterDisplayMode === 'vtube-studio'");
@@ -219,6 +261,16 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('await inspectSelectedVTubeStudio();');
     expect(source).toContain("settingsTabButtons.get('display')?.addEventListener");
     expect(source).toContain(".get('vtube-studio')");
+  });
+
+  it('saves independent settings before an AI chat model is configured', () => {
+    expect(source).not.toContain("statusTarget.textContent = '请填写模型名称。';");
+    expect(source).toContain('modelId\n        ? api.setConversationConfiguration');
+    expect(source).toContain('其他设置已保存；AI 对话模型尚未配置。');
+    expect(source).toContain("connectionStatus.textContent = '请填写 AI 对话模型名称。';");
+    expect(source.indexOf('api.setSpeechSettings({ settings: speechSettings })')).toBeGreaterThan(
+      source.indexOf('const modelId = modelInput.value.trim();'),
+    );
   });
 
   it('groups the three mutually exclusive character displays into left-hand tabs', () => {
@@ -307,7 +359,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).not.toContain('临时免打扰');
   });
 
-  it('uses a dedicated large settings layout, keeps the drag hint, and shows one opening line', () => {
+  it('uses both top bars as drag surfaces without a separate drag hint', () => {
     expect(source).toContain("root.classList.toggle('settings-expanded'");
     expect(source).toContain('settingsPanel.scrollTop = 0;');
     expect(source).toContain('let openingLineShown = false;');
@@ -316,10 +368,12 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('await api.generateContextualOpeningLine()');
     expect(source).toContain("setReplyStatus('正在想起上次对话…')");
     expect(source).toContain('showOpeningLineIfReady();');
-    expect(styles).toContain('.window-drag-region::after');
+    expect(styles).not.toContain('.window-drag-region::after');
     expect(styles).toContain('.chat-expanded:not(.settings-expanded) .window-drag-region');
-    expect(styles).toMatch(/\.window-drag-region::after\s*\{[^}]*opacity:\s*0;/su);
-    expect(styles).toMatch(/\.chat-expanded \.window-drag-region::after\s*\{[^}]*opacity:\s*1;/su);
+    expect(styles).toMatch(
+      /\.chat-panel__header\s*\{[^}]*-webkit-app-region:\s*drag;[^}]*cursor:\s*grab;/su,
+    );
+    expect(styles).toMatch(/\.chat-panel__header button\s*\{[^}]*-webkit-app-region:\s*no-drag;/su);
     expect(styles).toContain('.settings-expanded .character-host');
     expect(styles).toContain('.settings-layout');
     expect(styles).toMatch(
@@ -328,25 +382,140 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(
       /\.settings-expanded \.settings-layout\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/su,
     );
-    expect(styles).toMatch(
-      /\.settings-expanded \.settings-footer\s*\{[^}]*position:\s*relative;[^}]*flex:\s*0 0 auto;/su,
+    expect(source).toContain("settingsHeaderActions.className = 'settings-header-actions'");
+    expect(source).toContain(
+      'settingsHeaderActions.append(settingsStatus, settingsActions, closeSettingsButton)',
     );
+    expect(source).not.toContain("settingsFooter.className = 'settings-footer'");
+    expect(styles).toMatch(
+      /\.settings-expanded \.settings-panel > \.chat-drawer__header\s*\{[^}]*-webkit-app-region:\s*drag;/su,
+    );
+    expect(styles).toMatch(/\.settings-header-actions\s*\{[^}]*-webkit-app-region:\s*no-drag;/su);
+    expect(styles).toMatch(/#app::after\s*\{[^}]*display:\s*none;/su);
     expect(styles).toContain('.settings-section');
+  });
+
+  it('colors every expanded area except the Live2D pane', () => {
+    expect(styles).toMatch(/#app\.chat-expanded\s*\{[^}]*background:\s*transparent;/su);
+    expect(styles).toMatch(
+      /#app\.chat-expanded::before\s*\{[^}]*right:\s*calc\(50% \+ 8px\);[^}]*border:\s*0;[^}]*border-radius:\s*14px;[^}]*background:\s*transparent;/su,
+    );
+    expect(styles).toContain('0 0 0 9999px rgb(24 25 28 / 90%)');
+    expect(styles).toMatch(
+      /#app\.chat-expanded\[data-character-pane='right'\]:not\(\.settings-expanded\)::before\s*\{[^}]*right:\s*10px;[^}]*left:\s*calc\(50% \+ 8px\);/su,
+    );
+    expect(styles).toMatch(
+      /\.chat-panel\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/su,
+    );
+    expect(styles).toMatch(
+      /\.settings-expanded \.chat-panel\s*\{[^}]*overflow:\s*hidden;[^}]*border:\s*1px solid rgb\(225 228 234 \/ 24%\);[^}]*border-radius:\s*24px;[^}]*background:\s*linear-gradient\(145deg, #242529, #17181b\);[^}]*box-shadow:\s*none;/su,
+    );
+    expect(styles).toMatch(
+      /\.settings-expanded \.settings-panel > \.chat-drawer__header\s*\{[^}]*border-radius:\s*23px 23px 0 0;/su,
+    );
+    expect(styles).toMatch(
+      /\.settings-expanded \.settings-navigation\s*\{[^}]*background:\s*rgb\(31 32 35 \/ 98%\);/su,
+    );
+    expect(styles).toMatch(
+      /\.settings-expanded \.settings-section\s*\{[^}]*background:\s*rgb\(35 36 40 \/ 92%\);/su,
+    );
+    expect(styles).toMatch(
+      /\.settings-expanded \.settings-field input,[^}]*background:\s*rgb\(45 46 50 \/ 96%\);/su,
+    );
+    expect(styles).toMatch(
+      /\.conversation-list\s*\{[^}]*border-radius:\s*12px 12px 0 0;[^}]*background:\s*rgb\(29 30 33 \/ 94%\);/su,
+    );
+    expect(styles).toMatch(
+      /\.chat-composer\s*\{[^}]*border-top:\s*0;[^}]*border-radius:\s*0 0 14px 14px;[^}]*background:\s*rgb\(33 34 37 \/ 94%\);/su,
+    );
+    expect(styles).toMatch(/\.chat-toolbar__button,[^}]*border-radius:\s*10px;/su);
+    expect(styles).toMatch(
+      /#app\.chat-expanded:not\(\.settings-expanded\),[^}]*#app\.chat-expanded:not\(\.settings-expanded\) \*\s*\{[^}]*border-color:\s*transparent;/su,
+    );
+  });
+
+  it('opens directly into conversation mode without collapsed launcher controls', () => {
+    expect(source).not.toContain("createButton('>>>', 'chat-launcher')");
+    expect(source).not.toContain("createButton('<<<', 'text-button chat-collapse')");
+    expect(source).not.toContain('setPanelExpanded(false);');
+    expect(source).toContain("setPanelExpanded(true, 'chat');");
+    expect(styles).not.toContain('.chat-launcher');
+    expect(styles).not.toContain('.chat-collapse');
   });
 
   it('uses a compact auto-growing composer with clear action controls', () => {
     expect(source).toContain("input.placeholder = '输入消息或任务…'");
     expect(source).not.toContain('Ctrl+Enter 发送');
     expect(source).toContain('input.rows = 1;');
-    expect(source).toContain('Math.min(input.scrollHeight, 104)');
+    expect(source).not.toContain('const resizeComposer');
     expect(source).not.toContain("event.key === 'Enter' && event.ctrlKey && !event.isComposing");
     expect(source).toContain(
       'composerActions.append(microphoneButton, stopSpeechButton, stopButton, sendButton)',
     );
     expect(source).toContain("composerDropStatus.className = 'chat-composer__drop-status'");
-    expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*min-height:\s*42px;/su);
-    expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*max-height:\s*104px;/su);
+    expect(source).toContain("composerDropStatus.textContent = '';");
+    expect(source).toContain('工作模式开启后，可把文本或文件拖到整个对话区。');
+    expect(styles).toMatch(
+      /\.chat-composer\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*grid-template-areas:\s*['"]input actions['"] ['"]status status['"];/su,
+    );
+    expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*min-height:\s*32px;/su);
+    expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*height:\s*32px;/su);
+    expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*max-height:\s*32px;/su);
     expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*resize:\s*none;/su);
+    expect(styles).toMatch(/\.chat-composer__input\s*\{[^}]*overflow-y:\s*auto;/su);
+    expect(styles).toMatch(/\.chat-composer__drop-status:empty\s*\{[^}]*display:\s*none;/su);
+    expect(styles).toMatch(
+      /\.chat-composer__send,[^}]*\.chat-composer__microphone,[^}]*\.chat-composer__stop,[^}]*\.chat-composer__stop-speech\s*\{[^}]*min-height:\s*26px;[^}]*padding:\s*5px 9px;[^}]*font-size:\s*10px;[^}]*border-radius:\s*999px;/su,
+    );
+    expect(source).toContain("state === 'processing' ? '识别...' : '在听...'");
+    expect(source).toContain("microphoneButton.textContent = listening ? '在听...' : '开启监听'");
+    expect(source).not.toContain('完全监听中');
+    expect(source).not.toContain('精准监听中');
+    expect(styles).toMatch(
+      /\.chat-composer__microphone\[aria-pressed='true'\]\s*\{[^}]*background:\s*rgb\(44 45 49 \/ 96%\);/su,
+    );
+    expect(styles).toMatch(/\.chat-panel\s*\{[^}]*gap:\s*0;/su);
+    expect(styles).toMatch(/\.chat-panel__header\s*\{[^}]*margin-bottom:\s*8px;/su);
+    expect(styles).toMatch(/\.chat-toolbar\s*\{[^}]*margin-top:\s*8px;/su);
+  });
+
+  it('shows the main conversation as left and right chat bubbles', () => {
+    const timelineSource = source.slice(
+      source.indexOf('const renderConversationTimeline'),
+      source.indexOf('const renderHistory'),
+    );
+    const historySource = source.slice(
+      source.indexOf('const renderHistory'),
+      source.indexOf('const memoryTypeLabels'),
+    );
+    expect(source).toContain("conversationList.className = 'conversation-list'");
+    expect(source).toContain(
+      'item.className = `conversation-message conversation-message--${message.role}`',
+    );
+    expect(source).toContain('renderConversationTimeline();');
+    expect(timelineSource).not.toContain("document.createElement('strong')");
+    expect(historySource).not.toContain("document.createElement('strong')");
+    expect(styles).not.toContain('.conversation-message strong');
+    expect(styles).toMatch(/\.conversation-message--user\s*\{[^}]*align-items:\s*flex-end;/su);
+    expect(styles).toMatch(
+      /\.conversation-message--user p\s*\{[^}]*background:\s*rgb\(68 70 74 \/ 94%\);/su,
+    );
+    expect(styles).toMatch(
+      /\.conversation-message--assistant\s+p\s*\{[^}]*background:\s*rgb\(48 50 54 \/ 94%\);/su,
+    );
+  });
+
+  it('rounds the transparent model area upward into the square widget reserve', () => {
+    expect(styles).toMatch(
+      /\.desktop-widgets-active \.desktop-overlay-stack\s*\{[^}]*z-index:\s*10;[^}]*bottom:\s*0;[^}]*padding:\s*8px;[^}]*border-radius:\s*0;[^}]*background:\s*rgb\(24 25 28\);/su,
+    );
+    expect(styles).toMatch(/#app\.chat-expanded::before\s*\{[^}]*background:\s*transparent;/su);
+    expect(styles).toMatch(
+      /#app\.chat-expanded\.desktop-widgets-active:not\(\.settings-expanded\)::before\s*\{[^}]*bottom:\s*var\(--desktop-widget-reserve, 0px\);/su,
+    );
+    expect(source).toContain('? 128');
+    expect(source).toContain('? 84');
+    expect(source).toContain('? 60');
   });
 
   it('offers one explicit work mode for bounded workspace and web tools', () => {
@@ -358,19 +527,26 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain("'OFF'");
     expect(source).toContain("'工作模式'");
     expect(source).toContain("'ON'");
-    expect(source).toContain('文件接口：列出文件、读取文件、新建或修改文件');
+    expect(source).toContain('文件接口：列出、搜索、读取、新建、精确修改或打开文件');
     expect(source).toContain('网页接口：搜索网页、读取 HTTPS 公开页面');
+    expect(source).toContain('工作区内直接操作；工作区外真实路径与可执行文件逐次确认');
+    expect(source).toContain('启用听歌控制即授权上一首、播放/暂停和下一首');
     expect(source).toContain('const result = await api.selectAssistantWorkspace();');
     expect(source).toContain('assistantMode: assistantModeEnabled');
     expect(source).toContain('wakeFromDrowsy,');
     expect(source).toContain('const wakeFromDrowsy = companionDrowsy;');
     expect(source).toContain('api.importDroppedWorkspaceFiles({');
     expect(source).toContain('files.map(async (file) => ({');
-    expect(source).toContain("composer.classList.add('is-file-drop-active')");
+    expect(source).toContain("event.dataTransfer?.getData('text/plain')");
+    expect(source).toContain("panel.classList.add('is-drop-active')");
+    expect(source).toContain("panel.addEventListener('dragover', handlePanelDragOver)");
+    expect(source).toContain("panel.addEventListener('drop', handlePanelDrop)");
+    expect(source).toContain("showComposerDropStatus('已把拖入文本放进输入框')");
     expect(source).toContain("window.addEventListener('drop', preventWindowFileNavigation)");
     expect(source).toContain("event.type === 'tool-approval'");
     expect(source).toContain('api?.resolveAssistantToolApproval({');
     expect(styles).toContain('.assistant-mode-button.is-active');
+    expect(styles).toContain('.chat-panel.is-drop-active');
     expect(styles).toContain('.mode-comparison__card');
   });
 
@@ -384,10 +560,19 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toContain('.character-page__body');
   });
 
-  it('offers the synthetic nod action while VTube Studio is the active display', () => {
+  it('offers synthetic agreement and disagreement actions while VTube Studio is active', () => {
     expect(source).toContain("readCharacterDisplayMode() === 'vtube-studio'");
-    expect(source).toContain("? ['nod']");
+    expect(source).toContain("? ['nod', 'shake']");
     expect(source).toContain('availableActions: readAvailablePresentationActions()');
+  });
+
+  it('confirms VTube Studio expression and action candidates inside the current model namespace', () => {
+    expect(source).toContain("createButton(\n    '确认自动识别的映射'");
+    expect(source).toContain('currentVTubeStudioMapping.suggestions.emotionExpressions');
+    expect(source).toContain('currentVTubeStudioMapping.suggestions.actionHotkeys');
+    expect(source).toContain('vTubeStudioModelMappings[model.id] = {');
+    expect(source).toContain("['nod', '肯定 / 点头']");
+    expect(source).toContain("['shake', '否定 / 摇头']");
   });
 
   it('resets character-scoped renderer state and replays the new opening line after updates', () => {
@@ -429,32 +614,75 @@ describe('settings renderer regression wiring', () => {
 
   it('allows window size adjustment in one-percent increments', () => {
     expect(source).toContain("scaleInput.step = '0.01';");
-    expect(source).toContain("scaleInput.value = '0.85';");
+    expect(source).toContain("scaleInput.value = '0.78';");
+    expect(source).toContain("scaleOutput.textContent = '78%';");
     expect(source).toContain('scaleInput.max = String(MAX_WINDOW_SCALE);');
     expect(windowIpcSource).toContain('MAX_WINDOW_SCALE = 1.2');
   });
 
-  it('offers non-overlapping safe positions for the model, chat and widgets', () => {
-    expect(source).toContain("layoutPositionTitle.textContent = '界面位置'");
-    expect(source).toContain("['left', '模型在左，对话框在右']");
-    expect(source).toContain("['right', '模型在右，对话框在左']");
-    expect(source).toContain("createField('小组件位置', widgetAlignmentSelect)");
+  it('preserves the stored safe layout without showing interface-position controls', () => {
+    expect(source).not.toContain("layoutPositionTitle.textContent = '界面位置'");
+    expect(source).not.toContain("createField('模型与对话框', characterPaneSelect)");
+    expect(source).not.toContain("createField('小组件位置', widgetAlignmentSelect)");
+    expect(source).not.toContain("previewLayoutPositionButton = createButton('保存并预览位置'");
     expect(source).toContain('api.setDesktopLayoutSettings');
-    expect(source).toContain("previewLayoutPositionButton = createButton('保存并预览位置'");
+    expect(source).toContain('currentDesktopLayoutSettings = settings;');
     expect(styles).toContain("[data-character-pane='right'] .character-host");
     expect(styles).toContain("[data-character-pane='right'] .chat-panel");
     expect(styles).toContain("[data-widget-alignment='center'] .desktop-overlay-stack");
     expect(styles).toContain("[data-widget-alignment='end'] .desktop-overlay-stack");
   });
 
-  it('styles local character creation as a labelled field and groups the TTS model with its voice', () => {
+  it('uses the same visible model and voice editor for bundled and external TTS', () => {
     expect(source).toContain("createField('新角色名称', newCharacterNameInput)");
     expect(styles).toContain('.local-character-actions .settings-field');
     expect(source).toContain("speechVoiceIdentityTitle.textContent = '语音模型与音色'");
     expect(source).toContain("createField('语音模型 ID', speechModelInput)");
     expect(source).toContain("createField('音色 / Speaker ID', speechVoiceInput)");
+    expect(source).not.toContain('speechBundledVoice');
+    expect(source).not.toContain('showVoiceSummary');
+    expect(source).not.toContain('speechVoiceEditorExpanded');
+    expect(source).toContain("['openai-compatible', 'OpenAI 兼容 TTS（本机或在线）']");
+    expect(source).toContain("['genie-tts', '本机 Genie-TTS']");
+    expect(source).not.toContain('其他 OpenAI 兼容 TTS（本机或在线）');
+    expect(source).toContain('speechOpenAiCompatibleOption');
+    expect(source).not.toContain("? '本机 Style-Bert-VITS2（伊蕾娜）'");
+    expect(source).not.toContain("createButton('配置其他音色', 'text-button')");
+    expect(source).not.toContain('speechModelInput.readOnly');
+    expect(source).toContain("speechVoiceFieldLabel.textContent = '音色 ID'");
+    expect(source).toContain("speechVoiceConfirmButton.hidden = providerId === 'disabled'");
+    expect(source).toContain(
+      "showButtonFeedback(speechVoiceConfirmButton, '已确认 ✓', 'success', 1_200)",
+    );
+    expect(source).not.toContain('speechModelInput.value = speechVoiceInput.value');
+    expect(source).toContain('speechVoiceInput.focus()');
+    expect(source).toContain('const speechVoiceConfirmButton = createButton(');
+    expect(source).toContain("'secondary-button speech-voice-identity__confirm'");
+    expect(source).toContain("speechStatus.textContent = '请填写音色 ID。'");
+    expect(source).toContain('音色已确认；请点击右上角“保存”使其生效。');
     expect(styles).toContain('.speech-voice-identity__fields');
     expect(styles).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));');
+    expect(source).toContain("showButtonFeedback(saveButton, '保存中…', 'pending')");
+    expect(source).toContain("showButtonFeedback(saveButton, '已保存 ✓', 'success', 1_500)");
+    expect(source).toContain("showButtonFeedback(saveButton, '保存失败', 'error', 1_500)");
+    expect(styles).toContain("button[data-feedback='success']");
+    expect(styles).toContain("button[data-feedback='error']");
+    expect(speechLanguageSource).toContain("['ja-JP', '日语（ja-JP）']");
+    expect(speechLanguageSource).toContain("['zh-CN', '中文（zh-CN）']");
+    expect(speechLanguageSource).toContain("['en-US', '英语（en-US）']");
+    expect(speechLanguageSource).toContain("['custom', '自定义']");
+    expect(source).toContain("createField('语言', speechLanguageSelect)");
+    expect(source).toContain("createField('自定义语言代码', speechLanguageInput)");
+    expect(source).toContain('language: readSpeechLanguage()');
+    expect(source).toContain("speechStatus.textContent = '请填写自定义语言代码。'");
+  });
+
+  it('uses a generic VTube Studio model installation label', () => {
+    expect(source).toContain("createButton('安装模型', 'secondary-button')");
+    expect(source).not.toContain('安装随包小猫模型');
+    expect(source).toContain(
+      'vTubeStudioInstallModelButton.hidden = !status.bundledModelAvailable',
+    );
   });
 
   it('expands character text fields to show their complete content', () => {

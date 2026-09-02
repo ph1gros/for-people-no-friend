@@ -19,10 +19,13 @@ interface OverlayProcessDependencies {
     options: {
       cwd: string;
       windowsHide: boolean;
-      stdio: 'ignore';
+      stdio: ['ignore', 'ignore', 'pipe'];
     },
   ) => ChildProcess;
 }
+
+export type VTubeStudioSpoutDiagnosticSink = (event: string) => void;
+const DIAGNOSTIC_LINE_PATTERN = /^FPNF_SPOUT_[A-Z_]+$/u;
 
 const defaultExecutablePath = (): string => {
   const applicationRoot = app.isPackaged ? process.resourcesPath : app.getAppPath();
@@ -55,19 +58,32 @@ export const readNativeWindowHandle = (handle: Buffer): bigint | undefined => {
 export class VTubeStudioSpoutOverlay {
   private child: ChildProcess | undefined;
   private requestedMode: CharacterDisplayMode = 'off';
+  private settingsPanelExpanded = false;
 
   public constructor(
     private readonly getWindow: () => BrowserWindow | undefined,
     private readonly dependencies: OverlayProcessDependencies = defaultDependencies(),
+    private readonly recordDiagnostic: VTubeStudioSpoutDiagnosticSink = (event) =>
+      console.warn('VTube Studio Spout overlay:', event),
   ) {}
 
   public setMode(mode: CharacterDisplayMode): void {
     this.requestedMode = mode;
-    if (mode !== 'vtube-studio') {
+    if (mode !== 'vtube-studio' || this.settingsPanelExpanded) {
       this.stop();
       return;
     }
     this.start();
+  }
+
+  public setSettingsPanelExpanded(expanded: boolean): void {
+    if (this.settingsPanelExpanded === expanded) return;
+    this.settingsPanelExpanded = expanded;
+    if (expanded) {
+      this.stop();
+      return;
+    }
+    if (this.requestedMode === 'vtube-studio') this.start();
   }
 
   public dispose(): void {
@@ -100,10 +116,21 @@ export class VTubeStudioSpoutOverlay {
       {
         cwd: path.dirname(executablePath),
         windowsHide: true,
-        stdio: 'ignore',
+        stdio: ['ignore', 'ignore', 'pipe'],
       },
     );
     this.child = child;
+    let stderrBuffer = '';
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string | Buffer) => {
+      stderrBuffer = `${stderrBuffer}${chunk.toString()}`.slice(-1_024);
+      const lines = stderrBuffer.split(/\r?\n/gu);
+      stderrBuffer = lines.pop() ?? '';
+      for (const line of lines) {
+        const event = line.trim().slice(0, 120);
+        if (DIAGNOSTIC_LINE_PATTERN.test(event)) this.recordDiagnostic(event);
+      }
+    });
     child.once('error', () => {
       if (this.child === child) this.child = undefined;
     });

@@ -20,6 +20,8 @@ describe('VTube Studio config store', () => {
       enabled: false,
       port: 8001,
       mouseTrackingEnabled: false,
+      emotionExpressions: {},
+      modelMappings: {},
     });
   });
 
@@ -32,9 +34,41 @@ describe('VTube Studio config store', () => {
       enabled: true,
       port: 8123,
       mouseTrackingEnabled: true,
+      emotionExpressions: {},
+      modelMappings: {},
     });
     const text = await readFile(path.join(directory, 'vtube-studio.v1.json'), 'utf8');
     expect(text).not.toContain('authenticationToken');
     expect(text).not.toContain('127.0.0.1');
+  });
+
+  it('keeps confirmed presentation mappings in separate model namespaces', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'fpnf-vtube-studio-'));
+    const store = new VTubeStudioConfigStore(directory);
+    await store.set({
+      enabled: true,
+      port: 8001,
+      mouseTrackingEnabled: false,
+      emotionExpressions: {},
+      modelMappings: {
+        'model-a': {
+          modelName: 'Akari',
+          emotionExpressions: { angry: 'Angry.exp3.json' },
+          actionHotkeys: { nod: 'nod-a' },
+        },
+        'model-b': {
+          modelName: 'MaoMao',
+          emotionExpressions: { happy: 'Happy.exp3.json' },
+          actionHotkeys: { shake: 'shake-b' },
+        },
+      },
+    });
+
+    await expect(store.get()).resolves.toMatchObject({
+      modelMappings: {
+        'model-a': { emotionExpressions: { angry: 'Angry.exp3.json' } },
+        'model-b': { emotionExpressions: { happy: 'Happy.exp3.json' } },
+      },
+    });
   });
 });

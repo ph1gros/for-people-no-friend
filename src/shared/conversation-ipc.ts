@@ -91,7 +91,7 @@ export const parseStartConversationInput = (value: unknown): StartConversationIn
   if (
     typeof message !== 'string' ||
     message.trim().length === 0 ||
-    message.length > 8_000 ||
+    message.length > 16_000 ||
     !Array.isArray(actions) ||
     actions.length > 64 ||
     !actions.every((action) => typeof action === 'string' && ACTION_PATTERN.test(action)) ||
