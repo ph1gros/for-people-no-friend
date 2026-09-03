@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -32,9 +32,10 @@ const createWorkspace = async (): Promise<{
 }> => {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'fpnf-assistant-tools-'));
   temporaryDirectories.push(directory);
-  const store = new AssistantWorkspaceStore(directory);
-  await store.setRoot(directory);
-  return { directory, store };
+  const canonicalDirectory = await realpath(directory);
+  const store = new AssistantWorkspaceStore(canonicalDirectory);
+  await store.setRoot(canonicalDirectory);
+  return { directory: canonicalDirectory, store };
 };
 
 afterEach(async () => {
@@ -169,6 +170,7 @@ describe('controlled assistant tools', () => {
     temporaryDirectories.push(externalDirectory);
     const externalFile = path.join(externalDirectory, 'note.txt');
     await writeFile(externalFile, 'before');
+    const canonicalExternalFile = await realpath(externalFile);
     const service = new AssistantToolService(
       createModels([
         JSON.stringify({ kind: 'tool', tool: 'read_file', input: { path: externalFile } }),
@@ -204,7 +206,9 @@ describe('controlled assistant tools', () => {
       '允许助手读取文件工作区外目标？',
       '允许助手写入文件工作区外目标？',
     ]);
-    expect(approvals.every(({ description }) => description.includes(externalFile))).toBe(true);
+    expect(approvals.every(({ description }) => description.includes(canonicalExternalFile))).toBe(
+      true,
+    );
     expect(await readFile(externalFile, 'utf8')).toBe('after');
   });
 
@@ -523,6 +527,7 @@ describe('controlled assistant tools', () => {
     temporaryDirectories.push(externalDirectory);
     const externalFile = path.join(externalDirectory, 'outside.txt');
     await writeFile(externalFile, 'outside');
+    const canonicalExternalFile = await realpath(externalFile);
     const opened: string[] = [];
     const service = new AssistantToolService(
       createModels([
@@ -552,7 +557,7 @@ describe('controlled assistant tools', () => {
         requestApproval: async ({ description }) => (approvals.push(description), true),
       },
     );
-    expect(opened).toEqual([externalFile]);
+    expect(opened).toEqual([canonicalExternalFile]);
     expect(approvals).toHaveLength(1);
     expect(approvals[0]).toContain('工作区之外');
   });
