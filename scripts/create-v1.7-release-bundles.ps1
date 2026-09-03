@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [string]$BaseRoot = 'release\win-unpacked',
-    [string]$SpeechSourceRoot = 'release\v1.7-bare-final\FPNF',
+    [string]$SpeechSourceRoot = 'release\v1.7-slim-speech-source',
     [string]$OutputRoot = 'release\v1.7-artifacts'
 )
 
@@ -56,8 +56,8 @@ New-Item -ItemType Directory -Path $speechInputTarget | Out-Null
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\voice-runtime\python') -Destination $speechVoiceTarget -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\voice-runtime\ireina_tts_service.py') -Destination $speechVoiceTarget -Force
 Get-ChildItem -LiteralPath (Join-Path $speechRootPath 'resources\voice-runtime') -File -Filter 'LICENSE.*' | Copy-Item -Destination $speechVoiceTarget -Force
+Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\python') -Destination $speechInputTarget -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\models') -Destination $speechInputTarget -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\python-packages') -Destination $speechInputTarget -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\sensevoice_asr_service.py') -Destination $speechInputTarget -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'resources\optional-assets\README-Local-Speech.zh-CN.txt') -Destination (Join-Path $speechApp '安装说明-本地语音.txt')
 
@@ -69,8 +69,11 @@ if ($privateVoice) { throw 'Private Ireina voice weights were found in the publi
 $required = @(
     (Join-Path $baseApp 'For People No Friend.exe'),
     (Join-Path $speechVoiceTarget 'python\python.exe'),
-    (Join-Path $speechInputTarget 'models\modelscope\models\iic\SenseVoiceSmall\model.pt'),
-    (Join-Path $speechInputTarget 'python-packages\funasr\__init__.py')
+    (Join-Path $speechVoiceTarget 'python\Lib\site-packages\bert\deberta-v2-large-japanese-char-wwm-onnx\model_fp16.onnx'),
+    (Join-Path $speechInputTarget 'python\python.exe'),
+    (Join-Path $speechInputTarget 'python\Lib\site-packages\sherpa_onnx\__init__.py'),
+    (Join-Path $speechInputTarget 'models\sensevoice\model.int8.onnx'),
+    (Join-Path $speechInputTarget 'models\sensevoice\tokens.txt')
 )
 foreach ($requiredPath in $required) {
     if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) { throw "Required release file is missing: $requiredPath" }
@@ -80,6 +83,11 @@ $baseArchive = Join-Path $outputRootPath 'FPNF-v1.7-Windows-x64.zip'
 $speechArchive = Join-Path $outputRootPath 'FPNF-v1.7-Local-Speech-Runtime.zip'
 New-ZipFromStage $baseStage $baseArchive
 New-ZipFromStage $speechStage $speechArchive
+
+$maximumSpeechArchiveBytes = 800MB
+if ((Get-Item -LiteralPath $speechArchive).Length -gt $maximumSpeechArchiveBytes) {
+    throw "The optional speech archive exceeded the 800 MiB release budget."
+}
 
 $hashLines = foreach ($archive in @($baseArchive, $speechArchive)) {
     $hash = Get-FileHash -LiteralPath $archive -Algorithm SHA256

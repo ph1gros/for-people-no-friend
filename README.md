@@ -8,7 +8,7 @@
 
 当前仓库是 **Live2D Version**。V1.7 基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
-V1.7 已完成本轮开发：新增 Genie-TTS 本机 GPT-SoVITS ONNX 提供方、Fish Audio 在线 TTS、通用 VTube Studio 表情映射、可跟随当前角色名或自定义的精准语音称呼，以及采用工作区/小组件范围授权的工作模式；工作区外文件、脚本和项目检查会显示真实目标后逐次确认。基础包不携带 Python、本地 TTS/ASR 模型、指定角色或音色权重；完全离线语音运行环境作为公开可选组件提供，伊蕾娜音色和黑猫身份/模型则只作为独立的非商业可选资源。
+V1.7 已完成本轮开发：新增 Genie-TTS 本机 GPT-SoVITS ONNX 提供方、Fish Audio 在线 TTS、通用 VTube Studio 表情映射、可跟随当前角色名或自定义的精准语音称呼，以及采用工作区/小组件范围授权的工作模式；工作区外文件、脚本和项目检查会显示真实目标后逐次确认。基础包不携带 Python、本地 TTS/ASR 模型、指定角色或音色权重；完全离线语音运行环境作为公开可选组件提供，当前 Windows x64 精简包约 672 MiB，伊蕾娜音色和黑猫身份/模型则只作为独立的非商业可选资源。
 
 Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 

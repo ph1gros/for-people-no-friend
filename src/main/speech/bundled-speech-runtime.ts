@@ -253,21 +253,14 @@ export const resolveBundledSpeechInputRuntimeCandidate = ({
   const packagedRoot = path.join(resourcesPath, 'speech-input-runtime');
   if (packaged) {
     return {
-      pythonRoot: path.join(resourcesPath, 'voice-runtime', 'python'),
+      pythonRoot: path.join(packagedRoot, 'python'),
       assetRoot: packagedRoot,
       serviceRoot: packagedRoot,
     };
   }
   return {
-    pythonRoot: path.join(
-      appPath,
-      'data',
-      'gpt-sovits-standalone',
-      'app',
-      'GPT-SoVITS-v2pro-20250604',
-      'runtime',
-    ),
-    assetRoot: path.join(appPath, 'data', 'ireina-speech-service'),
+    pythonRoot: path.join(appPath, 'data', 'sensevoice-sherpa-runtime', 'python'),
+    assetRoot: path.join(appPath, 'data', 'sensevoice-sherpa-runtime'),
     serviceRoot: path.join(appPath, 'resources', 'speech-input-runtime'),
   };
 };
@@ -308,8 +301,9 @@ export class BundledSpeechInputRuntime {
     if (!pythonRoot || !assetRoot || !serviceRoot) return false;
     for (const [root, relativePath] of [
       [pythonRoot, 'python.exe'],
-      [assetRoot, 'python-packages/funasr/__init__.py'],
-      [assetRoot, 'models/modelscope/models/iic/SenseVoiceSmall/model.pt'],
+      [pythonRoot, 'Lib/site-packages/sherpa_onnx/__init__.py'],
+      [assetRoot, 'models/sensevoice/model.int8.onnx'],
+      [assetRoot, 'models/sensevoice/tokens.txt'],
       [serviceRoot, 'sensevoice_asr_service.py'],
     ] as const) {
       const candidate = path.join(root, relativePath);
@@ -344,8 +338,7 @@ export class BundledSpeechInputRuntime {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: '1',
           NO_PROXY: '127.0.0.1,localhost',
-          FPNF_ASR_PACKAGE_ROOT: path.join(assetRoot, 'python-packages'),
-          FPNF_ASR_MODEL_ROOT: path.join(assetRoot, 'models'),
+          FPNF_ASR_MODEL_ROOT: path.join(assetRoot, 'models', 'sensevoice'),
           FPNF_ASR_TEMP_ROOT: path.join(assetRoot, 'tmp'),
         },
       },
@@ -391,7 +384,7 @@ export class BundledSpeechInputRuntime {
       return (
         body.status === 'ready' &&
         body.model === 'SenseVoiceSmall' &&
-        ['cuda:0', 'cpu'].includes(String(body.provider))
+        body.provider === 'sherpa-onnx-cpu'
       );
     } catch {
       return false;
