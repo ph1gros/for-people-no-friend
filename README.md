@@ -123,12 +123,12 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
 
-### v1.8.0（当前开发版）
+### v1.8.0
 
-- **完成**：独立资源中心与任务栏入口、四类七项组件、统一资源说明、可暂停续传的组件安装、离线安装状态恢复、后台语音预热；修复 Genie 句尾气声。
+- **完成**：独立资源中心与任务栏入口、四类七项组件、统一资源说明、可暂停续传的组件安装、离线安装状态恢复、后台语音预热；完成五个面板拆分，修复 Genie 句尾终止标记、长停顿杂声及打断后残留队列。
 - **使用**：Genie-TTS 2.0.2、ONNX Runtime、Style-Bert-VITS2 2.7.0、日语 DeBERTa、SenseVoiceSmall、sherpa-onnx；模型权重未在本轮修改。
 - **参考**：[BetterGI](https://github.com/babalae/better-genshin-impact) 的独立资源管理和分类导航，按本项目 Electron 分层重新实现；没有引入任意脚本订阅执行。
-- **交付**：七项组件单独发布到资源仓库，主程序版本与组件版本分别管理。主程序是否发布以 GitHub Release 为准。
+- **交付**：七项组件单独发布到资源仓库，主程序版本与组件版本分别管理。Windows x64 ZIP 为 138.79 MiB，下载及校验文件见 [v1.8.0 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.0)。
 
 ### v1.7.1
 
