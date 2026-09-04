@@ -78,3 +78,23 @@ export const el = <K extends keyof HTMLElementTagNameMap>(
   }
   return node;
 };
+
+export const createButton = (label: string, className = ''): HTMLButtonElement => {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = className;
+  button.textContent = label;
+  return button;
+};
+
+export const createField = (
+  labelText: string,
+  input: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
+): HTMLLabelElement => {
+  const label = document.createElement('label');
+  label.className = 'settings-field';
+  const text = document.createElement('span');
+  text.textContent = labelText;
+  label.append(text, input);
+  return label;
+};

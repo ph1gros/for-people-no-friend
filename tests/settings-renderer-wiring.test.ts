@@ -546,7 +546,7 @@ describe('settings renderer regression wiring', () => {
     );
     const historySource = source.slice(
       source.indexOf('const renderHistory'),
-      source.indexOf('const memoryTypeLabels'),
+      source.indexOf('const renderMemories'),
     );
     expect(source).toContain("conversationList.className = 'conversation-list'");
     expect(timelineModuleSource).toContain(
