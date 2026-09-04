@@ -12,7 +12,12 @@ import type { LocalTranscriptionAdapter } from '../src/adapters/speech/local-she
 import { normalizeJapaneseSpeechText, SpeechService } from '../src/main/speech/speech-service';
 import type { SecretStore } from '../src/main/security/secret-store';
 import type { SpeechConfigStore } from '../src/main/storage/speech-config-store';
-import { BUNDLED_IREINA_SPEECH_PRESET, type SpeechSettings } from '../src/shared/speech-ipc';
+import {
+  BUNDLED_IREINA_SPEECH_PRESET,
+  GENIE_MIKA_PRESET,
+  type SpeechSettings,
+} from '../src/shared/speech-ipc';
+import { GenieTtsAdapter } from '../src/adapters/speech/genie-tts';
 
 const enabledSettings = (): SpeechSettings => ({
   enabled: true,
@@ -35,6 +40,61 @@ const enabledSettings = (): SpeechSettings => ({
 });
 
 describe('speech service', () => {
+  it('requires the managed Genie voice to be ready and leaves external Genie available independently', async () => {
+    let settings = { ...enabledSettings(), ...GENIE_MIKA_PRESET, inputEnabled: false };
+    const ensure = vi.fn(async () => false);
+    const service = new SpeechService(
+      { get: async () => settings } as SpeechConfigStore,
+      { has: async () => false } as unknown as SecretStore,
+      {} as OpenAICompatibleSpeechAdapter,
+      undefined,
+      undefined,
+      undefined,
+      { genieTts: new GenieTtsAdapter(), ensureGenieRuntime: ensure },
+    );
+    expect((await service.getStatus()).output).toMatchObject({
+      available: false,
+      preparing: false,
+    });
+    expect(ensure).toHaveBeenCalledOnce();
+    settings = { ...settings, baseUrl: 'http://127.0.0.1:8000' };
+    expect((await service.getStatus()).output.available).toBe(true);
+    expect(ensure).toHaveBeenCalledOnce();
+    service.dispose();
+  });
+  it('returns status while local voice warms up and shares one background startup', async () => {
+    let ready!: (value: boolean) => void;
+    const prepare = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          ready = resolve;
+        }),
+    );
+    const service = new SpeechService(
+      {
+        get: async () => ({
+          ...enabledSettings(),
+          ...BUNDLED_IREINA_SPEECH_PRESET,
+          inputEnabled: false,
+        }),
+      } as SpeechConfigStore,
+      { has: async () => false } as unknown as SecretStore,
+      {} as OpenAICompatibleSpeechAdapter,
+      undefined,
+      undefined,
+      prepare,
+    );
+    await expect(service.getStatus({ waitForRuntime: false })).resolves.toMatchObject({
+      output: { available: false, preparing: true },
+    });
+    await service.getStatus({ waitForRuntime: false });
+    expect(prepare).toHaveBeenCalledOnce();
+    ready(true);
+    await expect(service.getStatus()).resolves.toMatchObject({
+      output: { available: true, preparing: false },
+    });
+    service.dispose();
+  });
   it('removes spoken ellipses and spells isolated Latin letters in Japanese', () => {
     expect(
       normalizeJapaneseSpeechText("……式は f'(c) = (f(b) - f(a)) / (b - a)。……これで終わり。"),

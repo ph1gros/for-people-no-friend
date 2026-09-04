@@ -114,6 +114,9 @@ import type { LocalSpeechAssetService } from '../speech/local-speech-asset-servi
 import type { BundledVTubeModelInstaller } from '../vtube-studio/bundled-vtube-model-installer';
 import type { SafeDiagnosticLog } from '../diagnostics/safe-diagnostic-log';
 import type { SpeechAssetManager } from '../speech/speech-asset-manager';
+import type { ResourceCenter } from '../resources/resource-center';
+import { unavailableResourceCenter } from '../../shared/resource-catalog';
+import type { ResourceCenterWindow } from '../windows/resource-center-window';
 
 export interface IpcWindowController {
   getWindow(): BrowserWindow | undefined;
@@ -144,13 +147,19 @@ export interface IpcHandlerDependencies {
   bundledVTubeModel?: BundledVTubeModelInstaller;
   diagnosticLog?: SafeDiagnosticLog;
   speechAssetManager?: SpeechAssetManager;
+  resourceCenter?: ResourceCenter;
+  resourceWindow?: ResourceCenterWindow;
 }
 
 const requireTrustedSender = (
   event: Parameters<typeof isTrustedIpcSender>[0],
   windows: IpcWindowController,
+  additionalWindow?: BrowserWindow,
 ): void => {
-  if (!isTrustedIpcSender(event, windows.getWindow())) {
+  if (
+    !isTrustedIpcSender(event, windows.getWindow()) &&
+    !isTrustedIpcSender(event, additionalWindow)
+  ) {
     throw new Error('Unauthorized IPC sender.');
   }
 };
@@ -167,6 +176,7 @@ export const createTrustedIpcHandlerRegistrar =
     ipc: IpcHandlerRegistry,
     windows: IpcWindowController,
     untrustedBehavior: 'throw' | 'return-undefined' = 'throw',
+    additionalWindow?: () => BrowserWindow | undefined,
   ) =>
   (channel: string, handler: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
@@ -176,7 +186,7 @@ export const createTrustedIpcHandlerRegistrar =
       ) {
         return undefined;
       }
-      requireTrustedSender(event, windows);
+      requireTrustedSender(event, windows, additionalWindow?.());
       return handler(event, ...(args as never[]));
     });
   };
@@ -249,8 +259,17 @@ export const registerIpcHandlers = ({
   bundledVTubeModel,
   diagnosticLog,
   speechAssetManager,
+  resourceCenter,
+  resourceWindow,
 }: IpcHandlerDependencies): void => {
   const handle = createTrustedIpcHandlerRegistrar(ipcMain, windows);
+  const handleResource = createTrustedIpcHandlerRegistrar(ipcMain, windows, 'throw', () =>
+    resourceWindow?.getWindow(),
+  );
+  handle(IPC_CHANNELS.openResourceCenter, async () => {
+    if (!resourceWindow) throw new Error('资源中心窗口不可用。');
+    await resourceWindow.open();
+  });
   const handleSilent = createTrustedIpcHandlerRegistrar(ipcMain, windows, 'return-undefined');
   const notifyCharacterDisplayModeChanged = async (mode: CharacterDisplayMode): Promise<void> => {
     try {
@@ -834,7 +853,7 @@ export const registerIpcHandlers = ({
   });
   handle(IPC_CHANNELS.getSpeechStatus, async (event): Promise<SpeechStatus> => {
     return speech
-      ? speech.getStatus()
+      ? speech.getStatus({ waitForRuntime: false })
       : {
           settings: { ...DEFAULT_SPEECH_SETTINGS },
           apiKeySaved: false,
@@ -926,7 +945,15 @@ export const registerIpcHandlers = ({
       }
     );
   });
-  handle(IPC_CHANNELS.controlSpeechAssetDownload, async (event, input: unknown) => {
+  handleResource(
+    IPC_CHANNELS.getResourceCenterStatus,
+    async () => (await resourceCenter?.getStatus()) ?? unavailableResourceCenter(),
+  );
+  handleResource(
+    IPC_CHANNELS.refreshResourceCatalog,
+    async () => (await resourceCenter?.refresh()) ?? unavailableResourceCenter(),
+  );
+  handleResource(IPC_CHANNELS.controlSpeechAssetDownload, async (event, input: unknown) => {
     const parsed = parseSpeechAssetControlInput(input);
     return (
       (await speechAssetManager?.control(parsed)) ?? {

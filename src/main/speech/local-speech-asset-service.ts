@@ -57,7 +57,7 @@ export interface ExportedLocalVoice {
 }
 
 export class LocalSpeechAssetService {
-  private readonly voiceRoot: string;
+  private voiceRoot: string;
   private readonly trainingRoot: string;
 
   public constructor(dataRoot: string, packagedVoiceRoot?: string) {
@@ -67,6 +67,10 @@ export class LocalSpeechAssetService {
 
   public getTrainingSourcePath(): string {
     return path.join(this.trainingRoot, TRAINING_SOURCE_DIRECTORY_NAME);
+  }
+  /** Main supplies only a root already validated by BundledSpeechRuntime. */
+  public useInstalledVoice(voiceRoot: string): void {
+    this.voiceRoot = voiceRoot;
   }
 
   public getTrainerPath(): string {

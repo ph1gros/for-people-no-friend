@@ -7,6 +7,34 @@ import { createTrustedIpcHandlerRegistrar } from '../src/main/ipc/register-ipc-h
 import { isTrustedIpcSender } from '../src/main/ipc/sender-validation';
 
 describe('IPC sender validation', () => {
+  it('admits the resource main frame only on explicitly scoped handlers', () => {
+    const handlers = new Map<string, (event: never, ...args: unknown[]) => unknown>();
+    const ipc = {
+      handle: (channel: string, handler: (event: never, ...args: unknown[]) => unknown) =>
+        handlers.set(channel, handler),
+    };
+    const main = { isDestroyed: () => false, webContents: { mainFrame: {} } };
+    const resource = { isDestroyed: () => false, webContents: { mainFrame: {} } };
+    const windows = { getWindow: () => main };
+    createTrustedIpcHandlerRegistrar(ipc as never, windows as never)('private', () => 'private');
+    createTrustedIpcHandlerRegistrar(
+      ipc as never,
+      windows as never,
+      'throw',
+      () => resource as never,
+    )('resources', () => 'allowed');
+    const event = { sender: resource.webContents, senderFrame: resource.webContents.mainFrame };
+    expect(handlers.get('resources')!(event as never)).toBe('allowed');
+    expect(() => handlers.get('private')!(event as never)).toThrow('Unauthorized');
+    expect(() => handlers.get('resources')!({ ...event, senderFrame: {} } as never)).toThrow(
+      'Unauthorized',
+    );
+    expect(() => handlers.get('resources')!({ ...event, sender: {} } as never)).toThrow(
+      'Unauthorized',
+    );
+    resource.isDestroyed = () => true;
+    expect(() => handlers.get('resources')!(event as never)).toThrow('Unauthorized');
+  });
   it('requires both the trusted webContents and its main frame', () => {
     const mainFrame = {};
     const webContents = { mainFrame };

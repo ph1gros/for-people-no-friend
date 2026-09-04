@@ -45,6 +45,7 @@ import { tokenizeInputOverlayKeyDraft } from '../../shared/desktop-integration-i
 import type { ConfigurableProviderId } from '../../shared/model-ipc';
 import {
   BUNDLED_IREINA_SPEECH_PRESET,
+  GENIE_MIKA_PRESET,
   MAX_SPEECH_INPUT_AUDIO_BYTES,
   MAX_SPEECH_WAKE_WORD_LENGTH,
   SPEECH_PUSH_TO_TALK_KEYS,
@@ -106,7 +107,8 @@ import { IdleCompanionScheduler, selectKittenDrowsyLine } from './idle-companion
 import { mountComposerPanel } from './composer';
 import { el } from './elements';
 import { mountConversationTimeline } from './timeline';
-import { mountSpeechAssetDownloadPanel, startSpeechInputAssetOnDemand } from './speech-asset-panel';
+import { startSpeechInputAssetOnDemand } from './speech-asset-panel';
+import { mountResourceCenter } from './resource-center';
 
 interface ChatControllerOptions {
   root: HTMLElement;
@@ -952,8 +954,8 @@ export const initializeChat = async ({
     createField('识别语言', speechTranscriptionLanguageInput),
   );
   const speechAssetsPane = el('section', { className: 'display-mode-pane speech-settings__pane' });
-  const speechAssetDownloadRoot = document.createElement('section');
-  speechAssetDownloadRoot.className = 'character-search local-asset-card speech-asset-download';
+  // Detached catalog view keeps the existing compact download indicator updated.
+  const resourceCenterRoot = document.createElement('section');
   const speechAssetsCard = el('section', { className: 'character-search local-asset-card' });
   const speechAssetsTitle = el('strong', { textContent: '本地音色成品' });
   const speechAssetsSummary = document.createElement('p');
@@ -987,7 +989,7 @@ export const initializeChat = async ({
     speechTrainingActions,
     speechTrainingStatus,
   );
-  speechAssetsPane.append(speechAssetDownloadRoot, speechAssetsCard, speechTrainingCard);
+  speechAssetsPane.append(speechAssetsCard, speechTrainingCard);
   const speechPageBody = document.createElement('div');
   speechPageBody.className = 'display-mode-settings__body speech-settings__body';
   const speechPageTabs = document.createElement('nav');
@@ -1054,10 +1056,13 @@ export const initializeChat = async ({
     } else if (providerId === 'genie-tts') {
       speechApiKeyInput.placeholder = 'Genie-TTS 本机服务不使用密钥';
       speechVoiceInput.placeholder = '已在 Genie 中加载的 character_name';
+      speechVoiceIdentityHint.textContent =
+        '内置音色：圣园未花（Mika），日语，出自《蔚蓝档案》。需安装 Genie-TTS 引擎、Genie 基础模型和该音色。也可填写自行启动的 Genie 服务和角色名；修改后点击“保存”。';
       if (applyDefaults) {
-        speechBaseUrlInput.value = 'http://127.0.0.1:8000';
-        speechModelInput.value = 'gpt-sovits-v2proplus';
-        speechVoiceInput.value = '';
+        speechBaseUrlInput.value = GENIE_MIKA_PRESET.baseUrl;
+        speechModelInput.value = GENIE_MIKA_PRESET.modelId;
+        speechVoiceInput.value = GENIE_MIKA_PRESET.voiceId;
+        displaySpeechLanguage(GENIE_MIKA_PRESET.language);
         speechFormatSelect.value = 'wav';
         speechSpeedInput.value = '1';
       }
@@ -1795,6 +1800,29 @@ export const initializeChat = async ({
   );
   speechSettingsSection.append(speechSettingsPanel);
 
+  const resourceSettingsSection = createSettingsSection(
+    '资源中心',
+    '在独立窗口中管理引擎、基础模型、音色模型和语音识别。',
+  );
+  const openResourceCenterButton = createButton('打开资源中心', 'primary-button');
+  const resourceWindowStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
+  openResourceCenterButton.addEventListener('click', () => {
+    if (!api) return;
+    openResourceCenterButton.disabled = true;
+    void api
+      .openResourceCenter()
+      .then(() => {
+        resourceWindowStatus.textContent = '资源中心已在独立窗口打开。';
+      })
+      .catch(() => {
+        resourceWindowStatus.textContent = '资源中心打开失败，请重试。';
+      })
+      .finally(() => {
+        openResourceCenterButton.disabled = false;
+      });
+  });
+  resourceSettingsSection.append(openResourceCenterButton, resourceWindowStatus);
+
   const displaySettingsSection = createSettingsSection(
     '模型显示方式',
     '选择内嵌 Live2D、ViewerEX 或 VTube Studio，并保持同一时间只显示一个角色。',
@@ -1844,11 +1872,20 @@ export const initializeChat = async ({
   settingsNavigation.setAttribute('aria-label', '设置分类');
   const settingsContent = el('div', { className: 'settings-content' });
   type SettingsPage =
-    'model' | 'assistant' | 'speech' | 'character' | 'display' | 'widgets' | 'desktop' | 'memory';
+    | 'model'
+    | 'assistant'
+    | 'speech'
+    | 'resources'
+    | 'character'
+    | 'display'
+    | 'widgets'
+    | 'desktop'
+    | 'memory';
   const settingsPages = [
     ['model', '模型与窗口', modelSettingsSection],
     ['assistant', '工作模式', assistantSettingsSection],
     ['speech', '语音和语音输入', speechSettingsSection],
+    ['resources', '资源中心', resourceSettingsSection],
     ['character', '角色', characterSettingsSection],
     ['display', '模型显示方式', displaySettingsSection],
     ['widgets', '小组件', widgetsSettingsSection],
@@ -1886,8 +1923,9 @@ export const initializeChat = async ({
   settingsHeader.append(settingsHeaderActions);
   settingsPanel.append(settingsHeader, settingsLayout);
   const speechAssetDownloadPanel = api
-    ? mountSpeechAssetDownloadPanel(speechAssetDownloadRoot, speechAssetProgressStrip, {
-        getStatus: () => api.getSpeechAssetDownloadStatus(),
+    ? mountResourceCenter(resourceCenterRoot, speechAssetProgressStrip, {
+        getStatus: () => api.getResourceCenterStatus(),
+        refreshCatalog: () => api.refreshResourceCatalog(),
         control: (input) => api.controlSpeechAssetDownload(input),
       })
     : undefined;
@@ -3849,6 +3887,25 @@ export const initializeChat = async ({
     if (!status.output.available) stopSpeech('speech-disabled');
   };
 
+  let speechReadinessRefreshInFlight = false;
+  const speechReadinessRefreshTimer = window.setInterval(() => {
+    if (!api || !currentSpeechStatus?.output.preparing || speechReadinessRefreshInFlight) return;
+    speechReadinessRefreshInFlight = true;
+    const previous = currentSpeechStatus;
+    void api
+      .getSpeechStatus()
+      .then((status) => {
+        if (currentSpeechStatus !== previous) return;
+        // Update readiness only; polling must not overwrite unsaved settings fields.
+        currentSpeechStatus = { ...previous, output: status.output };
+        speechStatus.textContent = status.output.detail + ' ' + previous.input.detail;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        speechReadinessRefreshInFlight = false;
+      });
+  }, 1000);
+
   const displayLocalSpeechAssetStatus = (
     status: Awaited<ReturnType<NonNullable<typeof api>['getLocalSpeechAssetStatus']>>,
   ): void => {
@@ -4788,7 +4845,7 @@ export const initializeChat = async ({
       speechProviderSelect.value === 'fish-audio'
         ? '启用后，待合成文字会发送到 Fish Audio；API Key 只保存在本机安全存储。'
         : speechProviderSelect.value === 'genie-tts'
-          ? '只连接本机 Genie-TTS；请先在 Genie 中加载角色和参考音频。'
+          ? '已选择圣园未花（日语）。安装三项配套资源后，启用语音并保存即可在后台准备。'
           : '语音设置尚未保存。';
   });
   speechVoiceInput.addEventListener('input', () => {
@@ -5378,6 +5435,7 @@ export const initializeChat = async ({
     disposeDesktopInputActivity?.();
     clearInputOverlayTimers();
     window.clearInterval(mediaStatusRefreshTimer);
+    window.clearInterval(speechReadinessRefreshTimer);
     desktopWidgetResizeObserver.disconnect();
     window.removeEventListener('resize', syncDesktopWidgetReserve);
     loreEditorResizeObserver.disconnect();

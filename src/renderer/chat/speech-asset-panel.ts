@@ -40,6 +40,11 @@ export const startSpeechInputAssetOnDemand = async (
 const TIER_LABELS: Readonly<Record<SpeechAssetTierId, string>> = {
   'voice-runtime': '桌宠能说话',
   'speech-input': '我能对它说话',
+  'bert-japanese': '日语 DeBERTa 基础模型',
+  'voice-ireina': '伊蕾娜音色模型',
+  'genie-tts': 'Genie-TTS 引擎',
+  'genie-data': 'Genie 基础模型',
+  'voice-genie-mika': 'Mika 音色模型',
 };
 
 export const speechAssetTierLabel = (id: SpeechAssetTierId): string => TIER_LABELS[id];

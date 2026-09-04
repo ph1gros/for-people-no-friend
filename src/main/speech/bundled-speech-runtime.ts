@@ -3,6 +3,7 @@ import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 import { isSpeechAssetActivated } from './speech-asset-activation';
+import { validateInstalledSpeechAssetTarget } from './speech-asset-downloader';
 
 const READY_URL = 'http://127.0.0.1:9881/ready';
 const STARTUP_READY_ATTEMPTS = 240;
@@ -26,6 +27,8 @@ type BundledSpeechRuntimeSource =
 interface ResolvedBundledSpeechRuntime {
   runtimeRoot: string;
   serviceRoot: string;
+  voiceRoot?: string;
+  bertRoot?: string;
 }
 
 export const resolveBundledSpeechRuntimeSources = ({
@@ -103,16 +106,36 @@ export class BundledSpeechRuntime {
   public async resolveAvailableRoot(): Promise<string | undefined> {
     return (await this.resolveAvailableRuntime())?.runtimeRoot;
   }
+  public async resolveAvailableVoiceRoot(): Promise<string | undefined> {
+    const runtime = await this.resolveAvailableRuntime();
+    return runtime
+      ? (runtime.voiceRoot ?? path.join(runtime.runtimeRoot, 'voice', 'ireina'))
+      : undefined;
+  }
+
   private async resolveAvailableRuntime(): Promise<ResolvedBundledSpeechRuntime | undefined> {
     const sources = Array.isArray(this.runtimeRoots) ? this.runtimeRoots : [this.runtimeRoots];
     for (const source of sources) {
       const runtimeRoot = typeof source === 'string' ? source : source.runtimeRoot;
-      if (
-        typeof source !== 'string' &&
-        source.downloadedAsset &&
-        !(await isSpeechAssetActivated(path.dirname(runtimeRoot), 'voice-runtime'))
-      )
-        continue;
+      if (typeof source !== 'string' && source.downloadedAsset) {
+        const assetsRoot = path.dirname(runtimeRoot);
+        try {
+          for (const id of ['voice-runtime', 'bert-japanese', 'voice-ireina'] as const) {
+            if (!(await isSpeechAssetActivated(assetsRoot, id)))
+              throw new Error('Asset is not activated');
+            await validateInstalledSpeechAssetTarget(path.join(assetsRoot, id), id);
+          }
+          const canonicalRuntimeRoot = await realpath(path.join(assetsRoot, 'voice-runtime'));
+          return {
+            runtimeRoot: canonicalRuntimeRoot,
+            serviceRoot: canonicalRuntimeRoot,
+            voiceRoot: await realpath(path.join(assetsRoot, 'voice-ireina')),
+            bertRoot: await realpath(path.join(assetsRoot, 'bert-japanese')),
+          };
+        } catch {
+          continue;
+        }
+      }
       const serviceRoot =
         typeof source === 'string' ? source : (source.serviceRoot ?? source.runtimeRoot);
       const [canonicalRuntimeRoot, canonicalServiceRoot] = await Promise.all([
@@ -166,7 +189,6 @@ export class BundledSpeechRuntime {
     const runtime = await this.resolveAvailableRuntime();
     if (!runtime) return false;
     const executable = path.join(runtime.runtimeRoot, 'python', 'python.exe');
-    const splitRuntime = runtime.runtimeRoot !== runtime.serviceRoot;
     const child = this.spawnRuntime(
       executable,
       [
@@ -190,12 +212,10 @@ export class BundledSpeechRuntime {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: '1',
           NO_PROXY: '127.0.0.1,localhost',
-          ...(splitRuntime
-            ? {
-                FPNF_BUNDLED_VOICE_ROOT: path.join(runtime.runtimeRoot, 'voice', 'ireina'),
-                FPNF_BUNDLED_OUTPUT_ROOT: path.join(runtime.runtimeRoot, 'recent-output'),
-              }
-            : {}),
+          FPNF_BUNDLED_VOICE_ROOT:
+            runtime.voiceRoot ?? path.join(runtime.runtimeRoot, 'voice', 'ireina'),
+          FPNF_BUNDLED_BERT_ROOT: runtime.bertRoot ?? '',
+          FPNF_BUNDLED_OUTPUT_ROOT: path.join(runtime.runtimeRoot, 'recent-output'),
         },
       },
     );

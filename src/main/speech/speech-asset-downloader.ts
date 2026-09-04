@@ -19,6 +19,8 @@ import { Unzip, UnzipInflate, UnzipPassThrough, type UnzipFile } from 'fflate';
 import { SPEECH_ASSET_TIER_IDS, type SpeechAssetTierId } from '../../shared/speech-asset-ipc';
 import { isSpeechAssetActivated } from './speech-asset-activation';
 import { SPEECH_ASSET_INTEGRITY, type SpeechAssetIntegrity } from './speech-asset-integrity';
+import { REQUIRED_TARGET_FILES, SPEECH_ASSET_TARGETS } from './speech-asset-layout';
+import { fetchSpeechAssetArchive } from './speech-asset-fetch';
 
 const MANIFEST_MAX_BYTES = 256 * 1024;
 const ARCHIVE_MAX_BYTES = 1_500 * 1024 * 1024;
@@ -26,19 +28,6 @@ const UNCOMPRESSED_MAX_BYTES = 3_000 * 1024 * 1024;
 const ARCHIVE_MAX_ENTRIES = 25_000;
 const SEGMENTED_DOWNLOAD_MIN_BYTES = 1024 * 1024;
 const TIER_IDS = SPEECH_ASSET_TIER_IDS;
-const REQUIRED_TARGET_FILES: Readonly<Record<SpeechAssetTarget, readonly string[]>> = {
-  'voice-runtime': [
-    'python/python.exe',
-    'ireina_tts_service.py',
-    'python/Lib/site-packages/bert/deberta-v2-large-japanese-char-wwm-onnx/model_fp16.onnx',
-    'python/Lib/site-packages/bert/deberta-v2-large-japanese-char-wwm-onnx/config.json',
-    'python/Lib/site-packages/bert/deberta-v2-large-japanese-char-wwm-onnx/tokenizer.json',
-    'voice/ireina/ireina_e100_s16040.onnx',
-    'voice/ireina/config.json',
-    'voice/ireina/style_vectors.npy',
-  ],
-  'speech-input-runtime': ['models/sensevoice/model.int8.onnx', 'models/sensevoice/tokens.txt'],
-};
 
 export type { SpeechAssetTierId } from '../../shared/speech-asset-ipc';
 export type SpeechAssetTarget = SpeechAssetIntegrity['target'];
@@ -146,7 +135,7 @@ const parseTier = (
     !Number.isSafeInteger(integrity.maxEntries) ||
     integrity.maxEntries <= 0 ||
     integrity.maxEntries > ARCHIVE_MAX_ENTRIES ||
-    integrity.target !== (id === 'speech-input' ? 'speech-input-runtime' : 'voice-runtime')
+    integrity.target !== SPEECH_ASSET_TARGETS[id]
   )
     throw new Error('应用内置语音资产校验记录无效，该档位不可用。');
   return {
@@ -191,14 +180,35 @@ export const fetchSpeechAssetManifest = async (
   const response = await (options.fetch ?? fetch)(url, {
     headers: { accept: 'application/json' },
     redirect: 'error',
+    signal: AbortSignal.timeout(8_000),
   });
-  if (!response.ok) throw new Error(`语音资产清单读取失败（HTTP ${response.status}）。`);
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(`语音资产清单读取失败（HTTP ${response.status}）。`);
+  }
   const declaredLength = Number(response.headers.get('content-length'));
   if (Number.isFinite(declaredLength) && declaredLength > MANIFEST_MAX_BYTES) {
+    await response.body?.cancel();
     throw new Error('语音资产清单过大。');
   }
-  const text = await response.text();
-  if (Buffer.byteLength(text, 'utf8') > MANIFEST_MAX_BYTES) throw new Error('语音资产清单过大。');
+  if (!response.body) throw new Error('语音资产清单为空。');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  let text: string;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > MANIFEST_MAX_BYTES) throw new Error('语音资产清单过大。');
+      chunks.push(value);
+    }
+    text = Buffer.concat(chunks).toString('utf8');
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
   try {
     return parseSpeechAssetManifest(JSON.parse(text) as unknown, options);
   } catch (error) {
@@ -338,8 +348,11 @@ export const cleanupOrphanedSpeechAssetWorkspaces = async (
   const entries = await readdir(root, { withFileTypes: true }).catch(() => undefined);
   if (!entries) return 0;
   const uuid = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}';
-  const stagingName = new RegExp(`^\\.staging-(voice-runtime|speech-input)-${uuid}$`, 'u');
-  const backupName = new RegExp(`^\\.backup-(voice-runtime|speech-input-runtime)-${uuid}$`, 'u');
+  const stagingName = new RegExp(`^\\.staging-(${TIER_IDS.join('|')})-${uuid}$`, 'u');
+  const backupName = new RegExp(
+    `^\\.backup-(${Object.values(SPEECH_ASSET_TARGETS).join('|')})-${uuid}$`,
+    'u',
+  );
   let removed = 0;
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
@@ -353,8 +366,8 @@ export const cleanupOrphanedSpeechAssetWorkspaces = async (
       // A kill between the two renames can leave the backup as the only surviving copy.
       // Keep it unless the replacement is complete and authorized by the current app.
       const target = backup[1] as SpeechAssetTarget;
-      const id = target === 'voice-runtime' ? 'voice-runtime' : 'speech-input';
-      if (!(await isSpeechAssetActivated(root, id))) continue;
+      const id = TIER_IDS.find((id) => SPEECH_ASSET_TARGETS[id] === target);
+      if (!id || !(await isSpeechAssetActivated(root, id))) continue;
       const valid = await validateInstalledSpeechAssetTarget(path.join(root, target), target).then(
         () => true,
         () => false,
@@ -504,6 +517,8 @@ export class SpeechAssetDownloader {
   }
 
   private async download(tier: SpeechAssetTier, signal: AbortSignal): Promise<string> {
+    // Bound stalled transfers while retaining user cancellation and resumable partial files.
+    signal = AbortSignal.any([signal, AbortSignal.timeout(30 * 60_000)]);
     const legacyPartial = await stat(this.partialPath(tier.id, tier.version)).catch(
       () => undefined,
     );
@@ -530,11 +545,15 @@ export class SpeechAssetDownloader {
           await rm(partialPath, { force: true });
           offset = 0;
         }
-        const response = await this.fetcher(source, {
-          headers: offset > 0 ? { range: `bytes=${offset}-` } : {},
-          redirect: 'error',
-          signal,
-        });
+        const response = await fetchSpeechAssetArchive(
+          source,
+          {
+            headers: offset > 0 ? { range: `bytes=${offset}-` } : {},
+            redirect: 'error',
+            signal,
+          },
+          this.fetcher,
+        );
         if (!response.ok || !response.body) {
           throw new Error(`语音资产下载失败（HTTP ${response.status}）。`);
         }
@@ -613,11 +632,15 @@ export class SpeechAssetDownloader {
         for (const source of tier.urls) {
           try {
             const rangeStart = start + existingBytes;
-            const response = await this.fetcher(source, {
-              headers: { range: `bytes=${rangeStart}-${end}` },
-              redirect: 'error',
-              signal,
-            });
+            const response = await fetchSpeechAssetArchive(
+              source,
+              {
+                headers: { range: `bytes=${rangeStart}-${end}` },
+                redirect: 'error',
+                signal,
+              },
+              this.fetcher,
+            );
             const expectedRange = `bytes ${rangeStart}-${end}/${tier.bytes}`;
             if (
               response.status !== 206 ||

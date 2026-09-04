@@ -370,6 +370,15 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.getSpeechAssetDownloadStatus) as ReturnType<
       DeskpetApi['getSpeechAssetDownloadStatus']
     >,
+  openResourceCenter: () => ipcRenderer.invoke(IPC_CHANNELS.openResourceCenter) as Promise<void>,
+  getResourceCenterStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getResourceCenterStatus) as ReturnType<
+      DeskpetApi['getResourceCenterStatus']
+    >,
+  refreshResourceCatalog: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.refreshResourceCatalog) as ReturnType<
+      DeskpetApi['refreshResourceCatalog']
+    >,
   controlSpeechAssetDownload: (input: SpeechAssetControlInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.controlSpeechAssetDownload, input) as ReturnType<
       DeskpetApi['controlSpeechAssetDownload']

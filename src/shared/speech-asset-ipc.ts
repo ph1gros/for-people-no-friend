@@ -1,4 +1,12 @@
-export const SPEECH_ASSET_TIER_IDS = ['voice-runtime', 'speech-input'] as const;
+export const SPEECH_ASSET_TIER_IDS = [
+  'voice-runtime',
+  'speech-input',
+  'bert-japanese',
+  'voice-ireina',
+  'genie-tts',
+  'genie-data',
+  'voice-genie-mika',
+] as const;
 export type SpeechAssetTierId = (typeof SPEECH_ASSET_TIER_IDS)[number];
 
 export const SPEECH_ASSET_ACTIONS = ['start', 'pause', 'resume', 'cancel'] as const;

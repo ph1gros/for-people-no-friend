@@ -11,6 +11,7 @@ import {
 } from '../../adapters/speech/openai-compatible-asr';
 import {
   BUNDLED_IREINA_SPEECH_PRESET,
+  GENIE_MIKA_PRESET,
   DEFAULT_SPEECH_SETTINGS,
   SPEECH_AUDIO_FORMATS,
   type SpeechOperationResult,
@@ -121,11 +122,44 @@ export const isBundledLocalTranscription = (settings: SpeechSettings): boolean =
 
 export interface AdditionalSpeechAdapters {
   genieTts?: GenieTtsAdapter;
+  ensureGenieRuntime?: () => Promise<boolean>;
   fishAudio?: FishAudioSpeechAdapter;
 }
 
 export class SpeechService {
   private readonly activeRequests = new Map<string, AbortController>();
+  private readonly runtimeChecks = new Map<
+    string,
+    { ready: boolean; pending?: Promise<boolean>; checkedAt: number }
+  >();
+
+  private async checkRuntime(
+    key: string,
+    prepare: () => Promise<boolean>,
+    wait: boolean,
+  ): Promise<boolean> {
+    let check = this.runtimeChecks.get(key);
+    if (!check) {
+      check = { ready: false, checkedAt: 0 };
+      this.runtimeChecks.set(key, check);
+    }
+    const current = check;
+    if (!current.pending && Date.now() - current.checkedAt >= 5000) {
+      current.pending = Promise.resolve()
+        .then(prepare)
+        .catch(() => {
+          this.diagnostics?.('speech-runtime-start-failed');
+          return false;
+        })
+        .then((ready) => {
+          current.ready = ready;
+          current.checkedAt = Date.now();
+          current.pending = undefined;
+          return ready;
+        });
+    }
+    return wait && current.pending ? current.pending : current.ready;
+  }
 
   public constructor(
     private readonly store: SpeechConfigStore,
@@ -139,7 +173,7 @@ export class SpeechService {
     private readonly localTranscriptionAdapter?: LocalTranscriptionAdapter,
   ) {}
 
-  public async getStatus(): Promise<SpeechStatus> {
+  public async getStatus(options: { waitForRuntime?: boolean } = {}): Promise<SpeechStatus> {
     const settings = await this.store.get().catch(() => ({ ...DEFAULT_SPEECH_SETTINGS }));
     let dataDestination: 'none' | 'this-device' | 'remote-service' = 'none';
     let endpointValid = settings.providerId === 'disabled';
@@ -184,10 +218,29 @@ export class SpeechService {
     const bundledLocalVoiceReady =
       !bundledLocalVoiceSelected || !settings.enabled || !configured
         ? true
-        : await this.ensureBundledRuntime?.().catch(() => {
-            this.diagnostics?.('speech-runtime-start-failed');
-            return false;
-          });
+        : await this.checkRuntime(
+            'style-bert-vits2',
+            () => this.ensureBundledRuntime?.() ?? Promise.resolve(false),
+            options.waitForRuntime !== false,
+          );
+    const managedGenieSelected =
+      settings.providerId === 'genie-tts' && settings.baseUrl === GENIE_MIKA_PRESET.baseUrl;
+    const managedGenieConfigured =
+      settings.voiceId === GENIE_MIKA_PRESET.voiceId &&
+      settings.language === GENIE_MIKA_PRESET.language;
+    const managedGenieReady =
+      !managedGenieSelected || !settings.enabled || !configured
+        ? true
+        : managedGenieConfigured &&
+          (await this.checkRuntime(
+            'genie-tts',
+            () => this.additionalAdapters.ensureGenieRuntime?.() ?? Promise.resolve(false),
+            options.waitForRuntime !== false,
+          ));
+    const preparing =
+      settings.enabled &&
+      ((!bundledLocalVoiceReady && Boolean(this.runtimeChecks.get('style-bert-vits2')?.pending)) ||
+        (!managedGenieReady && Boolean(this.runtimeChecks.get('genie-tts')?.pending)));
     let inputDataDestination: 'none' | 'this-device' | 'remote-service' = 'none';
     let inputEndpointValid = false;
     try {
@@ -221,7 +274,9 @@ export class SpeechService {
         providerId: settings.providerId,
         displayName: providerDisplayName(settings.providerId),
         configured,
-        available: settings.enabled && configured && bundledLocalVoiceReady === true,
+        available:
+          settings.enabled && configured && bundledLocalVoiceReady === true && managedGenieReady,
+        preparing,
         transport: settings.providerId === 'disabled' ? 'none' : 'rest',
         dataDestination,
         supportsStreamingInput: false,
@@ -232,11 +287,15 @@ export class SpeechService {
             ? '语音输出默认关闭，文字聊天不受影响。'
             : settings.providerId === 'fish-audio' && !apiKeySaved
               ? 'Fish Audio API Key 尚未保存，文字不会发送到远端。'
-              : bundledLocalVoiceSelected && bundledLocalVoiceReady !== true
-                ? '本机 Style-Bert-VITS2 运行时未就绪；文字回复仍可正常使用。'
-                : dataDestination === 'this-device'
-                  ? `声音来源：本机 ${providerDisplayName(settings.providerId)} 的“${settings.voiceId}”；数据去向：仅本机接口。失败会保留完整文字回复。`
-                  : `声音来源：${providerDisplayName(settings.providerId)} 的“${settings.voiceId}”；文字会发送到 Fish Audio。失败会保留完整文字回复。`,
+              : preparing
+                ? '本地语音正在后台预热；你可以先进行文字聊天。'
+                : managedGenieSelected && !managedGenieReady
+                  ? '圣园未花（日语）尚未就绪，请检查 Genie-TTS 引擎、Genie 基础模型和音色模型是否已安装，并使用日语设置。'
+                  : bundledLocalVoiceSelected && bundledLocalVoiceReady !== true
+                    ? '本机 Style-Bert-VITS2 运行时未就绪；文字回复仍可正常使用。'
+                    : dataDestination === 'this-device'
+                      ? `声音来源：本机 ${providerDisplayName(settings.providerId)} 的“${settings.voiceId}”；数据去向：仅本机接口。失败会保留完整文字回复。`
+                      : `声音来源：${providerDisplayName(settings.providerId)} 的“${settings.voiceId}”；文字会发送到 Fish Audio。失败会保留完整文字回复。`,
       },
       input: {
         available: inputAvailable,

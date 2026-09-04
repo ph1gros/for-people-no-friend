@@ -1,0 +1,48 @@
+html,
+body {
+  height: 100%;
+  overflow: auto;
+  background: #141922;
+  color: #e7edf5;
+}
+body {
+  user-select: text;
+}
+.resource-window {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 28px 32px;
+}
+.resource-window header > p {
+  color: #a8b6c8;
+  font-size: 14px;
+}
+.resource-window h1 {
+  margin: 8px 0 12px;
+  font-size: 30px;
+}
+.resource-window .resource-center__card {
+  background: #1b2330;
+}
+.resource-window .settings-hint,
+.resource-window .settings-status {
+  color: #a8b6c8;
+}
+.resource-window .resource-center__toolbar input,
+.resource-window .resource-center__toolbar select {
+  background: #202c3c;
+  color: #e7edf5;
+}
+.resource-window #download-progress {
+  position: sticky;
+  bottom: 12px;
+  padding: 14px;
+  background: #1b293b;
+  border: 1px solid #415775;
+  border-radius: 10px;
+}
+@media (max-width: 700px) {
+  .resource-window {
+    padding: 20px 16px;
+  }
+}

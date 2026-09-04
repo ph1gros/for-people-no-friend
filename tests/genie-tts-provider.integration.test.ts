@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   GenieTtsAdapter,
@@ -11,6 +11,39 @@ const wav = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0x04, 0, 0, 0, 0x57, 0x41, 0
 const rawPcm = new Uint8Array([0, 0, 1, 0]);
 
 describe('Genie-TTS provider', () => {
+  it('bounds an undeclared stream and authenticates only through the Main callback', async () => {
+    const cancel = vi.fn();
+    const fetcher = vi.fn(
+      async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array(65));
+            },
+            cancel,
+          }),
+          { headers: { 'content-type': 'application/octet-stream' } },
+        ),
+    );
+    const adapter = new GenieTtsAdapter({
+      fetch: fetcher,
+      maximumAudioBytes: 108,
+      prepareLocal: async () => ({ 'x-fpnf-session': 'fake-session' }),
+    });
+    await expect(
+      adapter.synthesize(
+        { baseUrl: 'http://127.0.0.1:9882', characterName: 'mika', text: 'test' },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow('过大');
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(fetcher).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({
+        headers: expect.objectContaining({ 'x-fpnf-session': 'fake-session' }),
+      }),
+    );
+  });
   let server: FakeHttpServer | undefined;
 
   afterEach(async () => {

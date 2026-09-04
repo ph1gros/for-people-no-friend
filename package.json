@@ -1,7 +1,7 @@
 {
   "name": "for-people-no-friend",
   "productName": "For People No Friend",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "private": true,
   "description": "A local-first Windows AI character companion built with Electron, TypeScript, and Vite.",
   "main": "dist-electron/main/index.js",
@@ -12,11 +12,11 @@
   "scripts": {
     "build": "pnpm clean && pnpm build:electron && pnpm build:renderer",
     "build:electron": "tsc -p tsconfig.electron.json && pnpm build:preload",
-    "build:preload": "vite build --config vite.preload.config.mts",
+    "build:preload": "vite build --config vite.preload.config.mts && vite build --config vite.preload.config.mts --mode resources",
     "build:renderer": "vite build",
     "build:vtube-overlay": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-vtube-studio-spout.ps1",
     "clean": "rimraf dist dist-electron",
-    "dev": "concurrently --kill-others-on-fail \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"vite build --config vite.preload.config.mts --watch\" \"wait-on tcp:127.0.0.1:5173 dist-electron/main/index.js dist-electron/preload/index.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "dev": "concurrently --kill-others-on-fail \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"vite build --config vite.preload.config.mts --watch\" \"vite build --config vite.preload.config.mts --mode resources --watch\" \"wait-on tcp:127.0.0.1:5173 dist-electron/main/index.js dist-electron/preload/index.cjs dist-electron/preload/resource-center.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",

@@ -1,4 +1,9 @@
+import {
+  DEFAULT_RESOURCE_CATALOG_URL,
+  DEFAULT_SPEECH_ASSET_MANIFEST_URL,
+} from './resources/resource-sources';
 import { pathToFileURL } from 'node:url';
+import { createElectronResourceFetch } from './resources/electron-resource-fetch';
 import path from 'node:path';
 
 import {
@@ -35,15 +40,19 @@ import { MemoryIndexConfigStore } from './storage/memory-index-config-store';
 import { ProviderConfigStore } from './storage/provider-config-store';
 import { createDeskpetTray } from './tray/create-tray';
 import { WindowManager } from './windows/window-manager';
+import { ResourceCenterWindow } from './windows/resource-center-window';
 import { resolveBundledModelRoot } from './windows/window-assets';
 import { IPC_CHANNELS } from '../shared/ipc';
 import { OpenAICompatibleSpeechAdapter } from '../adapters/speech/openai-compatible-tts';
 import { FishAudioSpeechAdapter } from '../adapters/speech/fish-audio-tts';
 import { GenieTtsAdapter } from '../adapters/speech/genie-tts';
+import { GenieSpeechRuntime } from './speech/genie-speech-runtime';
+import { GENIE_MIKA_PRESET } from '../shared/speech-ipc';
 import { OpenAICompatibleTranscriptionAdapter } from '../adapters/speech/openai-compatible-asr';
 import { SpeechService } from './speech/speech-service';
 import { LocalSpeechAssetService } from './speech/local-speech-asset-service';
 import { SpeechAssetManager } from './speech/speech-asset-manager';
+import { ResourceCenter } from './resources/resource-center';
 import {
   BundledSpeechRuntime,
   resolveBundledSpeechRuntimeSources,
@@ -97,7 +106,10 @@ if (!hasSingleInstanceLock) {
   let speechService: SpeechService | undefined;
   let localSpeechAssets: LocalSpeechAssetService | undefined;
   let speechAssetManager: SpeechAssetManager | undefined;
+  let resourceCenter: ResourceCenter | undefined;
+  const resourceWindow = new ResourceCenterWindow();
   let bundledSpeechRuntime: BundledSpeechRuntime | undefined;
+  let genieSpeechRuntime: GenieSpeechRuntime | undefined;
   let bundledVTubeModel: BundledVTubeModelInstaller | undefined;
   let viewerExService: ViewerExService | undefined;
   let vTubeStudioService: VTubeStudioService | undefined;
@@ -158,7 +170,7 @@ if (!hasSingleInstanceLock) {
         packaged: app.isPackaged,
       }),
     );
-    const bundledSpeechRoot = await bundledSpeechRuntime.resolveAvailableRoot();
+    const bundledVoiceRoot = await bundledSpeechRuntime.resolveAvailableVoiceRoot();
     const localTranscriptionAdapter = new LocalSherpaAsrAdapter(
       resolveLocalSherpaModelRoots({
         appPath: app.getAppPath(),
@@ -176,23 +188,35 @@ if (!hasSingleInstanceLock) {
     );
     localSpeechAssets = new LocalSpeechAssetService(
       path.join(app.getAppPath(), 'data'),
-      path.join(
-        bundledSpeechRoot ?? path.join(process.resourcesPath, 'voice-runtime'),
-        'voice',
-        'ireina',
-      ),
+      bundledVoiceRoot ?? path.join(process.resourcesPath, 'voice-runtime', 'voice', 'ireina'),
     );
     const bundledVoiceAvailable = (await localSpeechAssets.getStatus()).voiceAvailable;
     const speechConfigStore = new SpeechConfigStore(userDataPath, bundledVoiceAvailable);
+    genieSpeechRuntime = new GenieSpeechRuntime(path.join(userDataPath, 'speech-assets'), {
+      fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+    });
     speechAssetManager = new SpeechAssetManager(
       path.join(userDataPath, 'speech-assets'),
-      process.env.FPNF_SPEECH_ASSET_MANIFEST_URL,
+      process.env.FPNF_SPEECH_ASSET_MANIFEST_URL ?? DEFAULT_SPEECH_ASSET_MANIFEST_URL,
+      {
+        fetch: createElectronResourceFetch(net),
+        allowLocalhostHttp: !app.isPackaged,
+        onTierReady: async (id) => {
+          if (!['voice-runtime', 'bert-japanese', 'voice-ireina'].includes(id)) return;
+          const voiceRoot = await bundledSpeechRuntime?.resolveAvailableVoiceRoot();
+          if (voiceRoot) {
+            localSpeechAssets?.useInstalledVoice(voiceRoot);
+            await speechConfigStore.enableBundledVoiceIfUnconfigured();
+          }
+        },
+      },
+    );
+    resourceCenter = new ResourceCenter(
+      speechAssetManager,
+      process.env.FPNF_RESOURCE_CATALOG_URL ?? DEFAULT_RESOURCE_CATALOG_URL,
       {
         fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
         allowLocalhostHttp: !app.isPackaged,
-        onTierReady: async (id) => {
-          if (id === 'voice-runtime') await speechConfigStore.enableBundledVoiceIfUnconfigured();
-        },
       },
     );
     speechService = new SpeechService(
@@ -209,7 +233,18 @@ if (!hasSingleInstanceLock) {
       {
         genieTts: new GenieTtsAdapter({
           fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+          prepareLocal: async (request, signal) => {
+            if (request.baseUrl !== GENIE_MIKA_PRESET.baseUrl) return {};
+            if (request.characterName !== GENIE_MIKA_PRESET.voiceId)
+              throw new Error('内置 Genie 目前仅支持圣园未花。');
+            signal.throwIfAborted();
+            if (!(await genieSpeechRuntime!.ensureRunning()))
+              throw new Error('Genie 本地资源尚未就绪。');
+            signal.throwIfAborted();
+            return genieSpeechRuntime!.headers();
+          },
         }),
+        ensureGenieRuntime: () => genieSpeechRuntime!.ensureRunning(),
         fishAudio: new FishAudioSpeechAdapter({
           fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
         }),
@@ -288,11 +323,10 @@ if (!hasSingleInstanceLock) {
       recordDiagnostic,
     );
     await desktopIntegrations.initialize();
-    const initialSpeechStatus = await speechService.getStatus();
+    const initialSpeechSettings = await speechConfigStore.get();
     await desktopIntegrations.setPushToTalkKey(
-      initialSpeechStatus.settings.inputEnabled &&
-        initialSpeechStatus.settings.inputMode === 'manual'
-        ? initialSpeechStatus.settings.pushToTalkKey
+      initialSpeechSettings.inputEnabled && initialSpeechSettings.inputMode === 'manual'
+        ? initialSpeechSettings.pushToTalkKey
         : undefined,
     );
     registerIpcHandlers({
@@ -317,9 +351,11 @@ if (!hasSingleInstanceLock) {
       bundledVTubeModel,
       diagnosticLog,
       speechAssetManager,
+      resourceCenter,
+      resourceWindow,
     });
     const mainWindow = windowManager.create();
-    void speechAssetManager.scheduleInitialDownload();
+    void speechAssetManager.initialize();
     desktopIntegrations.setShortcutWindowFocused(mainWindow.isFocused());
     mainWindow.on('focus', () => desktopIntegrations?.setShortcutWindowFocused(true));
     mainWindow.on('blur', () => desktopIntegrations?.setShortcutWindowFocused(false));
@@ -329,12 +365,16 @@ if (!hasSingleInstanceLock) {
       show: () => windowManager?.show(),
       hide: () => windowManager?.hide(),
       toggleVisibility: () => windowManager?.toggleVisibility(),
+      openResourceCenter: () => {
+        void resourceWindow.open().catch(() => recordDiagnostic('resource-window-open-failed'));
+      },
     });
 
     app.on('activate', () => windowManager?.show());
   });
 
   app.on('before-quit', () => {
+    resourceWindow.dispose();
     desktopIntegrations?.dispose();
     desktopIntegrations = undefined;
     protocol.unhandle('deskpet-model');
@@ -351,7 +391,11 @@ if (!hasSingleInstanceLock) {
     speechService?.dispose();
     speechService = undefined;
     bundledSpeechRuntime?.dispose();
+    genieSpeechRuntime?.dispose();
+    genieSpeechRuntime = undefined;
     bundledSpeechRuntime = undefined;
+    resourceCenter?.dispose();
+    resourceCenter = undefined;
     speechAssetManager?.dispose();
     speechAssetManager = undefined;
     bundledVTubeModel = undefined;

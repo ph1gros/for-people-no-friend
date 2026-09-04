@@ -1,0 +1,102 @@
+{
+  "repository": "https://huggingface.co/High-Logic/Genie",
+  "revision": "52b17272e0b7032415e85ad37b551db2386b1810",
+  "files": [
+    {
+      "path": "genie-data/chinese-hubert-base/chinese-hubert-base_weights_fp16.bin",
+      "upstreamPath": "GenieData/chinese-hubert-base/chinese-hubert-base_weights_fp16.bin",
+      "bytes": 188741632,
+      "sha256": "83abf6483f49d51fa4da5634c7131a2670f01da96b94263cafdb564d24e92cea"
+    },
+    {
+      "path": "genie-data/chinese-hubert-base/chinese-hubert-base.onnx",
+      "upstreamPath": "GenieData/chinese-hubert-base/chinese-hubert-base.onnx",
+      "bytes": 237741,
+      "sha256": "f517f4270ed864fd84594662838c581b63ff4178f73572882e3737c4dacd68ac"
+    },
+    {
+      "path": "genie-data/speaker_encoder.onnx",
+      "upstreamPath": "GenieData/speaker_encoder.onnx",
+      "bytes": 184812166,
+      "sha256": "31ed0858f7059785dfd58731efb0effdbe39d5b9175b2b36f5a3341adbc0bb67"
+    },
+    {
+      "path": "voice-genie-mika/prompt_wav.json",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/prompt_wav.json",
+      "bytes": 463,
+      "sha256": "d76beabc634de751e1d078900e7378bc1487f4792f73fd32de43b75f2759dce5"
+    },
+    {
+      "path": "voice-genie-mika/prompt_wav/917575.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/prompt_wav/917575.wav",
+      "bytes": 259564,
+      "sha256": "5eaf31939b4ca128ab642b0518bdfa1dcdc16714d6601b466a3e4273206e2b2f"
+    },
+    {
+      "path": "voice-genie-mika/prompt_wav/mika_fear.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/prompt_wav/mika_fear.wav",
+      "bytes": 277670,
+      "sha256": "76bc4d597926fffca86341cc2dedc6a019814d1689ff98548f466c090cdf1ad2"
+    },
+    {
+      "path": "voice-genie-mika/prompt_wav/mika_sad.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/prompt_wav/mika_sad.wav",
+      "bytes": 343074,
+      "sha256": "eb4c5151355bf12137de98937c4f0cd7bf24f10096cff1d768d80cec8dfcac94"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/prompt_encoder_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/prompt_encoder_fp16.bin",
+      "bytes": 44262912,
+      "sha256": "594e9e4c1204a39e5bbedcbebf00e1f8e43017f7cc10b7c3d88a9b37ed095861"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/prompt_encoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/prompt_encoder_fp32.onnx",
+      "bytes": 44464,
+      "sha256": "c4a3d8c1e385a17aecb7bd9c5ede5707ba390f85c3eb49b388deeaaaf53d2748"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/t2s_encoder_fp32.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/t2s_encoder_fp32.bin",
+      "bytes": 11465732,
+      "sha256": "29296842ac59e4ef3e3f90e421c2148eb9586bb7459b9e8d5962fc285a90658c"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/t2s_encoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/t2s_encoder_fp32.onnx",
+      "bytes": 14568,
+      "sha256": "f6eb1acd47c8e6d36b777886981a49122e8e070a5eb9888d458fb188dc139f75"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/t2s_first_stage_decoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/t2s_first_stage_decoder_fp32.onnx",
+      "bytes": 416803,
+      "sha256": "868f395999508905128c5325c5db4f4b37b2e70e04d6e2719fec64cbb60ee7f9"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/t2s_shared_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/t2s_shared_fp16.bin",
+      "bytes": 153413634,
+      "sha256": "3915ccce8221d6092197072916211da436cabcc54137038eecbba5707b1fbdea"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/t2s_stage_decoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/t2s_stage_decoder_fp32.onnx",
+      "bytes": 417625,
+      "sha256": "3f02881c517423deb610f86d5441bd9825937c5069f3887cacefa1e9dc403b0d"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/vits_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/vits_fp16.bin",
+      "bytes": 124345856,
+      "sha256": "a6355e9938758e5e047e71a5d40c666b4b4d9f67b2c8578a966070c7cc40f271"
+    },
+    {
+      "path": "voice-genie-mika/tts_models/vits_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/vits_fp32.onnx",
+      "bytes": 1611210,
+      "sha256": "2f918e08a1bfecc568de4cc5dc96135cb8baf37a07f4eb4ec9258a4854fcd3f3"
+    }
+  ]
+}

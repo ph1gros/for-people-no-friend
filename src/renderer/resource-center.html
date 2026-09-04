@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' deskpet-model:; base-uri 'none'; form-action 'none'; object-src 'none'; frame-src 'none'"
+    />
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/resource-center-window.css" />
+    <title>资源中心 · For People No Friend</title>
+  </head>
+  <body>
+    <main class="resource-window">
+      <header>
+        <p>FOR PEOPLE NO FRIEND</p>
+        <h1>资源中心</h1>
+        <p>管理语音引擎、基础模型和角色音色。关闭此窗口后，下载仍会继续。</p>
+      </header>
+      <section id="resource-center" class="resource-center" aria-label="资源列表"></section>
+      <aside id="download-progress" hidden></aside>
+    </main>
+    <script type="module" src="/resource-center-window.ts"></script>
+  </body>
+</html>

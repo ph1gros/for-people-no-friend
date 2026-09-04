@@ -28,6 +28,7 @@ OUTPUT_ROOT = Path(
 MODEL_FILE = VOICE_ROOT / "ireina_e100_s16040.onnx"
 CONFIG_FILE = VOICE_ROOT / "config.json"
 STYLE_FILE = VOICE_ROOT / "style_vectors.npy"
+BERT_ROOT = os.environ.get("FPNF_BUNDLED_BERT_ROOT") or None
 
 for required_path in (MODEL_FILE, CONFIG_FILE, STYLE_FILE):
     if not required_path.is_file():
@@ -134,8 +135,8 @@ def get_model() -> TTSModel:
             if not providers:
                 raise RuntimeError("No supported ONNX execution provider is available.")
             try:
-                onnx_bert_models.load_tokenizer(Languages.JP)
-                onnx_bert_models.load_model(Languages.JP, onnx_providers=providers)
+                onnx_bert_models.load_tokenizer(Languages.JP, pretrained_model_name_or_path=BERT_ROOT)
+                onnx_bert_models.load_model(Languages.JP, pretrained_model_name_or_path=BERT_ROOT, onnx_providers=providers)
                 candidate = TTSModel(
                     model_path=MODEL_FILE,
                     config_path=CONFIG_FILE,

@@ -21,5 +21,11 @@ export default defineConfig({
   build: {
     outDir: '../../dist/renderer',
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: 'src/renderer/index.html',
+        resources: 'src/renderer/resource-center.html',
+      },
+    },
   },
 });

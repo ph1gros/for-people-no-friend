@@ -49,7 +49,7 @@ export const createMainWindow = (state: PersistedWindowState): BrowserWindow => 
     maximizable: false,
     fullscreenable: false,
     alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: false,
     hasShadow: false,
     backgroundColor: '#00000000',
     icon: assets.icon,

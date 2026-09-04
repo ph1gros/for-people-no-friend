@@ -73,6 +73,7 @@ export class WindowManager {
 
   public show(): void {
     const window = this.getWindow() ?? this.create();
+    if (window.isMinimized()) window.restore();
     this.ensureVisible();
     window.show();
     window.focus();

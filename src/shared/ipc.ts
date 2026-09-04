@@ -72,6 +72,7 @@ import type {
   SpeechTranscriptionResult,
 } from './speech-ipc';
 import type { SpeechAssetControlInput, SpeechAssetDownloadStatus } from './speech-asset-ipc';
+import type { ResourceCenterStatus } from './resource-catalog';
 import type {
   WorkGlossaryInput,
   WorkGlossaryStatus,
@@ -184,6 +185,9 @@ export const IPC_CHANNELS = {
   cancelSpeech: 'speech:cancel',
   getLocalSpeechAssetStatus: 'speechAssets:getStatus',
   getSpeechAssetDownloadStatus: 'speechAssets:getDownloadStatus',
+  getResourceCenterStatus: 'resources:getStatus',
+  openResourceCenter: 'resources:openWindow',
+  refreshResourceCatalog: 'resources:refreshCatalog',
   controlSpeechAssetDownload: 'speechAssets:controlDownload',
   exportLocalVoice: 'speechAssets:exportVoice',
   openSpeechTrainingSources: 'speechAssets:openTrainingSources',
@@ -289,6 +293,9 @@ export interface DeskpetApi {
   cancelSpeech(input: CancelSpeechInput): Promise<boolean>;
   getLocalSpeechAssetStatus(): Promise<LocalSpeechAssetStatus>;
   getSpeechAssetDownloadStatus(): Promise<SpeechAssetDownloadStatus>;
+  getResourceCenterStatus(): Promise<ResourceCenterStatus>;
+  openResourceCenter(): Promise<void>;
+  refreshResourceCatalog(): Promise<ResourceCenterStatus>;
   controlSpeechAssetDownload(input: SpeechAssetControlInput): Promise<SpeechAssetDownloadStatus>;
   exportLocalVoice(): Promise<LocalAssetOperationResult>;
   openSpeechTrainingSources(): Promise<LocalAssetOperationResult>;

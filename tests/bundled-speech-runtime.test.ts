@@ -144,6 +144,9 @@ describe('bundled speech runtime', () => {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: '1',
           NO_PROXY: '127.0.0.1,localhost',
+          FPNF_BUNDLED_VOICE_ROOT: path.join(canonicalDirectory, 'voice', 'ireina'),
+          FPNF_BUNDLED_BERT_ROOT: '',
+          FPNF_BUNDLED_OUTPUT_ROOT: path.join(canonicalDirectory, 'recent-output'),
         },
       },
     );

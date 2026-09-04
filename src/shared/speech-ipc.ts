@@ -5,6 +5,15 @@ export const SPEECH_PROVIDER_IDS = [
   'fish-audio',
 ] as const;
 export type SpeechProviderId = (typeof SPEECH_PROVIDER_IDS)[number];
+export const GENIE_MIKA_PRESET = Object.freeze({
+  providerId: 'genie-tts',
+  baseUrl: 'http://127.0.0.1:9882',
+  modelId: 'genie-tts',
+  voiceId: 'mika',
+  language: 'ja-JP',
+  responseFormat: 'wav',
+  speed: 1,
+} as const);
 
 export const BUNDLED_IREINA_SPEECH_PRESET = Object.freeze({
   providerId: 'openai-compatible',
@@ -94,6 +103,7 @@ export interface SpeechProviderCapability {
   displayName: string;
   configured: boolean;
   available: boolean;
+  preparing?: boolean;
   transport: 'none' | 'rest';
   dataDestination: 'none' | 'this-device' | 'remote-service';
   supportsStreamingInput: boolean;

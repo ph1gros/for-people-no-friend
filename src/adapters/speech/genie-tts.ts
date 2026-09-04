@@ -11,6 +11,7 @@ export interface GenieTtsAdapterOptions {
   fetch?: typeof globalThis.fetch;
   timeoutMs?: number;
   maximumAudioBytes?: number;
+  prepareLocal?: (request: GenieTtsRequest, signal: AbortSignal) => Promise<Record<string, string>>;
 }
 
 const isLoopbackHost = (hostname: string): boolean => {
@@ -45,9 +46,30 @@ const readBoundedAudio = async (response: Response, maximumBytes: number): Promi
   if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
     throw new Error('Genie-TTS 返回的音频过大。');
   }
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (!bytes.byteLength || bytes.byteLength > maximumBytes) {
-    throw new Error('Genie-TTS 返回了空音频或过大音频。');
+  if (!response.body) throw new Error('Genie-TTS 返回了空音频。');
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maximumBytes) {
+        await reader.cancel();
+        throw new Error('Genie-TTS 返回的音频过大。');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (!size) throw new Error('Genie-TTS 返回了空音频。');
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
   }
   return bytes;
 };
@@ -105,12 +127,14 @@ export class GenieTtsAdapter {
     const combinedSignal = AbortSignal.any([signal, timeoutSignal]);
     let response: Response;
     try {
+      const localHeaders = await this.options.prepareLocal?.(request, combinedSignal);
+      combinedSignal.throwIfAborted();
       response = await (this.options.fetch ?? globalThis.fetch)(
         resolveGenieTtsUrl(request.baseUrl),
         {
           method: 'POST',
           redirect: 'manual',
-          headers: { 'content-type': 'application/json', accept: 'audio/wav' },
+          headers: { ...localHeaders, 'content-type': 'application/json', accept: 'audio/wav' },
           body: JSON.stringify({
             character_name: characterName,
             text: request.text,

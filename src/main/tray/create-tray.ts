@@ -7,6 +7,7 @@ export interface TrayActions {
   show(): void;
   hide(): void;
   toggleVisibility(): void;
+  openResourceCenter?(): void;
 }
 
 export const createDeskpetTray = (actions: TrayActions): Tray => {
@@ -29,6 +30,9 @@ export const createDeskpetTray = (actions: TrayActions): Tray => {
           label: isVisible ? '隐藏桌宠' : '显示桌宠',
           click: isVisible ? actions.hide : actions.show,
         },
+        ...(actions.openResourceCenter
+          ? [{ label: '资源中心', click: actions.openResourceCenter }]
+          : []),
         { type: 'separator' },
         { label: '退出', click: () => app.quit() },
       ]),

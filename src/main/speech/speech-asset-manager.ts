@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import path from 'node:path';
+import { SPEECH_ASSET_TIER_IDS } from '../../shared/speech-asset-ipc';
 
 import type {
   SpeechAssetControlInput,
@@ -8,6 +9,7 @@ import type {
   SpeechAssetTierStatus,
 } from '../../shared/speech-asset-ipc';
 import { isSpeechAssetActivated } from './speech-asset-activation';
+import { SPEECH_ASSET_INTEGRITY } from './speech-asset-integrity';
 import {
   cleanupOrphanedSpeechAssetWorkspaces,
   fetchSpeechAssetManifest,
@@ -106,6 +108,31 @@ export class SpeechAssetManager {
       tiers: manifest?.tiers.map((tier) => this.stateFor(tier)) ?? [],
       ...(message ? { message } : {}),
     };
+  }
+
+  public async refreshManifest(): Promise<SpeechAssetDownloadStatus> {
+    if (!this.disposed && this.active.size === 0) {
+      this.manifest = undefined;
+      this.restored = undefined;
+    }
+    return this.getStatus();
+  }
+
+  public async initialize(): Promise<void> {
+    if (!this.disposed) await this.ensureWorkspaceCleanup();
+  }
+
+  public async getInstalledTiers(): Promise<SpeechAssetTierStatus[]> {
+    const tiers: SpeechAssetTier[] = [];
+    for (const id of SPEECH_ASSET_TIER_IDS) {
+      const integrity = SPEECH_ASSET_INTEGRITY[id];
+      if (integrity) tiers.push({ ...integrity, id, bytes: integrity.compressedBytes, urls: [] });
+    }
+    // Inventory never installs: an offline catalog must still show validated local resources.
+    await this.restorePersistedStates({ schemaVersion: 2, tiers });
+    return [...this.states.values()]
+      .filter(({ state }) => state === 'ready')
+      .map((tier) => ({ ...tier }));
   }
 
   public async control(input: SpeechAssetControlInput): Promise<SpeechAssetDownloadStatus> {

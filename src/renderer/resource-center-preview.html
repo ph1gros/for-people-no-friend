@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FPNF · 资源中心预览</title>
+  </head>
+  <body>
+    <main class="resource-preview">
+      <header>
+        <span>FOR PEOPLE NO FRIEND</span>
+        <h1>资源中心</h1>
+        <p>按需补齐本地语音能力。</p>
+      </header>
+      <aside class="preview-notice">交互演示 · 使用模拟数据，不下载文件、不连接桌宠配置。</aside>
+      <div class="preview-controls">
+        <label><input id="metered" type="checkbox" /> 模拟计费网络</label>
+        <label><input id="offline" type="checkbox" /> 模拟目录断网</label>
+        <button id="reset" type="button">重置演示</button>
+      </div>
+      <section id="resources" class="resource-center"></section>
+      <aside id="compact" class="speech-download-compact" hidden></aside>
+    </main>
+    <script type="module" src="/resource-center-preview.ts"></script>
+  </body>
+</html>

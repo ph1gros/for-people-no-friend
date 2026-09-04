@@ -40,6 +40,7 @@ export type SafeDiagnosticEventName =
   | 'secret-store-invalid-entry-skipped'
   | 'speech-runtime-start-failed'
   | 'speech-configuration-failed'
+  | 'resource-window-open-failed'
   | 'vtube-studio-configuration-failed'
   | 'vtube-studio-connection-failed'
   | 'viewerex-configuration-failed'

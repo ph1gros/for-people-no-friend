@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   build: {
     outDir: 'dist-electron/preload',
     emptyOutDir: false,
@@ -8,12 +8,12 @@ export default defineConfig({
     sourcemap: true,
     minify: false,
     lib: {
-      entry: 'src/preload/index.ts',
+      entry: mode === 'resources' ? 'src/preload/resource-center.ts' : 'src/preload/index.ts',
       formats: ['cjs'],
-      fileName: () => 'index.cjs',
+      fileName: () => (mode === 'resources' ? 'resource-center.cjs' : 'index.cjs'),
     },
     rollupOptions: {
       external: ['electron'],
     },
   },
-});
+}));

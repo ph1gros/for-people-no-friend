@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
+// Exercise a build with an unmeasured component, independently of current release pins.
+vi.mock('../src/main/speech/speech-asset-integrity', () => ({
+  SPEECH_ASSET_INTEGRITY: { 'voice-runtime': null },
+}));
+
 import {
   parseSpeechAssetManifest,
   SpeechAssetDownloader,
