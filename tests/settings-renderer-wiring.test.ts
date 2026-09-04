@@ -5,7 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 describe('settings renderer regression wiring', () => {
-  const source = ['chat-controller', 'settings-provider']
+  const source = ['chat-controller', 'settings-provider', 'settings-speech']
     .map((name) => readFileSync(resolve(`src/renderer/chat/${name}.ts`), 'utf8'))
     .join('\n');
   const sourceAst = ts.createSourceFile('chat-controller.ts', source, ts.ScriptTarget.Latest, true);

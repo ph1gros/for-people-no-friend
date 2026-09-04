@@ -12,6 +12,22 @@ export class PanelElement extends EventTarget {
   disabled = false;
   checked = false;
   focused = false;
+  get firstElementChild(): PanelElement | null {
+    return this.children[0] ?? null;
+  }
+  get options(): PanelElement[] {
+    return this.children.filter((node) => node.tagName === 'option');
+  }
+  classList = {
+    toggle: (name: string, force?: boolean): boolean => {
+      const classes = new Set(this.className.split(/\s+/).filter(Boolean));
+      const present = force ?? !classes.has(name);
+      if (present) classes.add(name);
+      else classes.delete(name);
+      this.className = [...classes].join(' ');
+      return present;
+    },
+  };
   focus(): void {
     this.focused = true;
   }
