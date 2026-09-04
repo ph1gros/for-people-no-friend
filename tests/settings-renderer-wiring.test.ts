@@ -5,7 +5,13 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 describe('settings renderer regression wiring', () => {
-  const source = ['chat-controller', 'settings-provider', 'settings-speech', 'settings-vtube']
+  const source = [
+    'chat-controller',
+    'settings-provider',
+    'settings-speech',
+    'settings-vtube',
+    'settings-character',
+  ]
     .map((name) => readFileSync(resolve(`src/renderer/chat/${name}.ts`), 'utf8'))
     .join('\n');
   const sourceAst = ts.createSourceFile('chat-controller.ts', source, ts.ScriptTarget.Latest, true);
@@ -365,7 +371,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain("['desktop', '桌面快捷操作', desktopSettingsSection]");
     expect(source).toContain("['memory', '记忆', memorySettingsSection]");
     expect(source).toContain('const showSettingsPage = (page: SettingsPage)');
-    expect(source).toContain("showSettingsPage('character');");
+    expect(source).toContain("showCharacterSettings: () => showSettingsPage('character')");
     expect(source).toContain('characterSearchNameInput.value = storedProfile.name;');
     expect(source).toContain('section.hidden = !selected;');
     expect(styles).toContain('.settings-navigation');
@@ -756,7 +762,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain("textarea.classList.add('settings-textarea--auto');");
     expect(source).toContain('textarea.style.height = `${textarea.scrollHeight}px`;');
     expect(source).toContain('const loreEditorResizeObserver = new ResizeObserver');
-    expect(source).toContain("loreEditor.addEventListener('toggle'");
+    expect(source).toContain("lifetime.on(loreEditor, 'toggle'");
     expect(source).toContain('loreEditor.open = true;');
     expect(styles).toMatch(
       /\.settings-field textarea\.settings-textarea--auto\s*\{[^}]*field-sizing:\s*content;[^}]*overflow-y:\s*hidden;[^}]*resize:\s*none;/su,

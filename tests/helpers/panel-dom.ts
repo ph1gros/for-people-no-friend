@@ -19,6 +19,9 @@ export class PanelElement extends EventTarget {
     return this.children.filter((node) => node.tagName === 'option');
   }
   classList = {
+    add: (name: string): void => {
+      this.classList.toggle(name, true);
+    },
     toggle: (name: string, force?: boolean): boolean => {
       const classes = new Set(this.className.split(/\s+/).filter(Boolean));
       const present = force ?? !classes.has(name);
@@ -28,6 +31,9 @@ export class PanelElement extends EventTarget {
       return present;
     },
   };
+  querySelectorAll(tag: string): PanelElement[] {
+    return this.children.flatMap(panelNodes).filter((node) => node.tagName === tag);
+  }
   focus(): void {
     this.focused = true;
   }
