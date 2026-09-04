@@ -3,9 +3,9 @@
 ## 公开资源仓库（2026-09-04）
 
 公开仓库：[ph1gros/fpnf-resources](https://github.com/ph1gros/fpnf-resources)。
-七个组件已发布至 [components-v1.8.0](https://github.com/ph1gros/fpnf-resources/releases/tag/components-v1.8.0)，目录与路由提交为 78d2f3806f9f27ace59240dde7b6a15a680c77de。
+七个组件已发布至 [components-v1.8.0](https://github.com/ph1gros/fpnf-resources/releases/tag/components-v1.8.0)，最新目录与路由包含 Genie 引擎 1.0.4；提交记录见资源仓库历史。
 GitHub 附件大小与 SHA-256 已全部匹配本地实测记录；总计 1,657,429,532 字节（1.54 GiB）。
-主程序默认使用 catalog.json 与 speech-assets-v1.8.0.json，无需用户配置环境变量。当前主程序开发版本为 1.8.0，主程序尚未提交或发布。
+主程序默认使用 catalog.json 与 speech-assets-v1.8.0.json，无需用户配置环境变量。当前主程序版本为 1.8.0；发布及非目视验收记录见 V1_8_DELIVERY.md。
 
 ## 当前结果
 
@@ -68,8 +68,8 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5174 --strictPort
 - `tests/resource-center-download.test.ts`：临时回环 HTTP 服务和假 ASR 数据，真实下载/暂停/Range 续传/激活/离线恢复；信任表只在 Vitest 中 mock。
 - 既有 IPC 合同、发送方校验及设置接线测试继续覆盖整合边界。
 
-模拟预览、假资产链路和真实模型验收分别记录。Genie 已用真实日语模型完成本地合成和接口边界检查；最新安装链路验证见 `docs/GENIE_TTS_HANDOFF.md`。七个公开附件已通过 Electron 的 Range 请求；真实切网和独立 GPU / 软件渲染的人工界面验收仍待完成。
-v1.7.1 ZIP 不包含本次资源中心改动；v1.8.0 已完成本地打包检查，主项目没有提交或推送。
+模拟预览、假资产链路和真实模型验收分别记录。Genie 已用真实日语模型完成本地合成和接口边界检查；最新安装链路验证见 `docs/GENIE_TTS_HANDOFF.md`。七个公开附件已通过 Electron 的 Range 请求；断连、强杀、磁盘与计费切换非目视注入已通过；独立 GPU / 软件渲染的人工界面验收另行保留。
+v1.7.1 ZIP 不包含本次资源中心改动；v1.8.0 的最终打包和发布测量见交付记录。
 
 ## 一致的资源说明
 

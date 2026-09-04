@@ -1,71 +1,76 @@
-# V1.8 资源中心交付与验收记录
+# V1.8 交付与非目视验收记录
 
-更新：2026-09-04。供后续编码助手或 Claude 核对。工作区 C:\ai_deskpet，沿用现有 main，保留已有改动，没有另建仓库或 worktree。
+更新：2026-09-05。供 Claude 或后续维护者复核。沿用现有 main 工作区，未新建 clone 或 worktree。
 
-## 当前交付
+## 本轮结果
 
-- 主程序开发版本 1.8.0，尚未提交、推送或发布。用户最新要求先完成全部 v1.8 任务及验收，再打包推送；已发布主程序仍为 v1.7.1。
-- 资源已公开：[fpnf-resources](https://github.com/ph1gros/fpnf-resources)，[components-v1.8.0](https://github.com/ph1gros/fpnf-resources/releases/tag/components-v1.8.0)。
-- 资源元数据提交 78d2f3806f9f27ace59240dde7b6a15a680c77de；七个 ZIP 和两份校验附件全部上传，GitHub 服务端 digest 与本地实测 SHA-256 逐项一致。
-- 资源中心统一“用途、适配引擎、支持语言、配套资源、版本与大小、许可说明”；四类仍为引擎、基础模型、音色模型、语音识别。保留独立窗口、任务栏、下载进度和显式安装。
-- Main 默认使用公开 catalog.json 和 speech-assets-v1.8.0.json。环境变量可覆盖，空字符串停用；没有远程提供哈希或执行入口的能力。
-- Genie 引擎 1.0.1 排除解码器末尾 EOS 占位值，消除它被声码器合成为额外气声的路径；未按固定毫秒裁掉正常语音，未修改模型权重。
+- 主程序版本 1.8.0；完成代码与非目视验证后打包、推送并发布。最终附件大小及 SHA-256 见本文末尾发布测量。
+- 资源仓库：[fpnf-resources](https://github.com/ph1gros/fpnf-resources)，组件发布：[components-v1.8.0](https://github.com/ph1gros/fpnf-resources/releases/tag/components-v1.8.0)。七个当前组件按需下载，旧引擎附件仅保留兼容记录。
+- 独立资源窗口、任务栏入口、四类导航、搜索、下载进度、暂停／继续／取消已实现；卡片统一用途、适配引擎、语言、配套资源、版本、大小、许可。
+- memory-panel、settings-provider、settings-speech、settings-vtube、settings-character 五个面板分别拆分和提交。chat-controller 从本轮基线 5447 行降至 2930 行；状态和跨面板协调仍留在控制器，不引入新全局 store。
+- Genie-TTS 1.0.4 保留 EOS 修复，新增保守的长停顿降噪及 HTTP 断开后恢复。未修改 ONNX 权重、参考音频或模型结构。
 
-## 既有本地测试包
+## 自动检查与真实运行
 
-`.release/v1.8.0/FPNF-v1.8.0-Windows-x64.zip`：145524534 字节（138.78 MiB），解压目录 354154172 字节。
-SHA-256：`97efaf25ba7a68fe77b3fd8d522c667db05fc067af3e36e26f12897ab7d860a8`。
-最终包已重新核对包含最新 Electron 下载兼容修复，打包后的 ASR 仍通过。此 ZIP 尚未对外上传；后续面板修改完成后须重新打包和测量。
+1. pnpm verify：131 个测试文件、622 项测试通过，包含 lint、格式、双 TypeScript 检查、生产构建、沙箱 Preload、Electron 原生 sherpa 与 SQLite 冒烟。
+2. 九项 Python 回归覆盖终止标记、有效零值、重复初始化、异常返回、停顿门控、轻声与短停顿保留、ASGI 断开、鉴权拒绝及停止后的队列清理。
+3. 真实 Electron 加载拆分前和拆分后的 initializeChat，设置页完整 DOM（标签、类名、属性、控件值及文本）深度相等，两次初始化和 dispose 均成功。期间发现并修复重复角色页装配；不能用“单元测试全绿”替代这项检查。
+4. 七个实际组件均通过本体下载器的冻结哈希、大小、解压和激活检查，离线库存恢复七项。更新后的 Genie 1.0.4 使用实际 ZIP 安装后启动、合成成功；DirectML 的伊蕾娜真实合成也成功。
+5. 原问题音频 7.28 秒；4.1–4.7 秒噪声 RMS 从 388.35 降至 11.42，约降低 30.6 dB。长度不变，绝对幅度大于 5000 的发音采样不变。本地 SenseVoice 在处理前后均识别为“先生、こんにちは 今日もよろしくね。”。这证明本样本的信号改善与识别内容保留，不等于人工自然度验收。
+6. 真实 HTTP 打断先发现后续请求持续 409；修复 receive 包装后又通过 ASR 发现后续音频混入旧句。最终由纯 ASGI 鉴权原样传递 receive，并在停止、等待工作线程结束后清空旧文本／音频队列。客户端取消约 0.27 秒返回，后续音频为 140844 字节，ASR 仅得到“こんにちは。”；无会话凭据、带 Origin 及服务不可达均安全拒绝。
+7. 七个公开 GitHub 附件经 Electron 真实 Range 请求验证 206、长度与 ZIP 签名，服务端 digest 与本地测量一致。此前还完整下载 133853592 字节 Style 引擎并激活；未重复完整下载所有公开附件。
+8. 安装后的 Style CPU／DirectML 与原生 ASR、最终打包内容检查分别执行；最终包的原生 ASR 与开发版使用同一测试音频，模型缺失返回不可用。
 
-## 实测资源大小
+## 下载故障注入
 
-| ID               | 版本  |  ZIP 字节 | ZIP MiB |  解压字节 | 文件数 |
-| ---------------- | ----- | --------: | ------: | --------: | -----: |
-| voice-runtime    | 1.0.0 | 133853592 |  127.65 | 431733455 |   6832 |
-| speech-input     | 1.0.0 | 160310562 |  152.88 | 239560934 |      6 |
-| bert-japanese    | 1.0.0 | 365027764 |  348.12 | 408491314 |     10 |
-| voice-ireina     | 1.0.0 | 231253343 |  220.54 | 249421901 |      5 |
-| genie-tts        | 1.0.1 | 178213817 |  169.96 | 559616288 |  13218 |
-| genie-data       | 1.0.0 | 283237298 |  270.12 | 373792956 |      4 |
-| voice-genie-mika | 1.0.0 | 305533156 |  291.38 | 336874992 |     14 |
+实验使用真实生产下载器、真实已冻结的 127.65 MiB Style 引擎 ZIP、仓库内独立测试目录和回环 HTTP，不改生产信任记录。
 
-总下载量 1,657,429,532 字节，约 1.54 GiB。完整校验记录位于 src/main/speech/speech-asset-integrity.ts；资源 Release 也附 measurements.json 和 SHA256SUMS.txt，后者仅供人工核对。
+| 场景                      | 实际结果                                                                                           |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| 中途断开 TCP 连接         | 留下 2097152 字节断点；重试从该位置请求 Range，安装成功                                            |
+| 强制结束独立下载进程      | 留下 2358888 字节断点；新进程从断点恢复并安装                                                      |
+| 可用空间为零              | 注入 statfs 返回，下载前中文提示，服务器未收到请求                                                 |
+| 写入时 ENOSPC             | 在真实文件句柄写入边界注入，中文提示，原有资源保留                                                 |
+| ZIP 改一个字节            | SHA256 失败，损坏下载删除，未激活                                                                  |
+| 所有下载源不可用          | 错误返回，原有激活记录保持不变                                                                     |
+| 激活前 staging 被外部删除 | 回滚并恢复原有资源，清理残留，重试成功                                                             |
+| 下载中变为计费网络        | 每 10 秒检查；变为计费或无法确认费用时暂停，手动继续可明确使用当前网络；完成和退出后释放监测计时器 |
 
-## 真实验证与界面观察
+磁盘耗尽通过文件系统边界注入，没有填满用户系统盘；断网通过断开真实本地连接，没有拔掉用户网络。以上为非目视故障验收，不声称观察过故障过程中的 Live2D 帧率。
 
-1. 七个实际 ZIP 均经本体下载器从回环 HTTP 下载、合并、SHA 校验、解压和激活；未 mock 生产信任记录。离线库存恢复七项已安装状态。
-2. 安装后的伊蕾娜 DirectML 发声成功，WAV 260948 字节；同一套组件 CPU 发声成功，WAV 228396 字节。Genie 未花安装后受管理启动和发声成功，WAV 465964 字节。随机采样会使不同次发声长度不同。
-3. 使用 16 kHz 测试音频，开发 Electron 与打包后的 Electron 原生 ASR 得到相同日语结果“こんにちは。今日はいい天気ですね。”；模型缺失的路径返回不可用。测试文本公开、合成音频不含用户录音。
-4. 七个 GitHub 附件均由 Electron 真实请求验证 Range 206、Content-Range、长度和 ZIP 签名。随后完整下载 133853592 字节的 Style-Bert-VITS2 引擎，四段合并、SHA 校验、解压及激活成功。其他六个公开附件未再次完整下载；服务端 digest 已与本地归档逐项核对。
-5. 浏览器实际观察四类导航及基础模型模板，卡片布局正常；这是开发预览，不是打包后的原生窗口或实际听感验收。
-6. pnpm verify 全部通过：125 个测试文件、604 项测试；pnpm package:win 本地打包成功。完整校验包括类型检查、生产构建、两个沙箱 Preload、原生 sherpa 和 SQLite 冒烟。Python 的三项终止标记回归另行执行，不混入 Vitest 数量。
-7. 打包内容检查：版本 1.8.0，五个 sherpa 原生文件在 asar.unpacked；语言包仅 en-US/zh-CN；没有 dxcompiler.dll、dxil.dll、.cmo3、角色模型、ONNX 权重或 Python 被混入主包。
+## 任务书对应关系
 
-## 正式下载中发现并修复的问题
+- R1：本地打包、依赖裁剪、CPU／DirectML TTS、原生及打包 ASR 完成；不同 GPU 的目视部分保留在 V1.9。
+- R2：四类独立资源和显式安装是用户后续指定方案，取代两档静默预下载；保留进度、磁盘余量、计费策略，不恢复自动下载。
+- R3：采用完整下载、SHA 校验后解压。下载前预留解压大小×1.3 + ZIP 大小 +500 MiB。
+- R4：上述全部非目视故障场景完成；物理拔网线、填满系统盘及人工帧率观察未冒充完成。
+- R5：五个模块、独立测试、监听／定时器清理、真实 DOM 对比、每面板独立提交均完成。
+- R6：实际安装、后台启动、合成、取消后恢复、不可达回退完成；无真实在线账户密钥的 Fish／在线 TTS 用受控测试覆盖，未调用付费服务。自然听感保留人工判断。
+- R7：公开托管、清单、七项组件及许可说明完成。伊蕾娜仅非商业使用；传统 OneDrive VITS/MoeGoe 和黑猫素材未上传。
 
-- GitHub Release 附件会跳转到存储域名，旧下载器拒绝全部跳转，导致资源上传后客户端仍不能下载。
-- Electron net.fetch 的手动重定向会报 Redirect was cancelled，普通 Node fetch 测试无法发现。Main 现用 net.request 暴露重定向响应，下载器只准本仓库跳转一次到 HTTPS release-assets.githubusercontent.com；不直接 followRedirect，不携带会话凭据。
-- 清单增加 8 秒超时和 256 KiB 流式上限，拒绝没有 Content-Length 的超大响应；单次下载 30 分钟超时，保留用户取消与续传。
-- 新回归覆盖重定向来源、二次跳转、Electron 取消、超大清单和全类别卡片字段。
+## 信任和发布边界
 
-## 旧任务书的对应关系与仍需验收的项目
+远程目录仅展示信息，下载清单仅提供 ID、版本、URL。哈希、压缩和解压体积、文件数、目标目录均在主程序编译期冻结；入口重新解析。版本不匹配或未测量的资源不可激活。
 
-用户最新要求本轮完成全部 v1.8 任务，不再将目视验收移至 v1.9。以下是开始补齐前的状态。
+Genie 引擎 1.0.4：178215260 字节，解压 559619995 字节，13218 个条目，SHA-256 为 b7fc2610ed34bc9b1ca7d6e739dc2524a821185b8889cd5b8405d1a710bad00f。其他六项不变；七项合计 1657430975 字节，约 1.54 GiB。
 
-- R1：本地打包、原生 ASR、裁剪检查、两套 TTS 发声与实际组件大小已验证。独立 GPU / 强制软件渲染的 Live2D 人工观察尚未完成；不能把无界面原生测试当作这项验收。
-- R2：用户后续明确采用四类独立组件和主动安装，取代旧的两档静默预下载方案；不重新合并 BERT，不恢复开机自动下载。计费状态、体积与磁盘余量检查保留。
-- R3：继续完整下载并 SHA 校验后解压。下载前要求 解压大小×1.3 + ZIP大小 +500 MiB；并发安装会同时占用磁盘，错误路径仍须保留有效旧包。
-- R4：自动故障回归已通过。拔网线、真实磁盘耗尽、强杀桌宠并同时观察 UI 的整套人工实验未完成；不在用户正在使用的真实磁盘或桌面上制造破坏性条件。
-- R5：旧计划中 memory-panel、settings-provider、settings-speech、settings-vtube、settings-character 五个面板的进一步拆分仍为维护待办，本轮未扩大到这些设置面板重构。不能将旧第二轮任务表整体标记完成。
-- R6：Genie 实际安装、合成和末尾标记修复已验证，取消及边界有回归；自然度、角色相似度仍以用户试听为准。
-- R7：仓库、下载源和七项组件已落实，许可随包保留。伊蕾娜仅非商用；Mika 上游示例的角色和声音权利不因 MIT 标注而转移。OneDrive 传统 VITS/MoeGoe 与黑猫素材未上传。
+主程序包不含 ONNX、Python 解释器、角色模型、训练原始录音、用户配置、对话或凭据；包含项目自己的语音服务脚本。sherpa 原生文件置于 asar.unpacked，保留 en-US／zh-CN 两个语言包。README 与第三方许可随发布更新。
 
-## 本地证据位置
+## 本地证据
 
-- .release/v1.8-resource-review/verify.log、package.log
-- .release/v1.8-resource-review/github-assets-verified.json、public-download-smoke.json、public-full-install.log
-- .release/v1.8-resource-review/install-all.log、cpu-smoke.log、asr.log
-- .release/genie-review/all-components-result.json、probe-tail.json、tail-install-result.json
-- .release/v1.8-resource-review/ireina-installed.wav、ireina-cpu.wav；.release/genie-review/mika-installed-tail-fixed.wav
+- .release/panel-extraction/*-verify.log、dom-before.json、dom-after.json、dom-smoke.log
+- .release/v1.8-resource-review/final-verify.log、fault-smoke-results.json、install-final.log、public-final-smoke.log
+- .release/genie-review/python-regression.log、cancel-final-result.json、final-components-result.json
+- .release/genie-review/breath-probe/report.json、fix-measurements.json、asr-comparison.json
+- .release/genie-review/breath-probe/reported-sample.wav 与 reported-sample-cleaned.wav；新安装试听 mika-v1.8-final.wav
 
-不要将上述临时构建目录加入 Git；后续版本须基于其对应源码重新核对版本、最终 ZIP 与完整验证。
+临时模型、归档及音频不加入主程序 Git。人工目视和听感待办见 [V1.9 验收](V1_9_VISUAL_ACCEPTANCE.md)。
+
+## 发布测量
+
+- 主程序发布：[v1.8.0](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.0)。
+- 附件：`FPNF-v1.8.0-Windows-x64.zip`，145527660 字节，138.79 MiB；附带 `SHA256SUMS.txt`。
+- 主程序解压目录：354165187 字节，约 337.76 MiB；ZIP 另附许可证和中文使用说明。
+- SHA-256：`298010d09aeef40a55fdaf17df88c0864041abae0dedacbe48d143a750ca8ca8`。
+- ZIP 完整性检查通过；包内 3080 个 asar 条目及 5 个原生文件检查通过。打包后的 Electron 43.4.1 / Node 24.18.1 实际执行原生 ASR，识别“こんにちは。今日はいい天気ですね。”，模型缺失时返回不可用。
+- 资源仓库对应元数据提交：`29662872d7fdebbe45348f430a352eb6c51193d4`。
