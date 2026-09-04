@@ -13,7 +13,7 @@
       "name": "Genie-TTS 引擎",
       "summary": "将文字合成为语音，提供 Genie-TTS 推理程序与独立运行环境。",
       "license": "引擎 MIT；依赖和模型按各自许可",
-      "latestVersion": "1.0.1"
+      "latestVersion": "1.0.4"
     },
     {
       "id": "genie-data",

@@ -257,6 +257,49 @@ describe('speech asset manager', () => {
     expect(detectMetered).toHaveBeenCalledTimes(2);
   });
 
+  it('pauses an active download when the connection becomes metered and releases its watcher', async () => {
+    vi.useFakeTimers();
+    const pause = vi.fn();
+    const detectMetered = vi.fn().mockResolvedValueOnce(false).mockResolvedValue(true);
+    let finish:
+      | ((value: {
+          id: 'voice-runtime';
+          state: 'paused';
+          downloadedBytes: number;
+          totalBytes: number;
+        }) => void)
+      | undefined;
+    const manager = new SpeechAssetManager(
+      await makeRoot(),
+      'https://manifest.example.com/v1.json',
+      {
+        loadManifest: async () => manifest,
+        detectMetered,
+        createInstaller: () => ({
+          install: () =>
+            new Promise((resolve) => {
+              finish = resolve;
+            }),
+          pause,
+          cancel: vi.fn(),
+        }),
+      },
+    );
+    try {
+      await manager.control({ tierId: 'voice-runtime', action: 'start' });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(pause).toHaveBeenCalledWith('voice-runtime');
+      expect((await manager.getStatus()).message).toContain('网络已切换');
+      finish!({ id: 'voice-runtime', state: 'paused', downloadedBytes: 12, totalBytes: 240 });
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await manager.getStatus()).busy).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      manager.dispose();
+      vi.useRealTimers();
+    }
+  });
+
   it('does not start automatically when network cost detection fails', async () => {
     const install = vi.fn();
     const manager = new SpeechAssetManager(

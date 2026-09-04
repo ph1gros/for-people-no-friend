@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / '.release' / 'genie-components'
 OUTPUT = ROOT / '.release' / 'genie-archives'
 TIERS = ('genie-tts', 'genie-data', 'voice-genie-mika')
-VERSIONS = {'genie-tts': '1.0.1', 'genie-data': '1.0.0', 'voice-genie-mika': '1.0.0'}
+VERSIONS = {'genie-tts': '1.0.4', 'genie-data': '1.0.0', 'voice-genie-mika': '1.0.0'}
 
 
 def main():

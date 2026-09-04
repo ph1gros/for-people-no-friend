@@ -481,6 +481,11 @@ export class SpeechAssetDownloader {
           totalBytes: tier.bytes,
         };
       }
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOSPC') {
+        throw new Error('磁盘空间已用尽，语音资产安装已停止；请释放空间后继续，原有资源保留。', {
+          cause: error,
+        });
+      }
       throw error;
     } finally {
       this.active.delete(tier.id);

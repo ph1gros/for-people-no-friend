@@ -53,11 +53,11 @@ export const SPEECH_ASSET_INTEGRITY: Readonly<
     maxEntries: 5,
   }),
   'genie-tts': Object.freeze({
-    version: '1.0.1',
+    version: '1.0.4',
     target: 'genie-tts',
-    sha256: '308a44fa75fe5e22df77074632cac6da5ba2ee2d8d00450fd61a0cce40de4988',
-    compressedBytes: 178213817,
-    extractedBytes: 559616288,
+    sha256: 'b7fc2610ed34bc9b1ca7d6e739dc2524a821185b8889cd5b8405d1a710bad00f',
+    compressedBytes: 178215260,
+    extractedBytes: 559619995,
     maxEntries: 13218,
   }),
   'genie-data': Object.freeze({

@@ -82,6 +82,9 @@ export class SpeechAssetManager {
   private message: string | undefined;
   private manifestMessage: string | undefined;
   private disposed = false;
+  private networkWatch: ReturnType<typeof setInterval> | undefined;
+  private networkWatchInFlight = false;
+  private readonly meteredConsent = new Set<SpeechAssetTierId>();
 
   public constructor(
     private readonly speechAssetsRoot: string,
@@ -156,6 +159,7 @@ export class SpeechAssetManager {
       this.invalidateOperation(tier.id);
       await this.installer.cancel(tier.id, tier.version);
       this.active.delete(tier.id);
+      this.stopIdleNetworkWatch();
       this.states.set(tier.id, {
         id: tier.id,
         version: tier.version,
@@ -242,11 +246,44 @@ export class SpeechAssetManager {
 
   public dispose(): void {
     this.disposed = true;
+    if (this.networkWatch) clearInterval(this.networkWatch);
+    this.networkWatch = undefined;
     for (const id of this.active) {
       this.invalidateOperation(id);
       this.installer.pause(id);
     }
     this.active.clear();
+  }
+
+  private stopIdleNetworkWatch(): void {
+    if (this.active.size || !this.networkWatch) return;
+    clearInterval(this.networkWatch);
+    this.networkWatch = undefined;
+  }
+
+  private async checkActiveNetworkCost(): Promise<void> {
+    if (this.disposed || !this.active.size || this.networkWatchInFlight) return;
+    this.networkWatchInFlight = true;
+    try {
+      await this.refreshNetworkCost();
+      if (this.disposed) return;
+      if (this.metered === false) {
+        this.meteredConsent.clear();
+        return;
+      }
+      for (const id of this.active) {
+        // An explicit start while already metered is consent for that connection.
+        // A later switch from unmetered (or an unknown cost) must pause and ask via status.
+        if (this.metered === true && this.meteredConsent.has(id)) continue;
+        this.installer.pause(id);
+        this.message = this.metered
+          ? '网络已切换为按流量计费，下载已暂停；点击继续可使用当前网络下载。'
+          : '无法确认当前网络是否按流量计费，下载已暂停；可手动继续。';
+      }
+      await this.emit();
+    } finally {
+      this.networkWatchInFlight = false;
+    }
   }
 
   private async loadManifest(): Promise<SpeechAssetManifest | undefined> {
@@ -340,6 +377,14 @@ export class SpeechAssetManager {
     const operationVersion = (this.operationVersions.get(tier.id) ?? 0) + 1;
     this.operationVersions.set(tier.id, operationVersion);
     this.active.add(tier.id);
+    if (this.metered === true) this.meteredConsent.add(tier.id);
+    else this.meteredConsent.delete(tier.id);
+    if (!this.networkWatch) {
+      this.networkWatch = setInterval(() => {
+        void this.checkActiveNetworkCost().catch(() => undefined);
+      }, 10_000);
+      this.networkWatch.unref?.();
+    }
     this.message = undefined;
     this.states.set(tier.id, {
       id: tier.id,
@@ -373,6 +418,8 @@ export class SpeechAssetManager {
     } finally {
       if (this.operationVersions.get(tier.id) === operationVersion) {
         this.active.delete(tier.id);
+        this.meteredConsent.delete(tier.id);
+        this.stopIdleNetworkWatch();
         await this.emit();
       }
     }
