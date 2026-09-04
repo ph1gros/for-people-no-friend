@@ -1,10 +1,57 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 describe('settings renderer regression wiring', () => {
   const source = readFileSync(resolve('src/renderer/chat/chat-controller.ts'), 'utf8');
+  const sourceAst = ts.createSourceFile('chat-controller.ts', source, ts.ScriptTarget.Latest, true);
+  // Check the configured DOM value, independent of el() versus separate IDL assignments.
+  const readElementOption = (variable: string, key: string): string => {
+    const values: string[] = [];
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isVariableDeclaration(node) &&
+        ts.isIdentifier(node.name) &&
+        node.name.text === variable &&
+        node.initializer &&
+        ts.isCallExpression(node.initializer) &&
+        node.initializer.expression.getText(sourceAst) === 'el'
+      ) {
+        const options = node.initializer.arguments[1];
+        if (options && ts.isObjectLiteralExpression(options)) {
+          for (const property of options.properties) {
+            if (
+              ts.isPropertyAssignment(property) &&
+              property.name.getText(sourceAst) === key &&
+              ts.isStringLiteral(property.initializer)
+            ) {
+              values.push(property.initializer.text);
+            }
+          }
+        }
+      }
+      if (
+        ts.isBinaryExpression(node) &&
+        node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+        ts.isPropertyAccessExpression(node.left) &&
+        node.left.expression.getText(sourceAst) === variable &&
+        node.left.name.text === key &&
+        ts.isStringLiteral(node.right)
+      ) {
+        values.push(node.right.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceAst);
+    expect(values, `${variable}.${key} must have one unambiguous literal declaration`).toHaveLength(
+      1,
+    );
+    return values[0]!;
+  };
+  const composerSource = readFileSync(resolve('src/renderer/chat/composer.ts'), 'utf8');
+  const timelineModuleSource = readFileSync(resolve('src/renderer/chat/timeline.ts'), 'utf8');
   const indexSource = readFileSync(resolve('src/renderer/index.ts'), 'utf8');
   const styles = readFileSync(resolve('src/renderer/styles.css'), 'utf8');
   const speechLanguageSource = readFileSync(
@@ -69,7 +116,7 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(
       /\.input-overlay__keys\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow-x:\s*auto;/su,
     );
-    expect(source).toContain("movementKeys.className = 'input-overlay__movement'");
+    expect(readElementOption('movementKeys', 'className')).toBe('input-overlay__movement');
     expect(source).toContain('element.dataset.movement = key.toLowerCase()');
     expect(styles).toContain(".input-overlay__movement [data-movement='w']");
     expect(styles).toContain(".input-overlay__movement [data-movement='a']");
@@ -84,9 +131,9 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain(
       'toolbar.append(soundButton, speechInputModeToolbar, widgetsButton, settingsButton);',
     );
-    expect(source).toContain("widgetsTitle.textContent = '小组件';");
-    expect(source).toContain("inputWidgetTitle.textContent = '输入显示';");
-    expect(source).toContain("mediaWidgetTitle.textContent = '听歌控制';");
+    expect(readElementOption('widgetsTitle', 'textContent')).toBe('小组件');
+    expect(readElementOption('inputWidgetTitle', 'textContent')).toBe('输入显示');
+    expect(readElementOption('mediaWidgetTitle', 'textContent')).toBe('听歌控制');
     expect(source).toContain('const createWidgetCatalogCard = (');
     expect(source).toContain('for (const definition of desktopWidgetRegistry.list())');
     expect(source).toContain('widgetsCatalog.append(card.card);');
@@ -106,7 +153,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain(
       'widgetsSettingsSection.append(widgetsInterfacePanel, widgetsContent)',
     );
-    expect(source).toContain("widgetsInterfaceTitle.textContent = '小组件接口'");
+    expect(readElementOption('widgetsInterfaceTitle', 'textContent')).toBe('小组件接口');
     expect(styles).toContain('.widgets-panel__content');
     expect(styles).toContain('.widget-catalog-card');
     expect(styles).toContain('.widget-catalog-card__settings');
@@ -114,8 +161,12 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(/\.desktop-overlay-stack\s*\{[^}]*gap:\s*6px;/su);
     expect(styles).toContain('var(--visible-frame-top, 0px)');
     expect(styles).toContain('var(--visible-frame-height, calc(100% - 16px))');
-    expect(source).toContain("root.classList.toggle('desktop-widgets-active', widgetReserve > 0)");
+    expect(source).toContain(
+      "root.classList.toggle('desktop-widgets-active', desktopWidgetsActive)",
+    );
+    expect(source).toContain('calculateDesktopWidgetReserve(');
     expect(source).toContain("root.style.setProperty('--desktop-widget-reserve'");
+    expect(source).toContain('desktopWidgetResizeObserver.observe(desktopOverlayStack)');
     expect(styles).toContain('.desktop-widgets-active .character-host');
     expect(styles).toContain('calc(100% - var(--desktop-widget-reserve, 0px))');
     expect(styles).toMatch(/\.widgets-panel\s*\{[^}]*inset:\s*50px 8px 8px;/su);
@@ -146,7 +197,7 @@ describe('settings renderer regression wiring', () => {
   });
 
   it('wires optional speech through the narrow API and keeps an immediate stop control', () => {
-    expect(source).toContain("speechSettingsTitle.textContent = '声音与音频生成'");
+    expect(readElementOption('speechSettingsTitle', 'textContent')).toBe('声音与音频生成');
     expect(source).toContain("['openai-compatible', 'OpenAI 兼容 TTS（本机或在线）']");
     expect(source).toContain('speechOpenAiCompatibleOption.textContent = status.voiceAvailable');
     expect(source).toContain("? '本机 Style-Bert-VITS2'");
@@ -165,9 +216,9 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('resolvePreciseWakeWord(');
     expect(source).toContain("profile?.name ?? '桌宠'");
     expect(source).toContain('api.setSpeechSecret({ apiKey: speechApiKeyInput.value })');
-    expect(source).toContain("stopSpeechButton = createButton('停声'");
-    expect(source).toContain("stopSpeechButton.addEventListener('click'");
-    expect(source).toContain("microphoneButton = createButton('说话'");
+    expect(composerSource).toContain("stopSpeechButton = createButton(documentRef, '停声'");
+    expect(composerSource).toContain("stopSpeechButton.addEventListener('click'");
+    expect(composerSource).toContain("microphoneButton = createButton(documentRef, '说话'");
     expect(source).toContain('navigator.mediaDevices.getUserMedia');
     expect(source).toContain('api.transcribeSpeech({ requestId, audio');
     expect(source).toContain('input.value = transcript');
@@ -205,7 +256,7 @@ describe('settings renderer regression wiring', () => {
   });
 
   it('keeps ViewerEX optional, loopback-scoped, and separate from model files and audio', () => {
-    expect(source).toContain("viewerExSettingsTitle.textContent = '启用 Live2DViewerEX'");
+    expect(readElementOption('viewerExSettingsTitle', 'textContent')).toBe('启用 Live2DViewerEX');
     expect(source).toContain('api.setViewerExSettings({ settings: readViewerExSettings() })');
     expect(source).toContain("api.presentInViewerEx({ text: 'For People No Friend 已连接。' })");
     expect(source).toContain('仅连接 127.0.0.1 的官方 ExAPI');
@@ -216,20 +267,22 @@ describe('settings renderer regression wiring', () => {
   });
 
   it('wires VTube Studio authorization and read-only inventory separately from presentation', () => {
-    expect(source).toContain("vTubeStudioSettingsTitle.textContent = '启用 VTube Studio'");
+    expect(readElementOption('vTubeStudioSettingsTitle', 'textContent')).toBe('启用 VTube Studio');
     expect(source).toContain("createButton('启动 VTube Studio', 'secondary-button')");
     expect(source).toContain('await api.launchVTubeStudio()');
     expect(source).toContain('await api.installBundledVTubeStudioModel()');
     expect(source).toContain('api.setVTubeStudioSettings({ settings: readVTubeStudioSettings() })');
-    expect(source).toContain("vTubeStudioMouseTrackingTitle.textContent = '鼠标追踪'");
+    expect(readElementOption('vTubeStudioMouseTrackingTitle', 'textContent')).toBe('鼠标追踪');
     expect(source).toContain('mouseTrackingEnabled: vTubeStudioMouseTrackingInput.checked');
     expect(source).toContain('const authorization = await api.authorizeVTubeStudio()');
     expect(source).toContain('const activateConnectedVTubeStudio = async (): Promise<boolean>');
-    expect(source).toContain("api.setCharacterDisplayMode({ mode: 'vtube-studio' })");
+    expect(source).toContain("persistCharacterDisplayMode('vtube-studio')");
     expect(source).toContain("setDisplayModeInputs('vtube-studio');");
     expect(source).toContain('const connected = await inspectSelectedVTubeStudio();');
     expect(source).toContain("createButton('连接 VTube Studio', 'secondary-button')");
-    expect(source).toContain("vTubeStudioTroubleshootingSummary.textContent = '连接故障排查'");
+    expect(readElementOption('vTubeStudioTroubleshootingSummary', 'textContent')).toBe(
+      '连接故障排查',
+    );
     expect(source).toContain("createField('手动端口', vTubeStudioPortInput)");
     expect(source).toContain('不用另外下载 Spout2');
     expect(source).toContain("authorization.reason === 'api-disabled'");
@@ -274,7 +327,7 @@ describe('settings renderer regression wiring', () => {
   });
 
   it('groups the three mutually exclusive character displays into left-hand tabs', () => {
-    expect(source).toContain("displayModeTitle.textContent = '角色显示方式'");
+    expect(readElementOption('displayModeTitle', 'textContent')).toBe('角色显示方式');
     expect(source).toContain("['live2d', '纯 Live2D']");
     expect(source).toContain("['viewerex', 'ViewerEX']");
     expect(source).toContain("['vtube-studio', 'VTube Studio']");
@@ -289,14 +342,14 @@ describe('settings renderer regression wiring', () => {
   it('offers a direct, Main-owned Live2D model import entry', () => {
     expect(source).toContain("importLive2DModelButton = createButton('导入 Live2D 模型'");
     expect(source).toContain('const result = await api.importLive2DModel();');
-    expect(source).toContain("await api.setCharacterDisplayMode({ mode: 'live2d' })");
-    expect(source).toContain("displayCharacterDisplayMode('live2d')");
+    expect(source).toContain("await persistCharacterDisplayMode('live2d')");
+    expect(source).toContain('transitionCharacterDisplayMode({');
     expect(source).toContain('选择模型主目录中的 .model3.json');
   });
 
   it('keeps all character management in one left-navigation category', () => {
-    expect(source).toContain("settingsTitle.textContent = '设置'");
-    expect(source).not.toContain("settingsTitle.textContent = 'For People No Friend 设置'");
+    expect(readElementOption('settingsTitle', 'textContent')).toBe('设置');
+    expect(readElementOption('settingsTitle', 'textContent')).not.toBe('For People No Friend 设置');
     expect(source).toContain("settingsNavigation.setAttribute('aria-label', '设置分类')");
     expect(source).toContain("['model', '模型与窗口', modelSettingsSection]");
     expect(source).toContain("['assistant', '工作模式', assistantSettingsSection]");
@@ -382,7 +435,7 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(
       /\.settings-expanded \.settings-layout\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/su,
     );
-    expect(source).toContain("settingsHeaderActions.className = 'settings-header-actions'");
+    expect(readElementOption('settingsHeaderActions', 'className')).toBe('settings-header-actions');
     expect(source).toContain(
       'settingsHeaderActions.append(settingsStatus, settingsActions, closeSettingsButton)',
     );
@@ -403,6 +456,12 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toContain('0 0 0 9999px rgb(24 25 28 / 90%)');
     expect(styles).toMatch(
       /#app\.chat-expanded\[data-character-pane='right'\]:not\(\.settings-expanded\)::before\s*\{[^}]*right:\s*10px;[^}]*left:\s*calc\(50% \+ 8px\);/su,
+    );
+    expect(styles).toMatch(
+      /#app\.chat-expanded\[data-character-display-mode='live2d'\]:not\(\.character-is-loading\)::before\s*\{[^}]*top:\s*var\(--visible-frame-top\);[^}]*right:\s*auto;[^}]*bottom:\s*auto;[^}]*left:\s*var\(--visible-frame-left\);[^}]*width:\s*var\(--visible-frame-width\);[^}]*height:\s*var\(--visible-frame-height\);/su,
+    );
+    expect(styles).toMatch(
+      /#app\.chat-expanded\[data-character-display-mode='live2d'\]\[data-character-pane='right'\]:not\(\s*\.character-is-loading\s*\)::before\s*\{[^}]*left:\s*calc\(50% \+ var\(--visible-frame-left\)\);/su,
     );
     expect(styles).toMatch(
       /\.chat-panel\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/su,
@@ -444,16 +503,17 @@ describe('settings renderer regression wiring', () => {
   });
 
   it('uses a compact auto-growing composer with clear action controls', () => {
-    expect(source).toContain("input.placeholder = '输入消息或任务…'");
-    expect(source).not.toContain('Ctrl+Enter 发送');
-    expect(source).toContain('input.rows = 1;');
-    expect(source).not.toContain('const resizeComposer');
-    expect(source).not.toContain("event.key === 'Enter' && event.ctrlKey && !event.isComposing");
-    expect(source).toContain(
-      'composerActions.append(microphoneButton, stopSpeechButton, stopButton, sendButton)',
+    expect(composerSource).toContain("input.placeholder = '输入消息或任务…'");
+    expect(composerSource).not.toContain('Ctrl+Enter 发送');
+    expect(composerSource).toContain('input.rows = 1;');
+    expect(composerSource).not.toContain('const resizeComposer');
+    expect(composerSource).not.toContain(
+      "event.key === 'Enter' && event.ctrlKey && !event.isComposing",
     );
-    expect(source).toContain("composerDropStatus.className = 'chat-composer__drop-status'");
-    expect(source).toContain("composerDropStatus.textContent = '';");
+    expect(composerSource).toContain(
+      'actions.append(microphoneButton, stopSpeechButton, stopButton, sendButton)',
+    );
+    expect(composerSource).toContain("dropStatus.className = 'chat-composer__drop-status'");
     expect(source).toContain('工作模式开启后，可把文本或文件拖到整个对话区。');
     expect(styles).toMatch(
       /\.chat-composer\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[^}]*grid-template-areas:\s*['"]input actions['"] ['"]status status['"];/su,
@@ -489,7 +549,7 @@ describe('settings renderer regression wiring', () => {
       source.indexOf('const memoryTypeLabels'),
     );
     expect(source).toContain("conversationList.className = 'conversation-list'");
-    expect(source).toContain(
+    expect(timelineModuleSource).toContain(
       'item.className = `conversation-message conversation-message--${message.role}`',
     );
     expect(source).toContain('renderConversationTimeline();');
@@ -513,16 +573,19 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(
       /#app\.chat-expanded\.desktop-widgets-active:not\(\.settings-expanded\)::before\s*\{[^}]*bottom:\s*var\(--desktop-widget-reserve, 0px\);/su,
     );
-    expect(source).toContain('? 128');
-    expect(source).toContain('? 84');
-    expect(source).toContain('? 60');
+    expect(source).not.toContain('? 128');
+    expect(source).not.toContain('? 84');
+    expect(source).not.toContain('? 60');
+    expect(styles).toMatch(
+      /\.desktop-widgets-active \.desktop-overlay-stack\s*\{[^}]*top:\s*auto;[^}]*max-height:\s*45%;/su,
+    );
   });
 
   it('offers one explicit work mode for bounded workspace and web tools', () => {
     expect(source).toContain("createButton('工作模式 OFF', 'text-button assistant-mode-button')");
     expect(source).toContain("'secondary-button assistant-workspace-button'");
-    expect(source).toContain("assistantWorkspaceHeading.textContent = '工作区与权限'");
-    expect(source).toContain("assistantInterfaceTitle.textContent = '当前工作接口'");
+    expect(readElementOption('assistantWorkspaceHeading', 'textContent')).toBe('工作区与权限');
+    expect(readElementOption('assistantInterfaceTitle', 'textContent')).toBe('当前工作接口');
     expect(source).toContain("'普通聊天'");
     expect(source).toContain("'OFF'");
     expect(source).toContain("'工作模式'");
@@ -536,13 +599,15 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('wakeFromDrowsy,');
     expect(source).toContain('const wakeFromDrowsy = companionDrowsy;');
     expect(source).toContain('api.importDroppedWorkspaceFiles({');
-    expect(source).toContain('files.map(async (file) => ({');
-    expect(source).toContain("event.dataTransfer?.getData('text/plain')");
-    expect(source).toContain("panel.classList.add('is-drop-active')");
-    expect(source).toContain("panel.addEventListener('dragover', handlePanelDragOver)");
-    expect(source).toContain("panel.addEventListener('drop', handlePanelDrop)");
-    expect(source).toContain("showComposerDropStatus('已把拖入文本放进输入框')");
-    expect(source).toContain("window.addEventListener('drop', preventWindowFileNavigation)");
+    expect(composerSource).toContain('files.map(async (file) => ({');
+    expect(composerSource).toContain("dragEvent.dataTransfer?.getData('text/plain')");
+    expect(composerSource).toContain("dropTarget.classList.add('is-drop-active')");
+    expect(composerSource).toContain("dropTarget.addEventListener('dragover', handleDragOver)");
+    expect(composerSource).toContain("dropTarget.addEventListener('drop', handleDrop)");
+    expect(composerSource).toContain("showDropStatus('已把拖入文本放进输入框')");
+    expect(composerSource).toContain(
+      "windowRef.addEventListener('drop', preventWindowFileNavigation)",
+    );
     expect(source).toContain("event.type === 'tool-approval'");
     expect(source).toContain('api?.resolveAssistantToolApproval({');
     expect(styles).toContain('.assistant-mode-button.is-active');
@@ -615,7 +680,7 @@ describe('settings renderer regression wiring', () => {
   it('allows window size adjustment in one-percent increments', () => {
     expect(source).toContain("scaleInput.step = '0.01';");
     expect(source).toContain("scaleInput.value = '0.78';");
-    expect(source).toContain("scaleOutput.textContent = '78%';");
+    expect(readElementOption('scaleOutput', 'textContent')).toBe('78%');
     expect(source).toContain('scaleInput.max = String(MAX_WINDOW_SCALE);');
     expect(windowIpcSource).toContain('MAX_WINDOW_SCALE = 1.2');
   });
@@ -636,7 +701,7 @@ describe('settings renderer regression wiring', () => {
   it('uses the same visible model and voice editor for bundled and external TTS', () => {
     expect(source).toContain("createField('新角色名称', newCharacterNameInput)");
     expect(styles).toContain('.local-character-actions .settings-field');
-    expect(source).toContain("speechVoiceIdentityTitle.textContent = '语音模型与音色'");
+    expect(readElementOption('speechVoiceIdentityTitle', 'textContent')).toBe('语音模型与音色');
     expect(source).toContain("createField('语音模型 ID', speechModelInput)");
     expect(source).toContain("createField('音色 / Speaker ID', speechVoiceInput)");
     expect(source).not.toContain('speechBundledVoice');

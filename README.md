@@ -6,9 +6,9 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-当前仓库是 **Live2D Version**。V1.7 基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+当前仓库是 **Live2D Version**，最新版本为 **v1.7.1**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
-V1.7 已完成本轮开发：新增 Genie-TTS 本机 GPT-SoVITS ONNX 提供方、Fish Audio 在线 TTS、通用 VTube Studio 表情映射、可跟随当前角色名或自定义的精准语音称呼，以及采用工作区/小组件范围授权的工作模式；工作区外文件、脚本和项目检查会显示真实目标后逐次确认。基础包不携带 Python、本地 TTS/ASR 模型、指定角色或音色权重；完全离线语音运行环境作为公开可选组件提供，当前 Windows x64 精简包约 672 MiB，伊蕾娜音色和黑猫身份/模型则只作为独立的非商业可选资源。
+v1.7.1 在 V1.7 的 Genie-TTS 本机服务、Fish Audio 在线 TTS、VTube Studio 表情映射、精准语音称呼和受控工作模式基础上，修整角色布局、小组件避让、显示切换及本地存储稳定性，改用 Node 原生语音识别引擎并精简主程序包。基础包不携带 Python、本地 TTS/ASR/BERT 模型或指定音色权重；可在设置中连接已有的在线或本机语音服务。**本版尚未启用语音组件下载，资源中心与独立组件拆分不在此次发布范围内**。此前 V1.7 的可选语音包属于历史产物，本版不随附新的离线语音组件。
 
 Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
@@ -99,6 +99,28 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
 
+### v1.7.1
+
+**完成了什么**
+
+- 修正 Live2D 可见底边、小组件实际高度预留和显示方式切换顺序；设置、对话和组件保持统一灰黑表面。
+- 将本地 SenseVoice 接入迁至 `sherpa-onnx-node`，主程序携带识别引擎，模型仍需另备；裁剪无用 WebGPU DLL 和多余语言包。
+- 加强 IPC 来源检查、诊断日志脱敏、配置写入串行化、SQLite 备份与可选服务故障回退。
+- 修正语音下载的信任依据、崩溃残留处理、清单失败重试、磁盘检查及计费网络提示；可信记录未配置时保持不可下载。
+- 提取对话时间线、输入区和类型化 DOM 元素工厂，减少聊天控制器重复代码。
+
+**使用了什么**
+
+- Electron、TypeScript、SQLite、Live2D 与 `sherpa-onnx-node`；Main 继续负责敏感能力，Preload 仅暴露明确接口。
+- 语音下载只允许应用内固定的版本、哈希、大小与目标；远程清单只提供下载地址，两个生产信任记录仍为 `null`。
+
+**参考了什么**
+
+- sherpa-onnx 官方 Node 接口与 SenseVoice 模型布局，用于本地识别适配与成品加载检查。
+- Live2D 的可见边界与显示生命周期，以及已有小组件布局约定。BetterGI 风格的资源中心留待后续版本。
+
+完整内容与验证边界见 [v1.7.1 Release 说明](docs/V1_7_1_RELEASE_NOTES.md)。
+
 ### V1.6.0
 
 **完成了什么**
@@ -181,7 +203,11 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 
 ## 下载
 
-[V1.6 Live2D Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.6) 已提供 `FPNF-v1.6-Windows-x64.zip` Windows x64 免安装包，并可配合 [Steam VTube Studio](https://store.steampowered.com/app/1325860/VTube_Studio/) 使用。公开包不包含授权待确认的小黑猫模型和伊蕾娜音色；确认公开再分发权后再决定是否增加独立资源资产。安装包 SHA-256 为 `DA3C0D4E7F0254878288F7A1959A254F54495FFE8690C2C4E10DC651C97A0E44`。[V1.5b 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.5b) 继续保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+[下载 v1.7.1 Windows x64 免安装包](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.7.1)，文件名为 `FPNF-v1.7.1-Windows-x64.zip`，约 **138.8 MiB**，解压后约 **337.7 MiB**。准确字节数及 SHA-256 见 Release 附件 `package-info.json` 和 `SHA256SUMS.txt`。将整个 `FPNF` 文件夹解压后运行 `For People No Friend.exe`，不要直接在压缩软件内启动。
+
+首次运行可先配置聊天接口；角色与模型需要自行导入。本包包含 ASR 引擎，但不含 SenseVoice、BERT、TTS 模型、Python 环境、伊蕾娜音色或黑猫资源。离线语音不会仅靠这个 ZIP 就绪，也不会在后台自动补齐；可以连接已有的语音服务。VTube Studio 另从 [Steam](https://store.steampowered.com/app/1325860/VTube_Studio/) 安装。
+
+更新时建议解压到新目录，不要覆盖旧目录中的自备资源；本机用户数据保存在应用用户目录。当前提供便携包，未进行代码签名，不提供自动升级。[V1.7 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.7) 与 [更早版本](https://github.com/ph1gros/for-people-no-friend/releases) 保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
@@ -221,6 +247,8 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 - [V1.6 小猫角色、伊蕾娜语音与 VTube Studio 复现手册](docs/V1_6_PORTABLE_CHARACTER_VOICE_VTUBE_GUIDE.md)
 - [V1.6 Release 说明](docs/V1_6_RELEASE_NOTES.md)
 - [V1.7 当前实施与安全边界](docs/V1_7_IMPLEMENTATION.md)
+- [v1.7.1 Release 说明](docs/V1_7_1_RELEASE_NOTES.md)
+- [V1.8 界面布局实施与验收边界](docs/V1_8_IMPLEMENTATION.md)
 - [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)

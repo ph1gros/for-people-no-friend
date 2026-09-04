@@ -66,6 +66,7 @@ export const createMainWindow = (state: PersistedWindowState): BrowserWindow => 
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-attach-webview', (event) => event.preventDefault());
   window.webContents.on('will-navigate', (event) => event.preventDefault());
+  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   const isTrustedMicrophoneRequest = (
     requestingWebContents: Electron.WebContents | null,
     permission: string,
@@ -88,7 +89,6 @@ export const createMainWindow = (state: PersistedWindowState): BrowserWindow => 
       return false;
     }
   };
-  const devServerUrl = process.env.VITE_DEV_SERVER_URL;
   window.webContents.session.setPermissionRequestHandler(
     (requestingWebContents, permission, callback, details) => {
       const mediaTypes = 'mediaTypes' in details ? details.mediaTypes : undefined;

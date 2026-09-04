@@ -425,10 +425,22 @@ describe('controlled assistant tools', () => {
       store,
       globalThis.fetch,
       {
-        runProjectCheck: async (root, check) => {
-          expect(root).toBe(directory);
-          checks.push(check);
-          return 'typecheck 检查通过。';
+        projectChecks: {
+          inspect: async (root, check) => {
+            expect(root).toBe(directory);
+            expect(check).toBe('typecheck');
+            return {
+              check: 'typecheck' as const,
+              manager: 'pnpm' as const,
+              fingerprint: 'approved-plan',
+              scripts: [{ name: 'typecheck', command: 'tsc -p tsconfig.json --noEmit' }],
+            };
+          },
+          run: async (root, plan) => {
+            expect(root).toBe(directory);
+            checks.push(plan.check);
+            return 'typecheck 检查通过。';
+          },
         },
       },
     );
@@ -447,7 +459,7 @@ describe('controlled assistant tools', () => {
       },
     );
     expect(checks).toEqual(['typecheck']);
-    expect(approvals[0]).toContain('package.json 中的 typecheck 脚本');
+    expect(approvals[0]).toContain('tsc -p tsconfig.json --noEmit');
     expect(result.reply.text).toBe('类型检查通过。');
   });
 

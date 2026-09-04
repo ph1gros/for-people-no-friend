@@ -92,6 +92,47 @@ describe('shared settings persistence contract', () => {
     });
   });
 
+  it('enables a newly downloaded bundled voice without overwriting other speech settings', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-speech-downloaded-assets-'));
+    const store = new SpeechConfigStore(directory, false);
+    await store.set({
+      ...DEFAULT_SPEECH_SETTINGS,
+      volume: 0.37,
+      inputEnabled: true,
+      customWakeWord: '测试唤醒词',
+    });
+
+    await expect(store.enableBundledVoiceIfUnconfigured()).resolves.toBe(true);
+    await expect(store.get()).resolves.toMatchObject({
+      providerId: 'openai-compatible',
+      baseUrl: 'http://127.0.0.1:9881/v1',
+      modelId: 'style-bert-vits2',
+      voiceId: 'ireina',
+      volume: 0.37,
+      inputEnabled: true,
+      customWakeWord: '测试唤醒词',
+    });
+  });
+
+  it('does not replace an explicitly configured remote voice after a download completes', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-speech-remote-provider-'));
+    const store = new SpeechConfigStore(directory, false);
+    await store.set({
+      ...DEFAULT_SPEECH_SETTINGS,
+      providerId: 'openai-compatible',
+      baseUrl: 'https://speech.example.com/v1',
+      modelId: 'remote-model',
+      voiceId: 'remote-voice',
+    });
+
+    await expect(store.enableBundledVoiceIfUnconfigured()).resolves.toBe(false);
+    await expect(store.get()).resolves.toMatchObject({
+      baseUrl: 'https://speech.example.com/v1',
+      modelId: 'remote-model',
+      voiceId: 'remote-voice',
+    });
+  });
+
   it('migrates older desktop settings to both default shortcuts', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-desktop-settings-'));
     await writeFile(

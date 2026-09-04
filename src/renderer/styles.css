@@ -65,6 +65,21 @@ body {
   bottom: var(--desktop-widget-reserve, 0px);
 }
 
+#app.chat-expanded[data-character-display-mode='live2d']:not(.character-is-loading)::before {
+  top: var(--visible-frame-top);
+  right: auto;
+  bottom: auto;
+  left: var(--visible-frame-left);
+  width: var(--visible-frame-width);
+  height: var(--visible-frame-height);
+}
+
+#app.chat-expanded[data-character-display-mode='live2d'][data-character-pane='right']:not(
+    .character-is-loading
+  )::before {
+  left: calc(50% + var(--visible-frame-left));
+}
+
 #app.settings-expanded::before {
   display: none;
 }
@@ -137,8 +152,10 @@ body {
 
 .desktop-widgets-active .desktop-overlay-stack {
   z-index: 10;
+  top: auto;
   bottom: 0;
   box-sizing: border-box;
+  max-height: 45%;
   padding: 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -727,6 +744,54 @@ select {
   color: rgb(255 255 255 / 96%);
   border-radius: 13px 4px 13px 13px;
   background: rgb(68 70 74 / 94%);
+}
+
+.speech-asset-progress-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  background: rgba(28, 28, 30, 0.92);
+}
+
+.speech-asset-progress-strip[hidden] {
+  display: none;
+}
+
+.speech-asset-progress-strip progress,
+.speech-asset-download progress {
+  min-width: 80px;
+  flex: 1;
+  accent-color: #a8b7d8;
+}
+
+.speech-asset-progress-strip .secondary-button {
+  min-height: 24px;
+  padding: 2px 8px;
+}
+
+.speech-asset-download__tier {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.speech-asset-download__tier + .speech-asset-download__tier {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.speech-asset-download__tier progress {
+  grid-column: 1;
+}
+
+.speech-asset-download__tier .settings-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .chat-composer {

@@ -39,6 +39,7 @@ import {
   suggestVTubeStudioModelMapping,
 } from './vtube-studio-presentation';
 import { discoverVTubeStudioApi, type VTubeStudioApiDiscovery } from './vtube-studio-discovery';
+import type { SafeDiagnosticSink } from '../diagnostics/safe-diagnostic-log';
 
 const TOKEN_SECRET_ID = 'vtube-studio-plugin-token';
 const CONNECT_TIMEOUT_MS = 2_000;
@@ -264,6 +265,7 @@ export class VTubeStudioService {
     private readonly createSocket: SocketFactory = defaultSocketFactory,
     private readonly pointerSource: PointerSource = noPointer,
     private readonly discoverApi: VTubeStudioApiDiscovery = discoverVTubeStudioApi,
+    private readonly diagnostics?: SafeDiagnosticSink,
   ) {}
 
   public async getStatus(): Promise<VTubeStudioStatus> {
@@ -320,6 +322,7 @@ export class VTubeStudioService {
       }
       return { ok: true };
     } catch {
+      this.diagnostics?.('vtube-studio-configuration-failed');
       return { ok: false, message: 'VTube Studio 设置无法保存。' };
     }
   }
@@ -345,6 +348,7 @@ export class VTubeStudioService {
       this.connection = 'disconnected';
       return { ok: true, reason: 'authorized', message: 'VTube Studio 已授权。' };
     } catch (error) {
+      this.diagnostics?.('vtube-studio-connection-failed');
       this.connection = 'disconnected';
       if (error instanceof VTubeStudioApiDisabledError) {
         return { ok: false, reason: 'api-disabled', message: apiDisabledMessage };
@@ -449,6 +453,7 @@ export class VTubeStudioService {
         },
       };
     } catch (error) {
+      this.diagnostics?.('vtube-studio-connection-failed');
       console.warn(
         'Unable to inspect the current VTube Studio model.',
         error instanceof Error ? error.message : 'Unknown inspection error.',
@@ -616,6 +621,7 @@ export class VTubeStudioService {
       }
       return { ok: true, reason: 'presented' };
     } catch {
+      this.diagnostics?.('vtube-studio-connection-failed');
       this.disconnect();
       this.connection = 'disconnected';
       return {
@@ -676,6 +682,7 @@ export class VTubeStudioService {
       }
       return { ok: true, message: `正在预览“${expression.name}”。` };
     } catch {
+      this.diagnostics?.('vtube-studio-connection-failed');
       this.disconnect();
       this.connection = 'disconnected';
       return { ok: false, message: 'VTube Studio 表情预览失败。' };

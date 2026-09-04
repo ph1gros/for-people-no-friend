@@ -61,6 +61,48 @@ describe('V1.2 resilience and local data consistency', () => {
     database.close();
   });
 
+  it('batches message pruning and waits briefly for transient SQLite locks', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-v12-pruning-'));
+    const database = new DeskpetDatabase(directory);
+    for (let index = 0; index < 2_050; index += 1) {
+      database.appendMessage(
+        {
+          id: `message-${index}`,
+          role: 'user',
+          content: `content-${index}`,
+          createdAt: index,
+          status: 'complete',
+        },
+        'character-batched',
+      );
+    }
+    expect(
+      database.connection
+        .prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ?')
+        .get('character-batched'),
+    ).toEqual({ count: 2_050 });
+
+    for (let index = 2_050; index < 2_101; index += 1) {
+      database.appendMessage(
+        {
+          id: `message-${index}`,
+          role: 'user',
+          content: `content-${index}`,
+          createdAt: index,
+          status: 'complete',
+        },
+        'character-batched',
+      );
+    }
+    expect(
+      database.connection
+        .prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ?')
+        .get('character-batched'),
+    ).toEqual({ count: 2_000 });
+    expect(database.connection.prepare('PRAGMA busy_timeout').get()).toEqual({ timeout: 5_000 });
+    database.close();
+  });
+
   it('rolls back a failed character knowledge replacement without losing the old revision', async () => {
     directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-v12-rollback-'));
     const database = new DeskpetDatabase(directory);

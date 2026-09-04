@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { DatabaseSync, backup } from 'node:sqlite';
+import * as nodeSqlite from 'node:sqlite';
 
 import type { SessionSummary } from '../../core/memory/contracts';
 import type { ConversationMessage } from '../../shared/conversation-ipc';
@@ -10,6 +10,11 @@ const DEFAULT_CONVERSATION_ID = 'default-character';
 const DATABASE_FILE_NAME = 'deskpet.v1.sqlite';
 const LEGACY_CONVERSATION_FILE = 'conversation.v1.json';
 const MAX_STORED_MESSAGES = 2_000;
+const MESSAGE_PRUNE_BATCH_SIZE = 100;
+
+export const isSqliteBackupSupported = (
+  sqlite: { backup?: unknown } = nodeSqlite,
+): sqlite is { backup: typeof nodeSqlite.backup } => typeof sqlite.backup === 'function';
 
 interface MessageRow {
   id: string;
@@ -55,15 +60,15 @@ const rowToMessage = (row: MessageRow): ConversationMessage => ({
 
 export class DeskpetDatabase {
   public readonly path: string;
-  public readonly connection: DatabaseSync;
+  public readonly connection: nodeSqlite.DatabaseSync;
   private closed = false;
 
   public constructor(userDataPath: string, fileName = DATABASE_FILE_NAME) {
     mkdirSync(userDataPath, { recursive: true });
     this.path = path.join(userDataPath, fileName);
-    this.connection = new DatabaseSync(this.path);
+    this.connection = new nodeSqlite.DatabaseSync(this.path);
     this.connection.exec(
-      'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;',
+      'PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA busy_timeout = 5000;',
     );
     this.migrate();
     this.importLegacyConversation(userDataPath);
@@ -106,9 +111,15 @@ export class DeskpetDatabase {
         message.inputTokens ?? null,
         message.outputTokens ?? null,
       );
-    this.connection
-      .prepare(
-        `DELETE FROM messages
+    const storedCount = (
+      this.connection
+        .prepare('SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ?')
+        .get(namespace) as { count: number }
+    ).count;
+    if (storedCount > MAX_STORED_MESSAGES + MESSAGE_PRUNE_BATCH_SIZE) {
+      this.connection
+        .prepare(
+          `DELETE FROM messages
           WHERE conversation_id = ?
             AND rowid NOT IN (
               SELECT rowid FROM messages
@@ -116,8 +127,9 @@ export class DeskpetDatabase {
                ORDER BY created_at DESC, rowid DESC
                LIMIT ?
             )`,
-      )
-      .run(namespace, namespace, MAX_STORED_MESSAGES);
+        )
+        .run(namespace, namespace, MAX_STORED_MESSAGES);
+    }
   }
 
   public clearMessages(namespace = DEFAULT_CONVERSATION_ID): void {
@@ -208,7 +220,10 @@ export class DeskpetDatabase {
   }
 
   public backup(destination: string): Promise<number> {
-    return backup(this.connection, destination);
+    if (!isSqliteBackupSupported()) {
+      return Promise.reject(new Error('当前 Electron 运行环境不支持 SQLite 数据库备份。'));
+    }
+    return nodeSqlite.backup(this.connection, destination);
   }
   public close(): void {
     if (!this.closed) {

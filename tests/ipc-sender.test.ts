@@ -1,5 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
+import { createTrustedIpcHandlerRegistrar } from '../src/main/ipc/register-ipc-handlers';
 import { isTrustedIpcSender } from '../src/main/ipc/sender-validation';
 
 describe('IPC sender validation', () => {
@@ -34,5 +38,42 @@ describe('IPC sender validation', () => {
     expect(
       isTrustedIpcSender({ sender: webContents, senderFrame: mainFrame } as never, undefined),
     ).toBe(false);
+  });
+
+  it('guards registered handlers before invoking their implementation', async () => {
+    let registered: ((event: unknown, input: unknown) => unknown) | undefined;
+    let implementationCalls = 0;
+    const mainFrame = {};
+    const webContents = { mainFrame };
+    const windows = {
+      getWindow: () => ({ isDestroyed: () => false, webContents }),
+    };
+    const handle = createTrustedIpcHandlerRegistrar(
+      {
+        handle: (_channel, handler) => {
+          registered = handler as typeof registered;
+        },
+      },
+      windows as never,
+    );
+    handle('test:guarded', (_event, input) => {
+      implementationCalls += 1;
+      return input;
+    });
+
+    expect(() => registered?.({ sender: {}, senderFrame: {} }, 'blocked')).toThrow(
+      'Unauthorized IPC sender',
+    );
+    expect(implementationCalls).toBe(0);
+    expect(registered?.({ sender: webContents, senderFrame: mainFrame }, 'allowed')).toBe(
+      'allowed',
+    );
+    expect(implementationCalls).toBe(1);
+  });
+
+  it('registers the complete IPC surface only through the guarded registrar', () => {
+    const source = readFileSync(resolve('src/main/ipc/register-ipc-handlers.ts'), 'utf8');
+    expect(source).not.toContain('ipcMain.handle(');
+    expect(source).toContain('const handle = createTrustedIpcHandlerRegistrar(ipcMain, windows)');
   });
 });

@@ -21,7 +21,7 @@ export class SpeechConfigStore {
 
   public constructor(
     userDataPath: string,
-    private readonly bundledVoiceAvailable = false,
+    private bundledVoiceAvailable = false,
   ) {
     this.filePath = path.join(userDataPath, 'speech.v1.json');
     this.initialSettings = createInitialSpeechSettings(bundledVoiceAvailable);
@@ -29,6 +29,35 @@ export class SpeechConfigStore {
 
   public async get(): Promise<SpeechSettings> {
     await this.writeQueue;
+    return this.readSettings();
+  }
+
+  public set(settings: SpeechSettings): Promise<void> {
+    const validated = parseSpeechSettings(settings);
+    return this.enqueueWrite(async () => this.writeSettings(validated));
+  }
+
+  public enableBundledVoiceIfUnconfigured(): Promise<boolean> {
+    return this.enqueueWrite(async () => {
+      const current = await this.readSettings();
+      if (current.providerId !== 'disabled' || current.modelId || current.voiceId) return false;
+      const bundled = BUNDLED_IREINA_SPEECH_PRESET;
+      await this.writeSettings({
+        ...current,
+        providerId: bundled.providerId,
+        baseUrl: bundled.baseUrl,
+        modelId: bundled.modelId,
+        voiceId: bundled.voiceId,
+        language: bundled.language,
+        responseFormat: bundled.responseFormat,
+        speed: bundled.speed,
+      });
+      this.bundledVoiceAvailable = true;
+      return true;
+    });
+  }
+
+  private async readSettings(): Promise<SpeechSettings> {
     try {
       const value = JSON.parse(await readFile(this.filePath, 'utf8')) as unknown;
       if (
@@ -68,24 +97,28 @@ export class SpeechConfigStore {
     }
   }
 
-  public set(settings: SpeechSettings): Promise<void> {
-    const validated = parseSpeechSettings(settings);
-    const operation = this.writeQueue.then(async () => {
-      await mkdir(path.dirname(this.filePath), { recursive: true });
-      const temporaryPath = `${this.filePath}.tmp`;
-      const file: SpeechConfigFile = { version: 3, settings: validated };
-      await writeFile(temporaryPath, JSON.stringify(file, null, 2), {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
-      try {
-        await rename(temporaryPath, this.filePath);
-      } catch (error) {
-        await rm(temporaryPath, { force: true });
-        throw error;
-      }
+  private async writeSettings(settings: SpeechSettings): Promise<void> {
+    await mkdir(path.dirname(this.filePath), { recursive: true });
+    const temporaryPath = `${this.filePath}.tmp`;
+    const file: SpeechConfigFile = { version: 3, settings };
+    await writeFile(temporaryPath, JSON.stringify(file, null, 2), {
+      encoding: 'utf8',
+      mode: 0o600,
     });
-    this.writeQueue = operation.catch(() => undefined);
+    try {
+      await rename(temporaryPath, this.filePath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true });
+      throw error;
+    }
+  }
+
+  private enqueueWrite<T>(task: () => Promise<T>): Promise<T> {
+    const operation = this.writeQueue.then(task, task);
+    this.writeQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
     return operation;
   }
 }

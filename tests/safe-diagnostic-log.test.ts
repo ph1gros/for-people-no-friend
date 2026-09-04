@@ -101,4 +101,42 @@ describe('SafeDiagnosticLog', () => {
     expect((await stat(log.filePath)).size).toBeLessThanOrEqual(550);
     expect(await readFile(log.filePath, 'utf8')).toContain('fake-model-7');
   });
+
+  it('records only fixed subsystem failure names without accepting sensitive payloads', async () => {
+    const directory = await createTemporaryDirectory();
+    const log = new SafeDiagnosticLog(directory);
+
+    await Promise.all([
+      log.record('speech-runtime-start-failed'),
+      log.record('vtube-studio-configuration-failed'),
+      log.record('viewerex-connection-failed'),
+      log.record('desktop-integration-start-failed'),
+      log.record('memory-index-configuration-failed'),
+      log.record('secret-store-invalid-entry-skipped'),
+    ]);
+
+    const contents = await readFile(log.filePath, 'utf8');
+    const records = contents
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(records).toHaveLength(6);
+    expect(
+      records.every(
+        (record) => Object.keys(record).sort().join(',') === 'event,recordedAt,version',
+      ),
+    ).toBe(true);
+    expect(contents).not.toContain('C:\\Users');
+    expect(contents).not.toContain('token');
+    expect(contents).not.toContain('conversation');
+  });
+
+  it('creates an empty diagnostics file that the settings entry can open', async () => {
+    const directory = await createTemporaryDirectory();
+    const log = new SafeDiagnosticLog(directory);
+
+    await log.ensureFile();
+
+    expect(await readFile(log.filePath, 'utf8')).toBe('');
+  });
 });

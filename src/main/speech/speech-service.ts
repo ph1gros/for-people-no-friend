@@ -24,6 +24,8 @@ import {
 } from '../../shared/speech-ipc';
 import type { SecretStore } from '../security/secret-store';
 import type { SpeechConfigStore } from '../storage/speech-config-store';
+import type { SafeDiagnosticSink } from '../diagnostics/safe-diagnostic-log';
+import type { LocalTranscriptionAdapter } from '../../adapters/speech/local-sherpa-asr';
 
 const OPENAI_COMPATIBLE_SPEECH_SECRET_ID = 'speech-openai-compatible';
 const speechSecretId = (providerId: SpeechProviderId): string | undefined =>
@@ -101,8 +103,21 @@ export const normalizeJapaneseSpeechText = (value: string): string =>
 
 export type SpeechTextTranslator = (text: string, signal: AbortSignal) => Promise<string>;
 export type EnsureBundledSpeechRuntime = () => Promise<boolean>;
-export type SpeechInputReadinessProbe = (baseUrl: string) => Promise<boolean>;
-export type EnsureBundledSpeechInputRuntime = () => Promise<boolean>;
+
+export const isBundledLocalTranscription = (settings: SpeechSettings): boolean => {
+  try {
+    const url = resolveSpeechTranscriptionUrl(settings.transcriptionBaseUrl);
+    return (
+      url.protocol === 'http:' &&
+      url.hostname === '127.0.0.1' &&
+      url.port === '9880' &&
+      url.pathname === '/v1/audio/transcriptions' &&
+      settings.transcriptionModelId === 'SenseVoiceSmall'
+    );
+  } catch {
+    return false;
+  }
+};
 
 export interface AdditionalSpeechAdapters {
   genieTts?: GenieTtsAdapter;
@@ -120,8 +135,8 @@ export class SpeechService {
     private readonly translateToJapanese?: SpeechTextTranslator,
     private readonly ensureBundledRuntime?: EnsureBundledSpeechRuntime,
     private readonly additionalAdapters: AdditionalSpeechAdapters = {},
-    private readonly inputReadinessProbe?: SpeechInputReadinessProbe,
-    private readonly ensureBundledInputRuntime?: EnsureBundledSpeechInputRuntime,
+    private readonly diagnostics?: SafeDiagnosticSink,
+    private readonly localTranscriptionAdapter?: LocalTranscriptionAdapter,
   ) {}
 
   public async getStatus(): Promise<SpeechStatus> {
@@ -169,7 +184,10 @@ export class SpeechService {
     const bundledLocalVoiceReady =
       !bundledLocalVoiceSelected || !settings.enabled || !configured
         ? true
-        : await this.ensureBundledRuntime?.().catch(() => false);
+        : await this.ensureBundledRuntime?.().catch(() => {
+            this.diagnostics?.('speech-runtime-start-failed');
+            return false;
+          });
     let inputDataDestination: 'none' | 'this-device' | 'remote-service' = 'none';
     let inputEndpointValid = false;
     try {
@@ -180,25 +198,21 @@ export class SpeechService {
       // Keep speech input unavailable when the configured endpoint is invalid.
     }
     const inputConfigured = inputEndpointValid && Boolean(settings.transcriptionModelId.trim());
-    if (
-      inputDataDestination === 'this-device' &&
-      settings.inputEnabled &&
-      inputConfigured &&
-      this.transcriptionAdapter
-    ) {
-      await this.ensureBundledInputRuntime?.().catch(() => false);
-    }
+    const bundledLocalInputSelected = isBundledLocalTranscription(settings);
+    const selectedInputAdapterAvailable = bundledLocalInputSelected
+      ? Boolean(this.localTranscriptionAdapter)
+      : Boolean(this.transcriptionAdapter);
     const localInputServiceReady =
-      inputDataDestination !== 'this-device' ||
-      !settings.inputEnabled ||
-      !inputConfigured ||
-      !this.transcriptionAdapter
+      !bundledLocalInputSelected || !settings.inputEnabled || !inputConfigured
         ? true
-        : await this.inputReadinessProbe?.(settings.transcriptionBaseUrl).catch(() => false);
+        : await this.localTranscriptionAdapter?.isAvailable().catch(() => {
+            this.diagnostics?.('speech-runtime-start-failed');
+            return false;
+          });
     const inputAvailable =
       settings.inputEnabled &&
       inputConfigured &&
-      this.transcriptionAdapter !== undefined &&
+      selectedInputAdapterAvailable &&
       localInputServiceReady === true;
     return {
       settings,
@@ -232,10 +246,10 @@ export class SpeechService {
           ? '中文语音识别接口地址无效，麦克风保持关闭。'
           : !settings.inputEnabled
             ? '中文麦克风输入默认关闭；开启后可选择完全、精准或手动模式。'
-            : !this.transcriptionAdapter
+            : !selectedInputAdapterAvailable
               ? '中文语音识别适配器不可用。'
-              : inputDataDestination === 'this-device' && !localInputServiceReady
-                ? '本机语音识别服务未安装或未启动；文字聊天和语音输出不受影响。'
+              : bundledLocalInputSelected && !localInputServiceReady
+                ? '本机语音识别模型未安装、校验失败或运行组件不可用；文字聊天和语音输出不受影响。'
                 : inputDataDestination === 'this-device'
                   ? settings.inputMode === 'manual'
                     ? `中文录音只发送到本机识别服务；点击录音或按住 ${settings.pushToTalkKey}，结果只填入输入框。`
@@ -270,6 +284,7 @@ export class SpeechService {
       await this.store.set(settings);
       return { ok: true };
     } catch {
+      this.diagnostics?.('speech-configuration-failed');
       return { ok: false, message: '语音设置无效或无法保存。' };
     }
   }
@@ -422,7 +437,11 @@ export class SpeechService {
     this.activeRequests.set(input.requestId, controller);
     try {
       const settings = await this.store.get();
-      if (!settings.inputEnabled || !settings.transcriptionModelId || !this.transcriptionAdapter) {
+      const bundledLocalInputSelected = isBundledLocalTranscription(settings);
+      const selectedAdapter = bundledLocalInputSelected
+        ? this.localTranscriptionAdapter
+        : this.transcriptionAdapter;
+      if (!settings.inputEnabled || !settings.transcriptionModelId || !selectedAdapter) {
         return {
           ok: false,
           requestId: input.requestId,
@@ -430,16 +449,25 @@ export class SpeechService {
           message: '中文语音识别尚未配置。',
         };
       }
-      const result = await this.transcriptionAdapter.transcribe(
-        {
-          ...input,
-          baseUrl: settings.transcriptionBaseUrl,
-          apiKey: await this.secrets.get(OPENAI_COMPATIBLE_SPEECH_SECRET_ID),
-          modelId: settings.transcriptionModelId,
-          language: settings.transcriptionLanguage,
-        },
-        controller.signal,
-      );
+      const result = bundledLocalInputSelected
+        ? await this.localTranscriptionAdapter!.transcribe(
+            {
+              ...input,
+              modelId: settings.transcriptionModelId,
+              language: settings.transcriptionLanguage,
+            },
+            controller.signal,
+          )
+        : await this.transcriptionAdapter!.transcribe(
+            {
+              ...input,
+              baseUrl: settings.transcriptionBaseUrl,
+              apiKey: await this.secrets.get(OPENAI_COMPATIBLE_SPEECH_SECRET_ID),
+              modelId: settings.transcriptionModelId,
+              language: settings.transcriptionLanguage,
+            },
+            controller.signal,
+          );
       if (controller.signal.aborted) {
         return {
           ok: false,
@@ -478,5 +506,6 @@ export class SpeechService {
 
   public dispose(): void {
     this.cancelAll();
+    this.localTranscriptionAdapter?.dispose();
   }
 }

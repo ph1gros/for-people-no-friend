@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { mkdir, open, readFile, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 
 export interface SecretEncryption {
@@ -19,7 +19,9 @@ const MAX_CIPHERTEXT_LENGTH = 131_072;
 
 const emptySecretFile = (): SecretFile => ({ version: 1, secrets: {} });
 
-const parseSecretFile = (text: string): SecretFile => {
+export type SecretStoreDiagnosticSink = (event: 'secret-store-invalid-entry-skipped') => void;
+
+const parseSecretFile = (text: string, diagnostics?: SecretStoreDiagnosticSink): SecretFile => {
   const value = JSON.parse(text) as unknown;
   if (
     typeof value !== 'object' ||
@@ -43,7 +45,8 @@ const parseSecretFile = (text: string): SecretFile => {
       ciphertext.length > MAX_CIPHERTEXT_LENGTH ||
       !/^[A-Za-z0-9+/]+={0,2}$/.test(ciphertext)
     ) {
-      throw new Error('The encrypted secret store contains an invalid entry.');
+      diagnostics?.('secret-store-invalid-entry-skipped');
+      continue;
     }
     secrets[id] = ciphertext;
   }
@@ -52,10 +55,12 @@ const parseSecretFile = (text: string): SecretFile => {
 
 export class SecretStore {
   private readonly filePath: string;
+  private queue: Promise<unknown> = Promise.resolve();
 
   public constructor(
     userDataPath: string,
     private readonly encryption: SecretEncryption,
+    private readonly diagnostics?: SecretStoreDiagnosticSink,
   ) {
     this.filePath = path.join(userDataPath, 'secrets.v1.json');
   }
@@ -94,24 +99,28 @@ export class SecretStore {
     ) {
       throw new Error('A non-empty, unmasked secret is required.');
     }
-    if (!(await this.encryption.isAsyncEncryptionAvailable())) {
-      throw new Error('Operating-system encryption is unavailable.');
-    }
+    await this.serialize(async () => {
+      if (!(await this.encryption.isAsyncEncryptionAvailable())) {
+        throw new Error('Operating-system encryption is unavailable.');
+      }
 
-    const encrypted = await this.encryption.encryptStringAsync(value.trim());
-    const file = await this.read();
-    file.secrets[secretId] = encrypted.toString('base64');
-    await this.write(file);
+      const encrypted = await this.encryption.encryptStringAsync(value.trim());
+      const file = await this.read();
+      file.secrets[secretId] = encrypted.toString('base64');
+      await this.write(file);
+    });
   }
 
   public async delete(secretId: string): Promise<void> {
     this.validateSecretId(secretId);
-    const file = await this.read();
-    if (!(secretId in file.secrets)) {
-      return;
-    }
-    delete file.secrets[secretId];
-    await this.write(file);
+    await this.serialize(async () => {
+      const file = await this.read();
+      if (!(secretId in file.secrets)) {
+        return;
+      }
+      delete file.secrets[secretId];
+      await this.write(file);
+    });
   }
 
   private validateSecretId(secretId: string): void {
@@ -122,7 +131,7 @@ export class SecretStore {
 
   private async read(): Promise<SecretFile> {
     try {
-      return parseSecretFile(await readFile(this.filePath, 'utf8'));
+      return parseSecretFile(await readFile(this.filePath, 'utf8'), this.diagnostics);
     } catch (error) {
       if (
         typeof error === 'object' &&
@@ -139,15 +148,24 @@ export class SecretStore {
   private async write(file: SecretFile): Promise<void> {
     await mkdir(path.dirname(this.filePath), { recursive: true });
     const temporaryPath = `${this.filePath}.tmp`;
-    await writeFile(temporaryPath, JSON.stringify(file, null, 2), {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
+    const handle = await open(temporaryPath, 'w', 0o600);
+    try {
+      await handle.writeFile(JSON.stringify(file, null, 2), 'utf8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
     try {
       await rename(temporaryPath, this.filePath);
     } catch (error) {
       await rm(temporaryPath, { force: true });
       throw error;
     }
+  }
+
+  private serialize<T>(task: () => Promise<T>): Promise<T> {
+    const next = this.queue.then(task, task);
+    this.queue = next.catch(() => undefined);
+    return next;
   }
 }

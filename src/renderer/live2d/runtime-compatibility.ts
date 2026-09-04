@@ -110,6 +110,13 @@ export const findAlphaBounds = (
     : undefined;
 };
 
+export const calculateVisibleBottomCorrection = (
+  screen: ScreenDimensions,
+  visibleBounds: ContentBounds,
+): number => {
+  return screen.height - (visibleBounds.y + visibleBounds.height);
+};
+
 export const updateBlinkDuringMotion = (
   runtime: CubismBlinkRuntimeCompatibility,
   deltaTimeMs: number,

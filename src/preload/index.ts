@@ -57,6 +57,7 @@ import {
   type SpeechSynthesisInput,
   type SpeechTranscriptionInput,
 } from '../shared/speech-ipc';
+import type { SpeechAssetControlInput } from '../shared/speech-asset-ipc';
 import type { SetViewerExSettingsInput, ViewerExPresentationInput } from '../shared/viewerex-ipc';
 import type {
   SetVTubeStudioSettingsInput,
@@ -70,6 +71,10 @@ import type {
 
 const deskpetApi: DeskpetApi = Object.freeze({
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.getAppVersion) as Promise<string>,
+  openDiagnosticLog: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.openDiagnosticLog) as ReturnType<
+      DeskpetApi['openDiagnosticLog']
+    >,
   getGlobalTrackingPoint: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getGlobalTrackingPoint) as Promise<
       { x: number; y: number } | undefined
@@ -360,6 +365,14 @@ const deskpetApi: DeskpetApi = Object.freeze({
   getLocalSpeechAssetStatus: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getLocalSpeechAssetStatus) as ReturnType<
       DeskpetApi['getLocalSpeechAssetStatus']
+    >,
+  getSpeechAssetDownloadStatus: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.getSpeechAssetDownloadStatus) as ReturnType<
+      DeskpetApi['getSpeechAssetDownloadStatus']
+    >,
+  controlSpeechAssetDownload: (input: SpeechAssetControlInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.controlSpeechAssetDownload, input) as ReturnType<
+      DeskpetApi['controlSpeechAssetDownload']
     >,
   exportLocalVoice: () =>
     ipcRenderer.invoke(IPC_CHANNELS.exportLocalVoice) as ReturnType<DeskpetApi['exportLocalVoice']>,

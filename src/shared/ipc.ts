@@ -71,6 +71,7 @@ import type {
   SpeechTranscriptionInput,
   SpeechTranscriptionResult,
 } from './speech-ipc';
+import type { SpeechAssetControlInput, SpeechAssetDownloadStatus } from './speech-asset-ipc';
 import type {
   WorkGlossaryInput,
   WorkGlossaryStatus,
@@ -108,6 +109,7 @@ import type {
 
 export const IPC_CHANNELS = {
   getAppVersion: 'app:getVersion',
+  openDiagnosticLog: 'app:openDiagnosticLog',
   getGlobalTrackingPoint: 'tracking:getGlobalPoint',
   listModelProviders: 'model:listProviders',
   getProviderConfiguration: 'model:getProviderConfiguration',
@@ -181,6 +183,8 @@ export const IPC_CHANNELS = {
   transcribeSpeech: 'speech:transcribe',
   cancelSpeech: 'speech:cancel',
   getLocalSpeechAssetStatus: 'speechAssets:getStatus',
+  getSpeechAssetDownloadStatus: 'speechAssets:getDownloadStatus',
+  controlSpeechAssetDownload: 'speechAssets:controlDownload',
   exportLocalVoice: 'speechAssets:exportVoice',
   openSpeechTrainingSources: 'speechAssets:openTrainingSources',
   launchSpeechTrainer: 'speechAssets:launchTrainer',
@@ -204,6 +208,7 @@ export const isAllowedIpcChannel = (channel: string): channel is IpcChannel =>
 
 export interface DeskpetApi {
   getAppVersion(): Promise<string>;
+  openDiagnosticLog(): Promise<LocalAssetOperationResult>;
   getGlobalTrackingPoint(): Promise<{ x: number; y: number } | undefined>;
   listModelProviders(): Promise<ProviderSummary[]>;
   getProviderConfiguration(): Promise<ProviderConfiguration>;
@@ -283,6 +288,8 @@ export interface DeskpetApi {
   transcribeSpeech(input: SpeechTranscriptionInput): Promise<SpeechTranscriptionResult>;
   cancelSpeech(input: CancelSpeechInput): Promise<boolean>;
   getLocalSpeechAssetStatus(): Promise<LocalSpeechAssetStatus>;
+  getSpeechAssetDownloadStatus(): Promise<SpeechAssetDownloadStatus>;
+  controlSpeechAssetDownload(input: SpeechAssetControlInput): Promise<SpeechAssetDownloadStatus>;
   exportLocalVoice(): Promise<LocalAssetOperationResult>;
   openSpeechTrainingSources(): Promise<LocalAssetOperationResult>;
   launchSpeechTrainer(): Promise<LocalAssetOperationResult>;

@@ -1,0 +1,20 @@
+# Direct runtime dependencies for the ONNX-only Style-Bert-VITS2 service.
+# The rebuild script installs the fully pinned requirements.lock with --no-deps,
+# preventing style-bert-vits2 metadata from pulling the unused PyTorch stack.
+fastapi==0.116.1
+uvicorn==0.35.0
+numpy==1.26.4
+onnxruntime-directml==1.23.0
+style-bert-vits2 @ git+https://github.com/litagin02/Style-Bert-VITS2.git@d8148f3090ee5038ca7b4e4b327116c64467f952
+transformers==5.16.1
+pyopenjtalk-dict==0.3.4.dev2
+sentencepiece==0.2.2
+soundfile==0.14.0
+jaconv==0.5.0
+num2words==0.5.14
+cn2an==0.5.24
+jieba==0.42.1
+pypinyin==0.55.0
+pyworld-prebuilt==0.3.5.post2
+loguru==0.7.3
+setuptools==78.1.0

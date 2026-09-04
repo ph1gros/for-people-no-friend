@@ -7,6 +7,7 @@ import {
   type ViewerExStatus,
 } from '../../shared/viewerex-ipc';
 import { buildViewerExPresentationMessages } from './viewerex-protocol';
+import type { SafeDiagnosticSink } from '../diagnostics/safe-diagnostic-log';
 
 const SOCKET_OPEN = 1;
 const CONNECT_TIMEOUT_MS = 1_500;
@@ -34,6 +35,7 @@ export class ViewerExService {
   public constructor(
     private readonly store: ViewerExConfigStore,
     private readonly createSocket: ViewerExSocketFactory = defaultSocketFactory,
+    private readonly diagnostics?: SafeDiagnosticSink,
   ) {}
 
   public async getStatus(): Promise<ViewerExStatus> {
@@ -61,6 +63,7 @@ export class ViewerExService {
       else this.connection = 'disconnected';
       return { ok: true };
     } catch {
+      this.diagnostics?.('viewerex-configuration-failed');
       return { ok: false, message: 'ViewerEX 设置无法保存。' };
     }
   }
@@ -70,6 +73,7 @@ export class ViewerExService {
     try {
       settings = await this.store.get();
     } catch {
+      this.diagnostics?.('viewerex-configuration-failed');
       return false;
     }
     if (!settings.enabled) {
@@ -85,6 +89,7 @@ export class ViewerExService {
       for (const message of messages) this.socket?.send(JSON.stringify(message));
       return true;
     } catch {
+      this.diagnostics?.('viewerex-connection-failed');
       this.disconnect();
       this.connection = 'disconnected';
       return false;
@@ -116,6 +121,7 @@ export class ViewerExService {
       const finish = (connected: boolean): void => {
         if (settled) return;
         settled = true;
+        if (!connected) this.diagnostics?.('viewerex-connection-failed');
         clearTimeout(timer);
         this.connecting = undefined;
         this.connection = connected ? 'connected' : 'disconnected';

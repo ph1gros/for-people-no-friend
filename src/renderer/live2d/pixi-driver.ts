@@ -15,6 +15,7 @@ import {
   applyNormalizedTracking,
   applyPersistentParameters,
   applyPixiTextureCompatibility,
+  calculateVisibleBottomCorrection,
   findAlphaBounds,
   fitModelToScreen,
   updateBlinkDuringMotion,
@@ -222,32 +223,42 @@ export const createLive2DRenderer = async (
     let frameRefreshTimer: number | undefined;
     const refreshVisibleFrame = (): boolean => {
       const screen = application.screen;
-      application.renderer.render(application.stage);
       const resolution = Math.min(1, 1_024 / Math.max(1, screen.width, screen.height));
-      const extracted = application.renderer.extract.pixels({
-        target: application.stage,
-        frame: new Rectangle(0, 0, screen.width, screen.height),
-        resolution,
-        clearColor: [0, 0, 0, 0],
-      });
-      const alphaBounds = findAlphaBounds(extracted);
+      const readVisibleBounds = () => {
+        application.renderer.render(application.stage);
+        const extracted = application.renderer.extract.pixels({
+          target: application.stage,
+          frame: new Rectangle(0, 0, screen.width, screen.height),
+          resolution,
+          clearColor: [0, 0, 0, 0],
+        });
+        const alphaBounds = findAlphaBounds(extracted);
+        return alphaBounds
+          ? {
+              x: alphaBounds.x * (screen.width / extracted.width),
+              y: alphaBounds.y * (screen.height / extracted.height),
+              width: alphaBounds.width * (screen.width / extracted.width),
+              height: alphaBounds.height * (screen.height / extracted.height),
+            }
+          : undefined;
+      };
+      let visibleBounds = readVisibleBounds();
       const frameRoot = host.parentElement;
-      if (!alphaBounds || !frameRoot) {
+      if (!visibleBounds || !frameRoot) {
         return false;
       }
-      const pixelToScreenX = screen.width / extracted.width;
-      const pixelToScreenY = screen.height / extracted.height;
+      const bottomCorrection =
+        presentation.offsetY === 0 ? calculateVisibleBottomCorrection(screen, visibleBounds) : 0;
+      if (Math.abs(bottomCorrection) >= 0.5) {
+        model.position.y += bottomCorrection;
+        visibleBounds = readVisibleBounds();
+        if (!visibleBounds) return false;
+      }
       const padding = 2;
-      const left = Math.max(1, alphaBounds.x * pixelToScreenX - padding);
-      const top = Math.max(1, alphaBounds.y * pixelToScreenY - padding);
-      const right = Math.min(
-        screen.width - 1,
-        (alphaBounds.x + alphaBounds.width) * pixelToScreenX + padding,
-      );
-      const bottom = Math.min(
-        screen.height - 1,
-        (alphaBounds.y + alphaBounds.height) * pixelToScreenY + padding,
-      );
+      const left = Math.max(0, visibleBounds.x - padding);
+      const top = Math.max(0, visibleBounds.y - padding);
+      const right = Math.min(screen.width, visibleBounds.x + visibleBounds.width + padding);
+      const bottom = Math.min(screen.height, visibleBounds.y + visibleBounds.height + padding);
       frameRoot.style.setProperty('--visible-frame-left', `${left}px`);
       frameRoot.style.setProperty('--visible-frame-top', `${top}px`);
       frameRoot.style.setProperty('--visible-frame-width', `${right - left}px`);

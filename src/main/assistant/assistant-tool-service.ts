@@ -18,6 +18,7 @@ import type { ChatMessage, ModelSelection } from '../../core/llm/contracts';
 import type { MediaCommand } from '../../core/desktop/integration';
 import type { ModelRuntime } from '../llm/model-runtime';
 import type { AssistantWorkspaceStore } from '../storage/assistant-workspace-store';
+import type { ProjectCheckRunner } from './project-check-runner';
 import type {
   ImportDroppedWorkspaceFilesInput,
   ImportDroppedWorkspaceFilesResult,
@@ -31,6 +32,7 @@ const MAX_SEARCHED_DIRECTORIES = 300;
 const MAX_SEARCH_MATCHES = 200;
 const MAX_TOOL_RESULT_CHARACTERS = 32_000;
 const MAX_WEB_RESPONSE_BYTES = 1_000_000;
+const MAX_APPROVAL_SCRIPT_CHARACTERS = 200;
 const SKIPPED_DIRECTORIES = new Set(['.git', 'node_modules', 'dist', 'dist-electron']);
 const SAFE_OPEN_EXTENSIONS = new Set([
   '.txt',
@@ -271,11 +273,7 @@ export class AssistantToolService {
     private readonly actions: {
       openPath?: (target: string) => Promise<string>;
       sendMediaCommand?: (command: MediaCommand) => Promise<boolean>;
-      runProjectCheck?: (
-        root: string,
-        check: 'test' | 'lint' | 'typecheck' | 'build',
-        signal?: AbortSignal,
-      ) => Promise<string>;
+      projectChecks?: ProjectCheckRunner;
     } = {},
   ) {}
 
@@ -391,7 +389,7 @@ export class AssistantToolService {
             'create_directory',
           ]
         : []),
-      ...(workspaceRoot && this.actions.runProjectCheck ? ['run_project_check'] : []),
+      ...(workspaceRoot && this.actions.projectChecks ? ['run_project_check'] : []),
       ...(workspaceRoot && this.actions.openPath ? ['open_file'] : []),
       ...(this.actions.sendMediaCommand ? ['media_control'] : []),
       'web_search',
@@ -583,18 +581,24 @@ export class AssistantToolService {
         : '已按用户确认打开工作区外目标。';
     }
     if (step.tool === 'run_project_check') {
-      if (!this.actions.runProjectCheck) throw new Error('项目检查不可用。');
+      if (!this.actions.projectChecks) throw new Error('项目检查不可用。');
       const check = stringInput(step.input, 'check', 20);
       if (check !== 'test' && check !== 'lint' && check !== 'typecheck' && check !== 'build') {
         throw new Error('项目检查不在允许列表中。');
       }
+      const plan = await this.actions.projectChecks.inspect(workspaceRoot, check);
+      const scriptLines = plan.scripts.map(({ name, command }) => {
+        const truncated = command.length > MAX_APPROVAL_SCRIPT_CHARACTERS;
+        const visible = command.slice(0, MAX_APPROVAL_SCRIPT_CHARACTERS);
+        return `${name}: ${visible}${truncated ? '…（已截断）' : ''}`;
+      });
       const approved = await callbacks.requestApproval({
         approvalId: `check_${randomUUID().replaceAll('-', '_')}`,
         title: '允许助手运行项目检查？',
-        description: `将运行 package.json 中的 ${check} 脚本。项目脚本会执行工作区代码。`,
+        description: `将在 ${workspaceRoot} 执行 ${plan.manager} run ${check}：\n${scriptLines.join('\n')}\n项目脚本会执行工作区代码。`,
       });
       if (!approved) return '用户拒绝了这次项目检查。';
-      return this.actions.runProjectCheck?.(workspaceRoot, check, signal) ?? '项目检查不可用。';
+      return this.actions.projectChecks.run(workspaceRoot, plan, signal);
     }
     if (step.tool === 'create_directory') {
       const requestedPath = stringInput(step.input, 'path', 500);

@@ -19,5 +19,12 @@ export default tseslint.config(
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
+  {
+    rules: {
+      // Electron invoke callbacks often need the event parameter position even when the
+      // centralized registrar has already completed sender validation.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^event$' }],
+    },
+  },
   prettierConfig,
 );

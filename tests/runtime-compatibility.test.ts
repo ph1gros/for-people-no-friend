@@ -7,6 +7,7 @@ import {
   applyNormalizedTracking,
   applyPersistentParameters,
   applyPixiTextureCompatibility,
+  calculateVisibleBottomCorrection,
   findAlphaBounds,
   fitModelToScreen,
   updateBlinkDuringMotion,
@@ -93,6 +94,24 @@ describe('Live2D runtime compatibility', () => {
     expect(
       findAlphaBounds({ pixels: new Uint8ClampedArray(16), width: 2, height: 2 }),
     ).toBeUndefined();
+  });
+
+  it('moves a visibly short Live2D frame down to the transparent stage bottom', () => {
+    expect(
+      calculateVisibleBottomCorrection(
+        { width: 360, height: 520 },
+        { x: 40, y: 36, width: 280, height: 420 },
+      ),
+    ).toBe(64);
+  });
+
+  it('leaves a Live2D frame that already reaches the stage edge in place', () => {
+    expect(
+      calculateVisibleBottomCorrection(
+        { width: 360, height: 520 },
+        { x: 40, y: 100, width: 280, height: 420 },
+      ),
+    ).toBe(0);
   });
 
   it('adds automatic blinking while an idle motion is active', () => {

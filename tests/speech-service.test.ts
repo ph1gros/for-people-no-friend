@@ -8,6 +8,7 @@ import type {
   OpenAICompatibleTranscriptionAdapter,
   OpenAICompatibleTranscriptionRequest,
 } from '../src/adapters/speech/openai-compatible-asr';
+import type { LocalTranscriptionAdapter } from '../src/adapters/speech/local-sherpa-asr';
 import { normalizeJapaneseSpeechText, SpeechService } from '../src/main/speech/speech-service';
 import type { SecretStore } from '../src/main/security/secret-store';
 import type { SpeechConfigStore } from '../src/main/storage/speech-config-store';
@@ -65,7 +66,12 @@ describe('speech service', () => {
       undefined,
       undefined,
       {},
-      async () => true,
+      undefined,
+      {
+        isAvailable: async () => true,
+        transcribe: async () => ({ text: '你好。' }),
+        dispose: () => undefined,
+      } as LocalTranscriptionAdapter,
     );
 
     await expect(service.getStatus()).resolves.toMatchObject({
@@ -96,7 +102,12 @@ describe('speech service', () => {
       undefined,
       undefined,
       {},
-      async () => false,
+      undefined,
+      {
+        isAvailable: async () => false,
+        transcribe: async () => ({ text: '不应调用。' }),
+        dispose: () => undefined,
+      } as LocalTranscriptionAdapter,
     );
 
     await expect(service.getStatus()).resolves.toMatchObject({
@@ -104,18 +115,13 @@ describe('speech service', () => {
         available: false,
         modes: [],
         dataDestination: 'this-device',
-        detail: '本机语音识别服务未安装或未启动；文字聊天和语音输出不受影响。',
+        detail: '本机语音识别模型未安装、校验失败或运行组件不可用；文字聊天和语音输出不受影响。',
       },
     });
   });
 
-  it('starts an optional local input runtime before probing continuous-listening readiness', async () => {
-    let runtimeStarted = false;
-    const ensureInputRuntime = vi.fn(async () => {
-      runtimeStarted = true;
-      return true;
-    });
-    const probeInputReadiness = vi.fn(async () => runtimeStarted);
+  it('checks the in-process local adapter before advertising continuous-listening readiness', async () => {
+    const isAvailable = vi.fn(async () => true);
     const service = new SpeechService(
       {
         get: async () => ({ ...enabledSettings(), inputMode: 'full' }),
@@ -131,15 +137,18 @@ describe('speech service', () => {
       undefined,
       undefined,
       {},
-      probeInputReadiness,
-      ensureInputRuntime,
+      undefined,
+      {
+        isAvailable,
+        transcribe: async () => ({ text: '你好。' }),
+        dispose: () => undefined,
+      } as LocalTranscriptionAdapter,
     );
 
     await expect(service.getStatus()).resolves.toMatchObject({
       input: { available: true, modes: ['full', 'half', 'manual'] },
     });
-    expect(ensureInputRuntime).toHaveBeenCalledOnce();
-    expect(probeInputReadiness).toHaveBeenCalledOnce();
+    expect(isAvailable).toHaveBeenCalledOnce();
   });
 
   it('does not advertise the bundled local voice before its model is ready', async () => {
@@ -173,7 +182,13 @@ describe('speech service', () => {
   it('sends bounded WAV input to transcription and returns text without exposing audio', async () => {
     const requests: OpenAICompatibleTranscriptionRequest[] = [];
     const service = new SpeechService(
-      { get: async () => enabledSettings(), set: async () => undefined } as SpeechConfigStore,
+      {
+        get: async () => ({
+          ...enabledSettings(),
+          transcriptionBaseUrl: 'https://speech.example/v1',
+        }),
+        set: async () => undefined,
+      } as SpeechConfigStore,
       { get: async () => undefined, has: async () => false } as unknown as SecretStore,
       {
         synthesize: async () => ({ audio: new Uint8Array([1]), mimeType: 'audio/wav' }),
@@ -194,10 +209,47 @@ describe('speech service', () => {
       }),
     ).resolves.toEqual({ ok: true, requestId: 'asr_1', text: '你好，这是测试。' });
     expect(requests[0]).toMatchObject({
-      baseUrl: 'http://127.0.0.1:9880/v1',
+      baseUrl: 'https://speech.example/v1',
       modelId: 'SenseVoiceSmall',
       language: 'zh-CN',
     });
+  });
+
+  it('routes the bundled preset directly to local sherpa without reading an API key', async () => {
+    const localRequests: unknown[] = [];
+    const getSecret = vi.fn(async () => undefined);
+    const service = new SpeechService(
+      { get: async () => enabledSettings(), set: async () => undefined } as SpeechConfigStore,
+      { get: getSecret, has: async () => false } as unknown as SecretStore,
+      {
+        synthesize: async () => ({ audio: new Uint8Array([1]), mimeType: 'audio/wav' }),
+      } as OpenAICompatibleSpeechAdapter,
+      {
+        transcribe: async () => ({ text: '不应走 HTTP。' }),
+      } as OpenAICompatibleTranscriptionAdapter,
+      undefined,
+      undefined,
+      {},
+      undefined,
+      {
+        isAvailable: async () => true,
+        transcribe: async (request) => {
+          localRequests.push(request);
+          return { text: '本地结果。' };
+        },
+        dispose: () => undefined,
+      },
+    );
+
+    await expect(
+      service.transcribe({
+        requestId: 'local-asr',
+        audio: new Uint8Array([82, 73, 70, 70]),
+        mimeType: 'audio/wav',
+      }),
+    ).resolves.toEqual({ ok: true, requestId: 'local-asr', text: '本地结果。' });
+    expect(localRequests).toHaveLength(1);
+    expect(getSecret).not.toHaveBeenCalled();
   });
 
   it('passes only validated configuration to synthesis and cancels in-flight work', async () => {

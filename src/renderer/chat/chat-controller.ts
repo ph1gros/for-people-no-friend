@@ -69,16 +69,12 @@ import {
 } from '../../shared/vtube-studio-ipc';
 import { MAX_WINDOW_SCALE, MIN_WINDOW_SCALE } from '../../shared/window-ipc';
 import {
-  MAX_DROPPED_WORKSPACE_FILES,
-  MAX_DROPPED_WORKSPACE_FILE_BYTES,
-  MAX_DROPPED_WORKSPACE_TOTAL_BYTES,
-} from '../../shared/assistant-tools-ipc';
-import {
   DEFAULT_DESKTOP_LAYOUT_SETTINGS,
   type DesktopLayoutSettings,
 } from '../../shared/desktop-layout-ipc';
 import { SpeechTurnPipeline } from '../../core/speech/streaming-pipeline';
 import type { LoadedCharacter } from '../live2d/character-runtime';
+import { transitionCharacterDisplayMode } from '../display/character-display-transition';
 import { IpcSpeechSynthesisClient, WebAudioSpeechPlayer } from '../speech/speech-runtime';
 import {
   resolveSpeechLanguage,
@@ -105,7 +101,12 @@ import {
   type ViewerExMappings,
 } from '../viewerex/viewerex-mapping-draft';
 import { desktopWidgetRegistry, type DesktopWidgetDefinition } from '../widgets/widget-registry';
+import { calculateDesktopWidgetReserve } from '../widgets/widget-layout';
 import { IdleCompanionScheduler, selectKittenDrowsyLine } from './idle-companion';
+import { mountComposerPanel } from './composer';
+import { el } from './elements';
+import { mountConversationTimeline } from './timeline';
+import { mountSpeechAssetDownloadPanel, startSpeechInputAssetOnDemand } from './speech-asset-panel';
 
 interface ChatControllerOptions {
   root: HTMLElement;
@@ -257,28 +258,45 @@ export const initializeChat = async ({
   onDisplayModeChanged,
 }: ChatControllerOptions): Promise<() => void> => {
   const api = window.deskpet;
-  const shell = document.createElement('section');
-  shell.className = 'chat-shell';
-  shell.setAttribute('aria-label', '文字对话');
+  const shell = el('section', { className: 'chat-shell', attrs: { 'aria-label': '文字对话' } });
 
   const desktopOverlayStack = document.createElement('section');
   desktopOverlayStack.className = 'desktop-overlay-stack';
   desktopOverlayStack.setAttribute('aria-label', '桌面小组件显示');
+  let desktopWidgetsActive = false;
+  let desktopWidgetReserve = 0;
+  const syncDesktopWidgetReserve = (): void => {
+    const nextReserve = desktopWidgetsActive
+      ? calculateDesktopWidgetReserve(
+          desktopOverlayStack.getBoundingClientRect().height,
+          root.getBoundingClientRect().height,
+        )
+      : 0;
+    if (nextReserve === desktopWidgetReserve) return;
+    desktopWidgetReserve = nextReserve;
+    if (nextReserve > 0) {
+      root.style.setProperty('--desktop-widget-reserve', `${nextReserve}px`);
+    } else {
+      root.style.removeProperty('--desktop-widget-reserve');
+    }
+    window.dispatchEvent(new Event('resize'));
+  };
+  const desktopWidgetResizeObserver = new ResizeObserver(syncDesktopWidgetReserve);
+  desktopWidgetResizeObserver.observe(desktopOverlayStack);
+  window.addEventListener('resize', syncDesktopWidgetReserve);
 
   const mediaOverlay = document.createElement('section');
   mediaOverlay.className = 'media-overlay';
   mediaOverlay.hidden = true;
   mediaOverlay.setAttribute('aria-label', '当前媒体');
-  const mediaOverlayControls = document.createElement('div');
-  mediaOverlayControls.className = 'media-overlay__controls';
+  const mediaOverlayControls = el('div', { className: 'media-overlay__controls' });
   const previousMediaOverlayButton = createButton('◀', 'media-overlay__control');
   previousMediaOverlayButton.setAttribute('aria-label', '上一首');
   const playPauseMediaOverlayButton = createButton('⏸', 'media-overlay__control');
   playPauseMediaOverlayButton.setAttribute('aria-label', '播放或暂停');
   const nextMediaOverlayButton = createButton('▶', 'media-overlay__control');
   nextMediaOverlayButton.setAttribute('aria-label', '下一首');
-  const mediaTrack = document.createElement('span');
-  mediaTrack.className = 'media-overlay__track';
+  const mediaTrack = el('span', { className: 'media-overlay__track' });
   mediaOverlayControls.append(
     previousMediaOverlayButton,
     playPauseMediaOverlayButton,
@@ -291,27 +309,20 @@ export const initializeChat = async ({
   inputOverlay.className = 'input-overlay';
   inputOverlay.hidden = true;
   inputOverlay.setAttribute('aria-label', '本机输入显示');
-  const inputOverlayLabel = document.createElement('small');
-  inputOverlayLabel.textContent = 'INPUT';
-  const inputOverlayKeys = document.createElement('div');
-  inputOverlayKeys.className = 'input-overlay__keys';
+  const inputOverlayLabel = el('small', { textContent: 'INPUT' });
+  const inputOverlayKeys = el('div', { className: 'input-overlay__keys' });
   const inputOverlayKeyElements = new Map<InputOverlayKey, HTMLElement>();
   const inputOverlayReleaseTimers = new Map<string, number>();
   let mouseDirectionTimer: number | undefined;
-  const inputOverlayMouse = document.createElement('div');
-  inputOverlayMouse.className = 'input-overlay__mouse';
-  const mouseDirection = document.createElement('span');
-  mouseDirection.className = 'input-overlay__direction';
-  mouseDirection.textContent = '•';
+  const inputOverlayMouse = el('div', { className: 'input-overlay__mouse' });
+  const mouseDirection = el('span', { className: 'input-overlay__direction', textContent: '•' });
   const mouseButtons = new Map<MouseInputButton, HTMLElement>();
   for (const [button, label] of [
     ['left', 'L'],
     ['middle', 'M'],
     ['right', 'R'],
   ] as const) {
-    const element = document.createElement('span');
-    element.className = 'input-overlay__mouse-button';
-    element.textContent = label;
+    const element = el('span', { className: 'input-overlay__mouse-button', textContent: label });
     element.dataset.button = button;
     mouseButtons.set(button, element);
     inputOverlayMouse.append(element);
@@ -320,15 +331,11 @@ export const initializeChat = async ({
   inputOverlay.append(inputOverlayLabel, inputOverlayKeys, inputOverlayMouse);
   desktopOverlayStack.append(mediaOverlay, inputOverlay);
 
-  const panel = document.createElement('section');
-  panel.className = 'chat-panel';
+  const panel = el('section', { className: 'chat-panel' });
 
-  const panelHeader = document.createElement('header');
-  panelHeader.className = 'chat-panel__header';
-  const identity = document.createElement('div');
-  identity.className = 'chat-identity';
-  const replyAuthor = document.createElement('strong');
-  replyAuthor.textContent = '桌宠';
+  const panelHeader = el('header', { className: 'chat-panel__header' });
+  const identity = el('div', { className: 'chat-identity' });
+  const replyAuthor = el('strong', { textContent: '桌宠' });
   const replyStatus = document.createElement('small');
   replyStatus.setAttribute('role', 'status');
   replyStatus.setAttribute('aria-live', 'polite');
@@ -344,8 +351,7 @@ export const initializeChat = async ({
   assistantWorkspaceButton.title = '选择助手可以读取和修改的文件夹';
   panelHeader.append(identity, assistantModeButton);
 
-  const toolbar = document.createElement('div');
-  toolbar.className = 'chat-toolbar';
+  const toolbar = el('div', { className: 'chat-toolbar' });
   const soundButton = createButton('声音', 'chat-toolbar__button');
   soundButton.setAttribute('aria-label', '调整角色语音音量');
   const speechInputModeToolbar = document.createElement('div');
@@ -384,68 +390,48 @@ export const initializeChat = async ({
   conversationList.className = 'conversation-list';
   conversationList.setAttribute('aria-label', '当前对话');
   conversationList.setAttribute('aria-live', 'polite');
+  const conversationTimeline = mountConversationTimeline(conversationList);
+  const speechAssetProgressStrip = document.createElement('aside');
+  speechAssetProgressStrip.className = 'speech-asset-progress-strip';
+  speechAssetProgressStrip.hidden = true;
 
-  const composer = document.createElement('form');
-  composer.className = 'chat-composer';
-  const input = document.createElement('textarea');
-  input.className = 'chat-composer__input';
-  input.placeholder = '输入消息或任务…';
-  input.maxLength = 16_000;
-  input.rows = 1;
-  input.setAttribute('aria-label', '对话内容');
-  const sendButton = createButton('发送', 'chat-composer__send');
-  sendButton.type = 'submit';
-  const microphoneButton = createButton('说话', 'chat-composer__microphone');
-  microphoneButton.type = 'button';
-  microphoneButton.hidden = true;
-  microphoneButton.title = '手动开始录音；再次点击结束并把中文填入输入框';
-  microphoneButton.setAttribute('aria-pressed', 'false');
-  const stopButton = createButton('停止', 'chat-composer__stop');
-  stopButton.hidden = true;
-  const stopSpeechButton = createButton('停声', 'chat-composer__stop');
-  stopSpeechButton.hidden = true;
-  stopSpeechButton.title = '立即停止后续语音和当前播放';
-  stopSpeechButton.classList.add('chat-composer__stop-speech');
-  const composerDropStatus = document.createElement('small');
-  composerDropStatus.className = 'chat-composer__drop-status';
-  composerDropStatus.textContent = '';
-  let composerDropStatusTimer: number | undefined;
-  const showComposerDropStatus = (message: string, clearAfterMs = 2_500): void => {
-    if (composerDropStatusTimer !== undefined) window.clearTimeout(composerDropStatusTimer);
-    composerDropStatusTimer = undefined;
-    composerDropStatus.textContent = message;
-    if (!message || clearAfterMs <= 0) return;
-    composerDropStatusTimer = window.setTimeout(() => {
-      composerDropStatus.textContent = '';
-      composerDropStatusTimer = undefined;
-    }, clearAfterMs);
-  };
-  const composerActions = document.createElement('div');
-  composerActions.className = 'chat-composer__actions';
-  composerActions.append(microphoneButton, stopSpeechButton, stopButton, sendButton);
-  composer.append(input, composerDropStatus, composerActions);
+  const composerPanel = mountComposerPanel(panel, {
+    isChatView: () => panelView === 'chat',
+    isAssistantModeEnabled: () => assistantModeEnabled,
+    isWorkspaceConfigured: () => assistantWorkspaceConfigured,
+    importFiles: async (files) => {
+      if (!api) throw new Error('Workspace import is unavailable.');
+      return api.importDroppedWorkspaceFiles({ assistantMode: assistantModeEnabled, files });
+    },
+    onFilesImported: (result) =>
+      setReplyStatus(result.ok ? `已接收 ${result.imported.length} 个文件` : '文件未导入'),
+    onSubmit: handleComposerSubmit,
+    onStop: handleComposerStop,
+    onStopSpeech: handleComposerStopSpeech,
+    onMicrophone: handleComposerMicrophone,
+  });
+  const {
+    root: composer,
+    input,
+    sendButton,
+    microphoneButton,
+    stopButton,
+    stopSpeechButton,
+    showDropStatus: showComposerDropStatus,
+  } = composerPanel;
 
-  const historyPanel = document.createElement('section');
-  historyPanel.className = 'chat-drawer';
-  historyPanel.hidden = true;
-  const historyHeader = document.createElement('header');
-  historyHeader.className = 'chat-drawer__header';
-  const historyTitle = document.createElement('strong');
-  historyTitle.textContent = '最近对话';
+  const historyPanel = el('section', { className: 'chat-drawer', hidden: true });
+  const historyHeader = el('header', { className: 'chat-drawer__header' });
+  const historyTitle = el('strong', { textContent: '最近对话' });
   const clearHistoryButton = createButton('清空', 'text-button');
   const closeHistoryButton = createButton('关闭', 'text-button');
   historyHeader.append(historyTitle, clearHistoryButton, closeHistoryButton);
-  const historyList = document.createElement('div');
-  historyList.className = 'history-list';
+  const historyList = el('div', { className: 'history-list' });
   historyPanel.append(historyHeader, historyList);
 
-  const soundPanel = document.createElement('section');
-  soundPanel.className = 'chat-drawer sound-panel';
-  soundPanel.hidden = true;
-  const soundHeader = document.createElement('header');
-  soundHeader.className = 'chat-drawer__header';
-  const soundTitle = document.createElement('strong');
-  soundTitle.textContent = '声音';
+  const soundPanel = el('section', { className: 'chat-drawer sound-panel', hidden: true });
+  const soundHeader = el('header', { className: 'chat-drawer__header' });
+  const soundTitle = el('strong', { textContent: '声音' });
   const closeSoundButton = createButton('关闭', 'text-button');
   soundHeader.append(soundTitle, closeSoundButton);
   const speechVolumeInput = document.createElement('input');
@@ -455,11 +441,8 @@ export const initializeChat = async ({
   speechVolumeInput.step = '0.01';
   speechVolumeInput.value = '0.6';
   speechVolumeInput.setAttribute('aria-label', '角色语音音量');
-  const speechVolumeOutput = document.createElement('output');
-  speechVolumeOutput.className = 'sound-panel__value';
-  speechVolumeOutput.textContent = '60%';
-  const speechVolumeControl = document.createElement('div');
-  speechVolumeControl.className = 'sound-panel__control';
+  const speechVolumeOutput = el('output', { className: 'sound-panel__value', textContent: '60%' });
+  const speechVolumeControl = el('div', { className: 'sound-panel__control' });
   speechVolumeControl.append(speechVolumeInput, speechVolumeOutput);
   const soundHint = document.createElement('p');
   soundHint.className = 'settings-status';
@@ -468,15 +451,11 @@ export const initializeChat = async ({
 
   const exportMemoryButton = createButton('导出', 'text-button');
   const backupMemoryButton = createButton('备份', 'text-button');
-  const memoryControls = document.createElement('div');
-  memoryControls.className = 'memory-controls';
-  const automaticMemoryInput = document.createElement('input');
-  automaticMemoryInput.type = 'checkbox';
-  const automaticMemoryLabel = document.createElement('label');
-  automaticMemoryLabel.className = 'memory-toggle';
+  const memoryControls = el('div', { className: 'memory-controls' });
+  const automaticMemoryInput = el('input', { type: 'checkbox' });
+  const automaticMemoryLabel = el('label', { className: 'memory-toggle' });
   automaticMemoryLabel.append(automaticMemoryInput, document.createTextNode(' 自动提取'));
-  const memoryFilter = document.createElement('select');
-  memoryFilter.setAttribute('aria-label', '记忆分类');
+  const memoryFilter = el('select', { attrs: { 'aria-label': '记忆分类' } });
   for (const [value, label] of [
     ['', '全部分类'],
     ['preference', '偏好'],
@@ -485,20 +464,14 @@ export const initializeChat = async ({
     ['plan', '计划'],
     ['fact', '事实'],
   ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     memoryFilter.append(option);
   }
   const clearMemoriesButton = createButton('清空全部', 'text-button danger-button');
   memoryControls.append(automaticMemoryLabel, memoryFilter, clearMemoriesButton);
-  const memoryStatus = document.createElement('p');
-  memoryStatus.className = 'settings-status';
-  memoryStatus.setAttribute('role', 'status');
-  const automaticPolicy = document.createElement('details');
-  automaticPolicy.className = 'memory-policy';
-  const automaticPolicyTitle = document.createElement('summary');
-  automaticPolicyTitle.textContent = '自动提取按什么判断？';
+  const memoryStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
+  const automaticPolicy = el('details', { className: 'memory-policy' });
+  const automaticPolicyTitle = el('summary', { textContent: '自动提取按什么判断？' });
   const automaticPolicyIntro = document.createElement('p');
   automaticPolicyIntro.textContent = `开启后，每累计约 ${AUTOMATIC_MEMORY_BATCH_MESSAGES / 2} 轮完整对话，模型会在后台提出最多 ${AUTOMATIC_MEMORY_MAX_CANDIDATES} 条候选。候选不会直接生效。`;
   const automaticPolicyRules = document.createElement('ul');
@@ -507,23 +480,18 @@ export const initializeChat = async ({
     `本地规则要求重要度至少 ${AUTOMATIC_MEMORY_MIN_IMPORTANCE}、置信度至少 ${AUTOMATIC_MEMORY_MIN_CONFIDENCE}，并且必须能对应到真实用户消息。`,
     '寒暄、玩笑、推测、密码或 API Key 会被忽略；偏好、习惯、关系、冲突和时间不明确的未来事件必须由你确认。',
   ]) {
-    const item = document.createElement('li');
-    item.textContent = rule;
+    const item = el('li', { textContent: rule });
     automaticPolicyRules.append(item);
   }
   automaticPolicy.append(automaticPolicyTitle, automaticPolicyIntro, automaticPolicyRules);
-  const memoryIndexSettings = document.createElement('details');
-  memoryIndexSettings.className = 'memory-policy';
-  const memoryIndexSummary = document.createElement('summary');
-  memoryIndexSummary.textContent = '混合记忆索引（可选）';
+  const memoryIndexSettings = el('details', { className: 'memory-policy' });
+  const memoryIndexSummary = el('summary', { textContent: '混合记忆索引（可选）' });
   const semanticIndexSelect = document.createElement('select');
   for (const [value, label] of [
     ['local', '本机向量（默认）'],
     ['qdrant', 'Qdrant'],
   ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     semanticIndexSelect.append(option);
   }
   const relationshipIndexSelect = document.createElement('select');
@@ -531,34 +499,24 @@ export const initializeChat = async ({
     ['local', '本机关系（默认）'],
     ['neo4j', 'Neo4j'],
   ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     relationshipIndexSelect.append(option);
   }
-  const qdrantUrlInput = document.createElement('input');
-  qdrantUrlInput.type = 'url';
-  qdrantUrlInput.maxLength = 2_048;
-  const qdrantCollectionInput = document.createElement('input');
-  qdrantCollectionInput.maxLength = 64;
+  const qdrantUrlInput = el('input', { type: 'url', maxLength: 2_048 });
+  const qdrantCollectionInput = el('input', { maxLength: 64 });
   const qdrantApiKeyInput = document.createElement('input');
   qdrantApiKeyInput.type = 'password';
   qdrantApiKeyInput.maxLength = 32_768;
   qdrantApiKeyInput.placeholder = '留空保留已保存密钥';
-  const neo4jUrlInput = document.createElement('input');
-  neo4jUrlInput.type = 'url';
-  neo4jUrlInput.maxLength = 2_048;
-  const neo4jDatabaseInput = document.createElement('input');
-  neo4jDatabaseInput.maxLength = 64;
-  const neo4jUsernameInput = document.createElement('input');
-  neo4jUsernameInput.maxLength = 128;
+  const neo4jUrlInput = el('input', { type: 'url', maxLength: 2_048 });
+  const neo4jDatabaseInput = el('input', { maxLength: 64 });
+  const neo4jUsernameInput = el('input', { maxLength: 128 });
   const neo4jPasswordInput = document.createElement('input');
   neo4jPasswordInput.type = 'password';
   neo4jPasswordInput.maxLength = 32_768;
   neo4jPasswordInput.placeholder = '留空保留已保存密码';
   const saveMemoryIndexesButton = createButton('保存索引设置', 'secondary-button');
-  const memoryIndexHint = document.createElement('p');
-  memoryIndexHint.className = 'settings-status';
+  const memoryIndexHint = el('p', { className: 'settings-status' });
   memoryIndexHint.textContent =
     '外部索引默认关闭。启用时会发送向量或关系词与随机记忆 ID，不把外部服务当作唯一正文；断线会自动回退关键词。只允许 HTTPS 或本机 HTTP。';
   memoryIndexSettings.append(
@@ -578,33 +536,22 @@ export const initializeChat = async ({
   const candidateTitle = document.createElement('strong');
   candidateTitle.className = 'memory-section-title';
   candidateTitle.textContent = '待你确认';
-  const candidateList = document.createElement('div');
-  candidateList.className = 'memory-list memory-candidate-list';
+  const candidateList = el('div', { className: 'memory-list memory-candidate-list' });
   const confirmedMemoryTitle = document.createElement('strong');
   confirmedMemoryTitle.className = 'memory-section-title';
   confirmedMemoryTitle.textContent = '已确认记忆';
-  const memoryList = document.createElement('div');
-  memoryList.className = 'memory-list';
-  const debugPanel = document.createElement('section');
-  debugPanel.className = 'chat-drawer context-debug-panel';
-  debugPanel.hidden = true;
-  const debugHeader = document.createElement('header');
-  debugHeader.className = 'chat-drawer__header';
-  const debugTitle = document.createElement('strong');
-  debugTitle.textContent = '本轮上下文说明';
+  const memoryList = el('div', { className: 'memory-list' });
+  const debugPanel = el('section', { className: 'chat-drawer context-debug-panel', hidden: true });
+  const debugHeader = el('header', { className: 'chat-drawer__header' });
+  const debugTitle = el('strong', { textContent: '本轮上下文说明' });
   const closeDebugButton = createButton('关闭', 'text-button');
   debugHeader.append(debugTitle, closeDebugButton);
-  const debugContent = document.createElement('div');
-  debugContent.className = 'context-debug__content';
+  const debugContent = el('div', { className: 'context-debug__content' });
   debugPanel.append(debugHeader, debugContent);
 
-  const settingsPanel = document.createElement('form');
-  settingsPanel.className = 'chat-drawer settings-panel';
-  settingsPanel.hidden = true;
-  const settingsHeader = document.createElement('header');
-  settingsHeader.className = 'chat-drawer__header';
-  const settingsTitle = document.createElement('strong');
-  settingsTitle.textContent = '设置';
+  const settingsPanel = el('form', { className: 'chat-drawer settings-panel', hidden: true });
+  const settingsHeader = el('header', { className: 'chat-drawer__header' });
+  const settingsTitle = el('strong', { textContent: '设置' });
   const closeSettingsButton = createButton('关闭', 'text-button');
   settingsHeader.append(settingsTitle);
 
@@ -615,16 +562,11 @@ export const initializeChat = async ({
   scaleInput.step = '0.01';
   scaleInput.value = '0.78';
   scaleInput.setAttribute('aria-label', '桌宠大小');
-  const scaleOutput = document.createElement('output');
-  scaleOutput.className = 'scale-output';
-  scaleOutput.textContent = '78%';
-  const scaleControl = document.createElement('div');
-  scaleControl.className = 'scale-control';
+  const scaleOutput = el('output', { className: 'scale-output', textContent: '78%' });
+  const scaleControl = el('div', { className: 'scale-control' });
   scaleControl.append(scaleInput, scaleOutput);
-  const scaleField = document.createElement('label');
-  scaleField.className = 'settings-field';
-  const scaleLabel = document.createElement('span');
-  scaleLabel.textContent = '桌宠大小';
+  const scaleField = el('label', { className: 'settings-field' });
+  const scaleLabel = el('span', { textContent: '桌宠大小' });
   scaleField.append(scaleLabel, scaleControl);
 
   const providerSelect = document.createElement('select');
@@ -633,24 +575,15 @@ export const initializeChat = async ({
     ['deepseek', 'DeepSeek'],
     ['openai-compatible', 'OpenAI / Ollama 兼容'],
   ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     providerSelect.append(option);
   }
-  const modelInput = document.createElement('input');
-  modelInput.maxLength = 256;
-  modelInput.placeholder = '例如 Claude 或本地模型 ID';
-  const baseUrlInput = document.createElement('input');
-  baseUrlInput.type = 'url';
-  baseUrlInput.maxLength = 2_048;
+  const modelInput = el('input', { maxLength: 256, placeholder: '例如 Claude 或本地模型 ID' });
+  const baseUrlInput = el('input', { type: 'url', maxLength: 2_048 });
   baseUrlInput.placeholder = '例如：http://127.0.0.1:11434/v1';
-  const modelCollaborationPanel = document.createElement('section');
-  modelCollaborationPanel.className = 'character-search';
-  const modelCollaborationHeading = document.createElement('label');
-  modelCollaborationHeading.className = 'settings-toggle-heading';
-  const modelCollaborationTitle = document.createElement('strong');
-  modelCollaborationTitle.textContent = '本地 / 远端模型协作';
+  const modelCollaborationPanel = el('section', { className: 'character-search' });
+  const modelCollaborationHeading = el('label', { className: 'settings-toggle-heading' });
+  const modelCollaborationTitle = el('strong', { textContent: '本地 / 远端模型协作' });
   const allowRemoteComplexTasksInput = document.createElement('input');
   allowRemoteComplexTasksInput.type = 'checkbox';
   allowRemoteComplexTasksInput.setAttribute('aria-label', '允许复杂整理使用指定远端模型');
@@ -663,23 +596,17 @@ export const initializeChat = async ({
     ['anthropic', 'Anthropic Claude'],
     ['deepseek', 'DeepSeek'],
   ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     remoteProviderSelect.append(option);
   }
-  const remoteModelInput = document.createElement('input');
-  remoteModelInput.maxLength = 256;
-  remoteModelInput.placeholder = '远端模型 ID';
+  const remoteModelInput = el('input', { maxLength: 256, placeholder: '远端模型 ID' });
   const remoteApiKeyInput = document.createElement('input');
   remoteApiKeyInput.type = 'password';
   remoteApiKeyInput.maxLength = 32_768;
   remoteApiKeyInput.autocomplete = 'off';
   remoteApiKeyInput.placeholder = '留空则保留远端提供商已有密钥';
-  const remoteSecretStatus = document.createElement('p');
-  remoteSecretStatus.className = 'settings-status';
-  const modelCollaborationStatus = document.createElement('p');
-  modelCollaborationStatus.className = 'settings-status';
+  const remoteSecretStatus = el('p', { className: 'settings-status' });
+  const modelCollaborationStatus = el('p', { className: 'settings-status' });
   modelCollaborationStatus.textContent =
     '资料检索对所有模型使用同一来源与超时策略。默认关闭时，角色整理、摘要和记忆候选都由当前模型处理，本地 Ollama 无需联网；开启后才会发送给指定远端模型，失败会回退当前模型。';
   modelCollaborationPanel.append(
@@ -696,25 +623,19 @@ export const initializeChat = async ({
   apiKeyInput.maxLength = 32_768;
   apiKeyInput.autocomplete = 'off';
   apiKeyInput.placeholder = '留空则保留现有密钥';
-  const characterNameInput = document.createElement('input');
-  characterNameInput.maxLength = 80;
-  characterNameInput.autocomplete = 'off';
+  const characterNameInput = el('input', { maxLength: 80, autocomplete: 'off' });
   const characterSearchNameInput = document.createElement('input');
   characterSearchNameInput.maxLength = 80;
   characterSearchNameInput.autocomplete = 'off';
   characterSearchNameInput.placeholder = '要查找的角色名称';
-  const characterLibrary = document.createElement('section');
-  characterLibrary.className = 'character-search character-library';
-  const characterLibraryTitle = document.createElement('strong');
-  characterLibraryTitle.textContent = '角色库与角色包';
+  const characterLibrary = el('section', { className: 'character-search character-library' });
+  const characterLibraryTitle = el('strong', { textContent: '角色库与角色包' });
   const characterLibraryStatus = document.createElement('p');
   characterLibraryStatus.className = 'settings-status';
   characterLibraryStatus.setAttribute('role', 'status');
   characterLibraryStatus.textContent = '角色之间的对话、记忆和模型资源彼此隔离。';
-  const characterLibraryList = document.createElement('div');
-  characterLibraryList.className = 'character-library__list';
-  const characterLibraryActions = document.createElement('div');
-  characterLibraryActions.className = 'settings-actions';
+  const characterLibraryList = el('div', { className: 'character-library__list' });
+  const characterLibraryActions = el('div', { className: 'settings-actions' });
   const newCharacterNameInput = document.createElement('input');
   newCharacterNameInput.maxLength = 80;
   newCharacterNameInput.autocomplete = 'off';
@@ -744,8 +665,7 @@ export const initializeChat = async ({
   const loreSourceWorkInput = document.createElement('input');
   loreSourceWorkInput.maxLength = 300;
   loreSourceWorkInput.placeholder = '例如：明日方舟（填写后搜索更准确）';
-  const characterSearch = document.createElement('section');
-  characterSearch.className = 'character-search';
+  const characterSearch = el('section', { className: 'character-search' });
   const characterSearchStatus = document.createElement('p');
   characterSearchStatus.className = 'settings-status';
   characterSearchStatus.setAttribute('role', 'status');
@@ -756,10 +676,8 @@ export const initializeChat = async ({
   characterResearchProgress.setAttribute('role', 'progressbar');
   characterResearchProgress.setAttribute('aria-label', '联网角色资料处理进度');
   characterResearchProgress.setAttribute('aria-valuetext', '正在处理');
-  const characterSearchCandidates = document.createElement('div');
-  characterSearchCandidates.className = 'character-search__candidates';
-  const characterSearchActions = document.createElement('div');
-  characterSearchActions.className = 'settings-actions';
+  const characterSearchCandidates = el('div', { className: 'character-search__candidates' });
+  const characterSearchActions = el('div', { className: 'settings-actions' });
   const cancelCharacterSearchButton = createButton('取消查找', 'text-button');
   cancelCharacterSearchButton.hidden = true;
   const searchCharacterButton = createButton('联网查找', 'secondary-button');
@@ -770,58 +688,40 @@ export const initializeChat = async ({
     characterSearchCandidates,
     characterSearchActions,
   );
-  const glossaryPanel = document.createElement('section');
-  glossaryPanel.className = 'character-search glossary-sync';
+  const glossaryPanel = el('section', { className: 'character-search glossary-sync' });
   const glossaryStatus = document.createElement('p');
   glossaryStatus.className = 'settings-status';
   glossaryStatus.setAttribute('role', 'status');
   glossaryStatus.textContent = '作品词库只补充专有名词和社区用语，不负责角色说话风格。';
-  const glossarySources = document.createElement('details');
-  glossarySources.className = 'glossary-sources';
-  glossarySources.hidden = true;
+  const glossarySources = el('details', { className: 'glossary-sources', hidden: true });
   const glossarySourcesSummary = document.createElement('summary');
-  const glossarySourcesPreview = document.createElement('span');
-  glossarySourcesPreview.className = 'glossary-sources__preview';
+  const glossarySourcesPreview = el('span', { className: 'glossary-sources__preview' });
   const glossarySourcesToggle = document.createElement('span');
   glossarySourcesToggle.className = 'glossary-sources__toggle';
   glossarySourcesToggle.textContent = '.....点击展开';
   glossarySourcesSummary.append(glossarySourcesPreview, glossarySourcesToggle);
-  const glossarySourcesFull = document.createElement('small');
-  glossarySourcesFull.className = 'glossary-sources__full';
+  const glossarySourcesFull = el('small', { className: 'glossary-sources__full' });
   glossarySources.append(glossarySourcesSummary, glossarySourcesFull);
   glossarySources.addEventListener('toggle', () => {
     glossarySourcesToggle.textContent = glossarySources.open ? '收起来源' : '.....点击展开';
   });
   const syncGlossaryButton = createButton('同步作品词库', 'secondary-button');
-  const glossaryActions = document.createElement('div');
-  glossaryActions.className = 'settings-actions';
+  const glossaryActions = el('div', { className: 'settings-actions' });
   glossaryActions.append(syncGlossaryButton);
   glossaryPanel.append(glossaryStatus, glossarySources, glossaryActions);
-  const loreEditor = document.createElement('details');
-  loreEditor.className = 'character-lore';
-  const loreSummary = document.createElement('summary');
-  loreSummary.textContent = '角色设定';
-  const loreHint = document.createElement('p');
-  loreHint.className = 'settings-status';
+  const loreEditor = el('details', { className: 'character-lore' });
+  const loreSummary = el('summary', { textContent: '角色设定' });
+  const loreHint = el('p', { className: 'settings-status' });
   loreHint.textContent =
     '默认称呼是“你”，并使用通用简介和人格规则。联网整理角色后，这些内容会和原作资料一起更新；点击总设置的“保存”后才生效。';
-  const userNameInput = document.createElement('input');
-  userNameInput.maxLength = 80;
-  const bioInput = document.createElement('textarea');
-  bioInput.maxLength = 2_000;
-  bioInput.rows = 2;
-  const personaInput = document.createElement('textarea');
-  personaInput.maxLength = 16_000;
-  personaInput.rows = 5;
+  const userNameInput = el('input', { maxLength: 80 });
+  const bioInput = el('textarea', { maxLength: 2_000, rows: 2 });
+  const personaInput = el('textarea', { maxLength: 16_000, rows: 5 });
   const loreAliasesInput = document.createElement('input');
   loreAliasesInput.maxLength = 2_000;
   loreAliasesInput.placeholder = '用顿号分隔，例如：昵称、别称';
-  const lorePersonalityInput = document.createElement('textarea');
-  lorePersonalityInput.maxLength = 2_000;
-  lorePersonalityInput.rows = 3;
-  const loreBackgroundInput = document.createElement('textarea');
-  loreBackgroundInput.maxLength = 4_000;
-  loreBackgroundInput.rows = 4;
+  const lorePersonalityInput = el('textarea', { maxLength: 2_000, rows: 3 });
+  const loreBackgroundInput = el('textarea', { maxLength: 4_000, rows: 4 });
   const loreRelationshipsInput = document.createElement('textarea');
   loreRelationshipsInput.maxLength = 6_000;
   loreRelationshipsInput.rows = 3;
@@ -830,16 +730,12 @@ export const initializeChat = async ({
   loreSpeechStyleInput.maxLength = 2_000;
   loreSpeechStyleInput.rows = 3;
   loreSpeechStyleInput.placeholder = '对用户的称呼、语气、句式、惯用词和情绪表达';
-  const loreSampleLinesInput = document.createElement('textarea');
-  loreSampleLinesInput.maxLength = 6_000;
-  loreSampleLinesInput.rows = 6;
+  const loreSampleLinesInput = el('textarea', { maxLength: 6_000, rows: 6 });
   loreSampleLinesInput.placeholder =
     '每行一条：场景｜情绪｜触发条件｜角色态度｜短回应\n也兼容直接填写普通短台词';
-  const loreSourcesOutput = document.createElement('small');
-  loreSourcesOutput.className = 'character-lore__sources';
+  const loreSourcesOutput = el('small', { className: 'character-lore__sources' });
   const clearLoreButton = createButton('清空详细资料', 'text-button danger-button');
-  const loreActions = document.createElement('div');
-  loreActions.className = 'settings-actions';
+  const loreActions = el('div', { className: 'settings-actions' });
   loreActions.append(clearLoreButton);
   loreEditor.append(
     loreSummary,
@@ -857,28 +753,20 @@ export const initializeChat = async ({
     loreActions,
   );
 
-  const secretStatus = document.createElement('small');
-  secretStatus.className = 'settings-status';
-  const secretRow = document.createElement('div');
-  secretRow.className = 'settings-secret-row';
+  const secretStatus = el('small', { className: 'settings-status' });
+  const secretRow = el('div', { className: 'settings-secret-row' });
   const deleteSecretButton = createButton('删除当前密钥', 'text-button');
   deleteSecretButton.hidden = true;
   secretRow.append(secretStatus, deleteSecretButton);
-  const settingsStatus = document.createElement('p');
-  settingsStatus.className = 'settings-status';
-  settingsStatus.setAttribute('role', 'status');
+  const settingsStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
   const connectionStatus = document.createElement('p');
   connectionStatus.className = 'settings-status connection-status';
   connectionStatus.setAttribute('role', 'status');
   connectionStatus.setAttribute('aria-live', 'polite');
-  const modelCapabilityStatus = document.createElement('p');
-  modelCapabilityStatus.className = 'settings-status';
-  const speechSettingsPanel = document.createElement('section');
-  speechSettingsPanel.className = 'display-mode-settings speech-settings';
-  const speechSettingsHeading = document.createElement('label');
-  speechSettingsHeading.className = 'settings-toggle-heading';
-  const speechSettingsTitle = document.createElement('strong');
-  speechSettingsTitle.textContent = '声音与音频生成';
+  const modelCapabilityStatus = el('p', { className: 'settings-status' });
+  const speechSettingsPanel = el('section', { className: 'display-mode-settings speech-settings' });
+  const speechSettingsHeading = el('label', { className: 'settings-toggle-heading' });
+  const speechSettingsTitle = el('strong', { textContent: '声音与音频生成' });
   const speechEnabledInput = document.createElement('input');
   speechEnabledInput.type = 'checkbox';
   speechEnabledInput.setAttribute('aria-label', '启用角色语音输出');
@@ -890,55 +778,33 @@ export const initializeChat = async ({
     ['genie-tts', '本机 Genie-TTS'],
     ['fish-audio', 'Fish Audio（在线）'],
   ]) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     speechProviderSelect.append(option);
   }
-  const speechBaseUrlInput = document.createElement('input');
-  speechBaseUrlInput.type = 'url';
-  speechBaseUrlInput.maxLength = 2_048;
+  const speechBaseUrlInput = el('input', { type: 'url', maxLength: 2_048 });
   speechBaseUrlInput.placeholder = '例如：http://127.0.0.1:8000/v1';
-  const speechModelInput = document.createElement('input');
-  speechModelInput.maxLength = 256;
-  speechModelInput.placeholder = '语音模型 ID';
-  const speechVoiceInput = document.createElement('input');
-  speechVoiceInput.maxLength = 256;
-  speechVoiceInput.placeholder = '音色 / speaker ID';
+  const speechModelInput = el('input', { maxLength: 256, placeholder: '语音模型 ID' });
+  const speechVoiceInput = el('input', { maxLength: 256, placeholder: '音色 / speaker ID' });
   const speechLanguageSelect = document.createElement('select');
   for (const [value, label] of SPEECH_LANGUAGE_OPTIONS) {
-    const option = document.createElement('option');
-    option.value = value;
-    option.textContent = label;
+    const option = el('option', { value: value, textContent: label });
     speechLanguageSelect.append(option);
   }
-  const speechLanguageInput = document.createElement('input');
-  speechLanguageInput.maxLength = 32;
-  speechLanguageInput.placeholder = '例如：fr-FR';
+  const speechLanguageInput = el('input', { maxLength: 32, placeholder: '例如：fr-FR' });
   const speechFormatSelect = document.createElement('select');
   for (const format of ['wav', 'mp3', 'opus', 'aac', 'flac']) {
-    const option = document.createElement('option');
-    option.value = format;
-    option.textContent = format.toUpperCase();
+    const option = el('option', { value: format, textContent: format.toUpperCase() });
     speechFormatSelect.append(option);
   }
-  const speechSpeedInput = document.createElement('input');
-  speechSpeedInput.type = 'number';
-  speechSpeedInput.min = '0.25';
-  speechSpeedInput.max = '4';
-  speechSpeedInput.step = '0.05';
-  const speechInputEnabledHeading = document.createElement('label');
-  speechInputEnabledHeading.className = 'settings-toggle-heading';
-  const speechInputEnabledTitle = document.createElement('strong');
-  speechInputEnabledTitle.textContent = '启用中文麦克风输入';
+  const speechSpeedInput = el('input', { type: 'number', min: '0.25', max: '4', step: '0.05' });
+  const speechInputEnabledHeading = el('label', { className: 'settings-toggle-heading' });
+  const speechInputEnabledTitle = el('strong', { textContent: '启用中文麦克风输入' });
   const speechInputEnabledInput = document.createElement('input');
   speechInputEnabledInput.type = 'checkbox';
   speechInputEnabledInput.setAttribute('aria-label', '启用中文麦克风输入');
   speechInputEnabledHeading.append(speechInputEnabledTitle, speechInputEnabledInput);
-  const speechInputModeFieldset = document.createElement('fieldset');
-  speechInputModeFieldset.className = 'speech-input-modes';
-  const speechInputModeLegend = document.createElement('legend');
-  speechInputModeLegend.textContent = '麦克风模式（三选一）';
+  const speechInputModeFieldset = el('fieldset', { className: 'speech-input-modes' });
+  const speechInputModeLegend = el('legend', { textContent: '麦克风模式（三选一）' });
   speechInputModeFieldset.append(speechInputModeLegend);
   const speechInputModeInputs = new Map<SpeechInputMode, HTMLInputElement>();
   for (const [mode, label, detail] of [
@@ -946,18 +812,15 @@ export const initializeChat = async ({
     ['half', '精准', '持续听麦；必须先说设定的称呼才发送，降低误判'],
     ['manual', '手动', '点击“说话”，或按住设置键位录音；识别结果只填入输入框'],
   ] as const) {
-    const option = document.createElement('label');
-    option.className = 'speech-input-mode';
+    const option = el('label', { className: 'speech-input-mode' });
     const radio = document.createElement('input');
     radio.type = 'radio';
     radio.name = 'speech-input-mode';
     radio.value = mode;
     radio.checked = mode === 'manual';
     const copy = document.createElement('span');
-    const title = document.createElement('strong');
-    title.textContent = label;
-    const hint = document.createElement('small');
-    hint.textContent = detail;
+    const title = el('strong', { textContent: label });
+    const hint = el('small', { textContent: detail });
     copy.append(title, hint);
     option.append(radio, copy);
     speechInputModeInputs.set(mode, radio);
@@ -970,9 +833,7 @@ export const initializeChat = async ({
     ['character-name', '跟随当前角色名称'],
     ['custom', '自定义称呼'],
   ] as const) {
-    const option = document.createElement('option');
-    option.value = source;
-    option.textContent = label;
+    const option = el('option', { value: source, textContent: label });
     speechWakeWordSourceSelect.append(option);
   }
   const speechWakeWordSourceField = createField('精准模式称呼', speechWakeWordSourceSelect);
@@ -980,8 +841,7 @@ export const initializeChat = async ({
   speechCustomWakeWordInput.maxLength = MAX_SPEECH_WAKE_WORD_LENGTH;
   speechCustomWakeWordInput.placeholder = '例如：阿响';
   const speechCustomWakeWordField = createField('自定义称呼', speechCustomWakeWordInput);
-  const speechWakeWordHint = document.createElement('small');
-  speechWakeWordHint.className = 'settings-hint';
+  const speechWakeWordHint = el('small', { className: 'settings-hint' });
   const speechPushToTalkKeySelect = document.createElement('select');
   for (const key of SPEECH_PUSH_TO_TALK_KEYS) {
     const option = document.createElement('option');
@@ -991,20 +851,15 @@ export const initializeChat = async ({
   }
   speechPushToTalkKeySelect.value = 'F8';
   const speechPushToTalkKeyField = createField('手动按住说话键', speechPushToTalkKeySelect);
-  const speechPushToTalkHint = document.createElement('small');
-  speechPushToTalkHint.className = 'settings-hint';
+  const speechPushToTalkHint = el('small', { className: 'settings-hint' });
   speechPushToTalkHint.textContent =
     '仅在“手动”模式生效：按住键位开始录音，松开后识别并填入输入框，不会自动发送。默认 F8，桌宠未被选中时也可使用。';
-  const speechTranscriptionBaseUrlInput = document.createElement('input');
-  speechTranscriptionBaseUrlInput.type = 'url';
-  speechTranscriptionBaseUrlInput.maxLength = 2_048;
+  const speechTranscriptionBaseUrlInput = el('input', { type: 'url', maxLength: 2_048 });
   speechTranscriptionBaseUrlInput.placeholder = 'http://127.0.0.1:9880/v1';
   const speechTranscriptionModelInput = document.createElement('input');
   speechTranscriptionModelInput.maxLength = 256;
   speechTranscriptionModelInput.placeholder = 'SenseVoiceSmall';
-  const speechTranscriptionLanguageInput = document.createElement('input');
-  speechTranscriptionLanguageInput.maxLength = 32;
-  speechTranscriptionLanguageInput.placeholder = 'zh-CN';
+  const speechTranscriptionLanguageInput = el('input', { maxLength: 32, placeholder: 'zh-CN' });
   const speechApiKeyInput = document.createElement('input');
   speechApiKeyInput.type = 'password';
   speechApiKeyInput.maxLength = 32_768;
@@ -1016,14 +871,12 @@ export const initializeChat = async ({
   speechStatus.className = 'settings-status';
   speechStatus.setAttribute('role', 'status');
   speechStatus.textContent = '语音默认关闭；失败不会阻断文字聊天。';
-  const speechHint = document.createElement('small');
-  speechHint.className = 'settings-hint';
+  const speechHint = el('small', { className: 'settings-hint' });
   speechHint.textContent =
     '当前兼容接口使用 /audio/speech，同时支持本机 TTS 和 HTTPS 在线 TTS；完整第一句出现后会立即准备语音，后续句子并行生成并按原顺序播放，也可随时打断。';
   const speechProviderRoadmap = document.createElement('section');
   speechProviderRoadmap.className = 'character-search speech-provider-roadmap';
-  const speechProviderRoadmapTitle = document.createElement('strong');
-  speechProviderRoadmapTitle.textContent = '语音模型与服务';
+  const speechProviderRoadmapTitle = el('strong', { textContent: '语音模型与服务' });
   const speechProviderRoadmapList = document.createElement('ul');
   for (const description of [
     'OpenAI 兼容 TTS：已支持，可连接本地语音模型或 HTTPS 在线 TTS。',
@@ -1031,17 +884,14 @@ export const initializeChat = async ({
     'Fish Audio：已支持官方在线接口；启用后文字会发送到 Fish Audio。',
     'Piper：可通过本机 OpenAI 兼容桥接服务连接；传统 MoeGoe VITS 权重不能直接作为 Piper 模型。',
   ]) {
-    const item = document.createElement('li');
-    item.textContent = description;
+    const item = el('li', { textContent: description });
     speechProviderRoadmapList.append(item);
   }
   speechProviderRoadmap.append(speechProviderRoadmapTitle, speechProviderRoadmapList);
   const speechVoiceIdentityPanel = document.createElement('section');
   speechVoiceIdentityPanel.className = 'character-search speech-voice-identity';
-  const speechVoiceIdentityTitle = document.createElement('strong');
-  speechVoiceIdentityTitle.textContent = '语音模型与音色';
-  const speechVoiceIdentityFields = document.createElement('div');
-  speechVoiceIdentityFields.className = 'speech-voice-identity__fields';
+  const speechVoiceIdentityTitle = el('strong', { textContent: '语音模型与音色' });
+  const speechVoiceIdentityFields = el('div', { className: 'speech-voice-identity__fields' });
   const speechModelField = createField('语音模型 ID', speechModelInput);
   const speechVoiceField = createField('音色 / Speaker ID', speechVoiceInput);
   const speechVoiceFieldLabel = speechVoiceField.firstElementChild as HTMLSpanElement;
@@ -1050,8 +900,7 @@ export const initializeChat = async ({
     'secondary-button speech-voice-identity__confirm',
   );
   speechVoiceIdentityFields.append(speechModelField, speechVoiceField, speechVoiceConfirmButton);
-  const speechVoiceIdentityHint = document.createElement('small');
-  speechVoiceIdentityHint.className = 'settings-hint';
+  const speechVoiceIdentityHint = el('small', { className: 'settings-hint' });
   speechVoiceIdentityHint.textContent =
     '模型决定使用哪套语音能力，音色 ID 决定该模型使用哪个说话人；两项需按当前 TTS 服务配套填写。';
   speechVoiceIdentityPanel.append(
@@ -1076,8 +925,7 @@ export const initializeChat = async ({
       speechLanguageInput.value,
     );
   displaySpeechLanguage('ja-JP');
-  const speechOutputPane = document.createElement('section');
-  speechOutputPane.className = 'display-mode-pane speech-settings__pane';
+  const speechOutputPane = el('section', { className: 'display-mode-pane speech-settings__pane' });
   speechOutputPane.append(
     speechSettingsHeading,
     speechHint,
@@ -1090,8 +938,7 @@ export const initializeChat = async ({
     createField('音频格式', speechFormatSelect),
     createField('语速', speechSpeedInput),
   );
-  const speechInputPane = document.createElement('section');
-  speechInputPane.className = 'display-mode-pane speech-settings__pane';
+  const speechInputPane = el('section', { className: 'display-mode-pane speech-settings__pane' });
   speechInputPane.append(
     speechInputEnabledHeading,
     speechInputModeFieldset,
@@ -1104,22 +951,19 @@ export const initializeChat = async ({
     createField('识别模型', speechTranscriptionModelInput),
     createField('识别语言', speechTranscriptionLanguageInput),
   );
-  const speechAssetsPane = document.createElement('section');
-  speechAssetsPane.className = 'display-mode-pane speech-settings__pane';
-  const speechAssetsCard = document.createElement('section');
-  speechAssetsCard.className = 'character-search local-asset-card';
-  const speechAssetsTitle = document.createElement('strong');
-  speechAssetsTitle.textContent = '本地音色成品';
+  const speechAssetsPane = el('section', { className: 'display-mode-pane speech-settings__pane' });
+  const speechAssetDownloadRoot = document.createElement('section');
+  speechAssetDownloadRoot.className = 'character-search local-asset-card speech-asset-download';
+  const speechAssetsCard = el('section', { className: 'character-search local-asset-card' });
+  const speechAssetsTitle = el('strong', { textContent: '本地音色成品' });
   const speechAssetsSummary = document.createElement('p');
   speechAssetsSummary.className = 'settings-status';
   speechAssetsSummary.textContent = '正在检查本地音色…';
   const exportLocalVoiceButton = createButton('导出当前音色', 'secondary-button');
   const openSpeechTrainingSourcesButton = createButton('打开音源文件夹', 'secondary-button');
-  const speechAssetsActions = document.createElement('div');
-  speechAssetsActions.className = 'settings-actions local-asset-actions';
+  const speechAssetsActions = el('div', { className: 'settings-actions local-asset-actions' });
   speechAssetsActions.append(exportLocalVoiceButton, openSpeechTrainingSourcesButton);
-  const speechAssetsHint = document.createElement('small');
-  speechAssetsHint.className = 'settings-hint';
+  const speechAssetsHint = el('small', { className: 'settings-hint' });
   speechAssetsHint.textContent =
     '导出到你选择的新文件夹；只复制训练成品和试听文件，不包含原始训练录音，也不会停止正在运行的 TTS。';
   speechAssetsCard.append(
@@ -1128,28 +972,22 @@ export const initializeChat = async ({
     speechAssetsActions,
     speechAssetsHint,
   );
-  const speechTrainingCard = document.createElement('section');
-  speechTrainingCard.className = 'character-search local-asset-card';
-  const speechTrainingTitle = document.createElement('strong');
-  speechTrainingTitle.textContent = '训练新音色';
-  const speechTrainingDescription = document.createElement('small');
-  speechTrainingDescription.className = 'settings-hint';
+  const speechTrainingCard = el('section', { className: 'character-search local-asset-card' });
+  const speechTrainingTitle = el('strong', { textContent: '训练新音色' });
+  const speechTrainingDescription = el('small', { className: 'settings-hint' });
   speechTrainingDescription.textContent =
     '训练工具是可选组件。安装后可从这里启动；不安装也不影响现成音色和其他 TTS。';
-  const speechTrainingActions = document.createElement('div');
-  speechTrainingActions.className = 'settings-actions local-asset-actions';
+  const speechTrainingActions = el('div', { className: 'settings-actions local-asset-actions' });
   const launchSpeechTrainerButton = createButton('启动本地训练工具', 'secondary-button');
   speechTrainingActions.append(launchSpeechTrainerButton);
-  const speechTrainingStatus = document.createElement('p');
-  speechTrainingStatus.className = 'settings-status';
-  speechTrainingStatus.setAttribute('role', 'status');
+  const speechTrainingStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
   speechTrainingCard.append(
     speechTrainingTitle,
     speechTrainingDescription,
     speechTrainingActions,
     speechTrainingStatus,
   );
-  speechAssetsPane.append(speechAssetsCard, speechTrainingCard);
+  speechAssetsPane.append(speechAssetDownloadRoot, speechAssetsCard, speechTrainingCard);
   const speechPageBody = document.createElement('div');
   speechPageBody.className = 'display-mode-settings__body speech-settings__body';
   const speechPageTabs = document.createElement('nav');
@@ -1182,10 +1020,8 @@ export const initializeChat = async ({
     speechPageContent.append(pane);
   }
   speechPageBody.append(speechPageTabs, speechPageContent);
-  const speechCredentialPanel = document.createElement('section');
-  speechCredentialPanel.className = 'character-search speech-credentials';
-  const speechCredentialTitle = document.createElement('strong');
-  speechCredentialTitle.textContent = '语音服务凭据';
+  const speechCredentialPanel = el('section', { className: 'character-search speech-credentials' });
+  const speechCredentialTitle = el('strong', { textContent: '语音服务凭据' });
   speechCredentialPanel.append(
     speechCredentialTitle,
     createField('语音 API Key', speechApiKeyInput),
@@ -1268,26 +1104,15 @@ export const initializeChat = async ({
     speechStatus.textContent = '音色已确认；请点击右上角“保存”使其生效。';
   });
   showSpeechPage('output');
-  const viewerExSettingsPanel = document.createElement('section');
-  viewerExSettingsPanel.className = 'display-mode-pane';
-  const viewerExSettingsHeading = document.createElement('label');
-  viewerExSettingsHeading.className = 'settings-toggle-heading';
-  const viewerExSettingsTitle = document.createElement('strong');
-  viewerExSettingsTitle.textContent = '启用 Live2DViewerEX';
+  const viewerExSettingsPanel = el('section', { className: 'display-mode-pane' });
+  const viewerExSettingsHeading = el('label', { className: 'settings-toggle-heading' });
+  const viewerExSettingsTitle = el('strong', { textContent: '启用 Live2DViewerEX' });
   const viewerExEnabledInput = document.createElement('input');
   viewerExEnabledInput.type = 'checkbox';
   viewerExEnabledInput.setAttribute('aria-label', '启用 Live2DViewerEX 显示适配');
   viewerExSettingsHeading.append(viewerExSettingsTitle, viewerExEnabledInput);
-  const viewerExPortInput = document.createElement('input');
-  viewerExPortInput.type = 'number';
-  viewerExPortInput.min = '10086';
-  viewerExPortInput.max = '10150';
-  viewerExPortInput.step = '1';
-  const viewerExModelIndexInput = document.createElement('input');
-  viewerExModelIndexInput.type = 'number';
-  viewerExModelIndexInput.min = '0';
-  viewerExModelIndexInput.max = '7';
-  viewerExModelIndexInput.step = '1';
+  const viewerExPortInput = el('input', { type: 'number', min: '10086', max: '10150', step: '1' });
+  const viewerExModelIndexInput = el('input', { type: 'number', min: '0', max: '7', step: '1' });
   const viewerExWorkshopItemInput = document.createElement('input');
   viewerExWorkshopItemInput.inputMode = 'numeric';
   viewerExWorkshopItemInput.maxLength = 20;
@@ -1302,15 +1127,10 @@ export const initializeChat = async ({
   const viewerExEmotionExpressionsInput = document.createElement('textarea');
   viewerExEmotionExpressionsInput.rows = 4;
   viewerExEmotionExpressionsInput.placeholder = 'happy=0\nsad=1';
-  const viewerExActionMotionsInput = document.createElement('textarea');
-  viewerExActionMotionsInput.rows = 4;
-  viewerExActionMotionsInput.placeholder = 'wave=tap:wave_1';
+  const viewerExActionMotionsInput = el('textarea', { rows: 4, placeholder: 'wave=tap:wave_1' });
   const viewerExMappingTestButton = createButton('测试 talking / happy 映射', 'secondary-button');
-  const viewerExStatus = document.createElement('p');
-  viewerExStatus.className = 'settings-status';
-  viewerExStatus.setAttribute('role', 'status');
-  const viewerExHint = document.createElement('small');
-  viewerExHint.className = 'settings-hint';
+  const viewerExStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
+  const viewerExHint = el('small', { className: 'settings-hint' });
   viewerExHint.textContent =
     '启用后由 ViewerEX 负责角色显示，FPNF 不再加载内置凯尔希。仅连接 127.0.0.1 的官方 ExAPI；不会读取 LPK，也不会发送文件路径或声音。';
   viewerExSettingsPanel.append(
@@ -1345,12 +1165,9 @@ export const initializeChat = async ({
     workshopItemId: viewerExWorkshopItemInput.value.trim(),
     bubbleEnabled: viewerExBubbleInput.checked,
   });
-  const vTubeStudioSettingsPanel = document.createElement('section');
-  vTubeStudioSettingsPanel.className = 'display-mode-pane';
-  const vTubeStudioSettingsHeading = document.createElement('label');
-  vTubeStudioSettingsHeading.className = 'settings-toggle-heading';
-  const vTubeStudioSettingsTitle = document.createElement('strong');
-  vTubeStudioSettingsTitle.textContent = '启用 VTube Studio';
+  const vTubeStudioSettingsPanel = el('section', { className: 'display-mode-pane' });
+  const vTubeStudioSettingsHeading = el('label', { className: 'settings-toggle-heading' });
+  const vTubeStudioSettingsTitle = el('strong', { textContent: '启用 VTube Studio' });
   const vTubeStudioEnabledInput = document.createElement('input');
   vTubeStudioEnabledInput.type = 'checkbox';
   vTubeStudioEnabledInput.setAttribute('aria-label', '启用 VTube Studio 显示适配');
@@ -1360,10 +1177,8 @@ export const initializeChat = async ({
   vTubeStudioPortInput.min = '1024';
   vTubeStudioPortInput.max = '65535';
   vTubeStudioPortInput.step = '1';
-  const vTubeStudioMouseTrackingHeading = document.createElement('label');
-  vTubeStudioMouseTrackingHeading.className = 'settings-toggle-heading';
-  const vTubeStudioMouseTrackingTitle = document.createElement('strong');
-  vTubeStudioMouseTrackingTitle.textContent = '鼠标追踪';
+  const vTubeStudioMouseTrackingHeading = el('label', { className: 'settings-toggle-heading' });
+  const vTubeStudioMouseTrackingTitle = el('strong', { textContent: '鼠标追踪' });
   const vTubeStudioMouseTrackingInput = document.createElement('input');
   vTubeStudioMouseTrackingInput.type = 'checkbox';
   vTubeStudioMouseTrackingInput.setAttribute('aria-label', '让 VTube Studio 角色追踪鼠标');
@@ -1388,9 +1203,7 @@ export const initializeChat = async ({
   const vTubeStudioEmotionSelect = document.createElement('select');
   for (const emotion of CHARACTER_EMOTIONS) {
     if (emotion === 'neutral') continue;
-    const option = document.createElement('option');
-    option.value = emotion;
-    option.textContent = emotion;
+    const option = el('option', { value: emotion, textContent: emotion });
     vTubeStudioEmotionSelect.append(option);
   }
   const vTubeStudioMapExpressionButton = createButton('把所选表情映射到该情绪', 'secondary-button');
@@ -1405,37 +1218,25 @@ export const initializeChat = async ({
     ['nod', '肯定 / 点头'],
     ['shake', '否定 / 摇头'],
   ] as const) {
-    const option = document.createElement('option');
-    option.value = action;
-    option.textContent = label;
+    const option = el('option', { value: action, textContent: label });
     vTubeStudioActionSelect.append(option);
   }
-  const vTubeStudioActionHotkeySelect = document.createElement('select');
-  vTubeStudioActionHotkeySelect.disabled = true;
+  const vTubeStudioActionHotkeySelect = el('select', { disabled: true });
   const vTubeStudioMapActionButton = createButton('把所选动画映射到该动作', 'secondary-button');
   vTubeStudioMapActionButton.disabled = true;
-  const vTubeStudioMappingSummary = document.createElement('small');
-  vTubeStudioMappingSummary.className = 'settings-hint';
-  const vTubeStudioExpressionActions = document.createElement('div');
-  vTubeStudioExpressionActions.className = 'settings-actions';
+  const vTubeStudioMappingSummary = el('small', { className: 'settings-hint' });
+  const vTubeStudioExpressionActions = el('div', { className: 'settings-actions' });
   vTubeStudioExpressionActions.append(
     vTubeStudioExpressionPreviewButton,
     vTubeStudioExpressionRestoreButton,
   );
-  const vTubeStudioStatus = document.createElement('p');
-  vTubeStudioStatus.className = 'settings-status';
-  vTubeStudioStatus.setAttribute('role', 'status');
-  const vTubeStudioInventory = document.createElement('p');
-  vTubeStudioInventory.className = 'settings-hint';
-  const vTubeStudioParameterDetails = document.createElement('details');
-  vTubeStudioParameterDetails.className = 'character-lore';
-  const vTubeStudioParameterSummary = document.createElement('summary');
-  vTubeStudioParameterSummary.textContent = '查看模型参数';
-  const vTubeStudioParameterList = document.createElement('small');
-  vTubeStudioParameterList.className = 'settings-hint';
+  const vTubeStudioStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
+  const vTubeStudioInventory = el('p', { className: 'settings-hint' });
+  const vTubeStudioParameterDetails = el('details', { className: 'character-lore' });
+  const vTubeStudioParameterSummary = el('summary', { textContent: '查看模型参数' });
+  const vTubeStudioParameterList = el('small', { className: 'settings-hint' });
   vTubeStudioParameterDetails.append(vTubeStudioParameterSummary, vTubeStudioParameterList);
-  const vTubeStudioHint = document.createElement('small');
-  vTubeStudioHint.className = 'settings-hint';
+  const vTubeStudioHint = el('small', { className: 'settings-hint' });
   vTubeStudioHint.textContent =
     '连接时会自动寻找端口并请求 VTube Studio 授权；不用另外下载 Spout2，VTube Studio 和 FPNF 已包含显示所需组件。';
   const vTubeStudioSetupNotice = document.createElement('p');
@@ -1460,10 +1261,8 @@ export const initializeChat = async ({
   };
   const vTubeStudioTroubleshooting = document.createElement('details');
   vTubeStudioTroubleshooting.className = 'character-lore vtube-studio-troubleshooting';
-  const vTubeStudioTroubleshootingSummary = document.createElement('summary');
-  vTubeStudioTroubleshootingSummary.textContent = '连接故障排查';
-  const vTubeStudioTroubleshootingHint = document.createElement('small');
-  vTubeStudioTroubleshootingHint.className = 'settings-hint';
+  const vTubeStudioTroubleshootingSummary = el('summary', { textContent: '连接故障排查' });
+  const vTubeStudioTroubleshootingHint = el('small', { className: 'settings-hint' });
   vTubeStudioTroubleshootingHint.textContent =
     '一般无需修改。只有自动发现失败时，才把 VTube Studio 中显示的 Plugin API 端口填到这里。';
   vTubeStudioTroubleshooting.append(
@@ -1471,10 +1270,8 @@ export const initializeChat = async ({
     vTubeStudioTroubleshootingHint,
     createField('手动端口', vTubeStudioPortInput),
   );
-  const vTubeStudioGuide = document.createElement('details');
-  vTubeStudioGuide.className = 'character-lore vtube-studio-guide';
-  const vTubeStudioGuideSummary = document.createElement('summary');
-  vTubeStudioGuideSummary.textContent = '新模型接入与调教参考';
+  const vTubeStudioGuide = el('details', { className: 'character-lore vtube-studio-guide' });
+  const vTubeStudioGuideSummary = el('summary', { textContent: '新模型接入与调教参考' });
   const vTubeStudioGuideList = document.createElement('ul');
   for (const item of [
     '先启动 VTube Studio、加载模型，并在主设置页开启“允许插件 API 访问”；默认端口 8001，被占用时实际端口可能变成 8002 或更高。',
@@ -1484,8 +1281,7 @@ export const initializeChat = async ({
     '休息状态会慢慢闭眼和点头；鼠标靠近只微睁，收到消息后缓慢完全醒来。',
     'VTube Studio 模型仍留在它自己的应用中；这里不会复制或导出其模型文件。',
   ]) {
-    const row = document.createElement('li');
-    row.textContent = item;
+    const row = el('li', { textContent: item });
     vTubeStudioGuideList.append(row);
   }
   vTubeStudioGuide.append(vTubeStudioGuideSummary, vTubeStudioGuideList);
@@ -1550,29 +1346,22 @@ export const initializeChat = async ({
     modelMappings: { ...vTubeStudioModelMappings },
   });
 
-  const live2DSettingsPanel = document.createElement('section');
-  live2DSettingsPanel.className = 'display-mode-pane';
-  const live2DSettingsHeading = document.createElement('label');
-  live2DSettingsHeading.className = 'settings-toggle-heading';
-  const live2DSettingsTitle = document.createElement('strong');
-  live2DSettingsTitle.textContent = '启用纯 Live2D';
+  const live2DSettingsPanel = el('section', { className: 'display-mode-pane' });
+  const live2DSettingsHeading = el('label', { className: 'settings-toggle-heading' });
+  const live2DSettingsTitle = el('strong', { textContent: '启用纯 Live2D' });
   const live2DEnabledInput = document.createElement('input');
   live2DEnabledInput.type = 'checkbox';
   live2DEnabledInput.setAttribute('aria-label', '启用纯 Live2D');
   live2DSettingsHeading.append(live2DSettingsTitle, live2DEnabledInput);
-  const live2DHint = document.createElement('small');
-  live2DHint.className = 'settings-hint';
+  const live2DHint = el('small', { className: 'settings-hint' });
   live2DHint.textContent =
     '由 FPNF 直接加载当前角色包中的 Live2D 模型。关闭或改用外部显示时会立即卸载内置模型。';
   const importLive2DModelButton = createButton('导入 Live2D 模型', 'secondary-button');
   const exportLive2DModelButton = createButton('导出当前导入模型', 'secondary-button');
-  const live2DImportHint = document.createElement('small');
-  live2DImportHint.className = 'settings-hint';
+  const live2DImportHint = el('small', { className: 'settings-hint' });
   live2DImportHint.textContent =
     '选择模型主目录中的 .model3.json；程序会检查并复制它引用的纹理、动作、表情和物理文件。';
-  const live2DImportStatus = document.createElement('p');
-  live2DImportStatus.className = 'settings-status';
-  live2DImportStatus.setAttribute('role', 'status');
+  const live2DImportStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
   live2DSettingsPanel.append(
     live2DSettingsHeading,
     live2DHint,
@@ -1583,22 +1372,17 @@ export const initializeChat = async ({
     modelCapabilityStatus,
   );
 
-  const displayModeSettings = document.createElement('section');
-  displayModeSettings.className = 'display-mode-settings';
-  const displayModeHeader = document.createElement('header');
-  displayModeHeader.className = 'settings-section__header';
-  const displayModeTitle = document.createElement('strong');
-  displayModeTitle.textContent = '角色显示方式';
+  const displayModeSettings = el('section', { className: 'display-mode-settings' });
+  const displayModeHeader = el('header', { className: 'settings-section__header' });
+  const displayModeTitle = el('strong', { textContent: '角色显示方式' });
   const displayModeDescription = document.createElement('small');
   displayModeDescription.textContent = '三个方式默认关闭；同一时间最多启用一个。';
   displayModeHeader.append(displayModeTitle, displayModeDescription);
-  const displayModeBody = document.createElement('div');
-  displayModeBody.className = 'display-mode-settings__body';
+  const displayModeBody = el('div', { className: 'display-mode-settings__body' });
   const displayModeTabs = document.createElement('nav');
   displayModeTabs.className = 'display-mode-tabs';
   displayModeTabs.setAttribute('aria-label', '角色显示方式');
-  const displayModeContent = document.createElement('div');
-  displayModeContent.className = 'display-mode-content';
+  const displayModeContent = el('div', { className: 'display-mode-content' });
   displayModeContent.append(live2DSettingsPanel, viewerExSettingsPanel, vTubeStudioSettingsPanel);
   const displayTabButtons = new Map<Exclude<CharacterDisplayMode, 'off'>, HTMLButtonElement>();
   for (const [mode, label] of [
@@ -1655,6 +1439,15 @@ export const initializeChat = async ({
       mode === 'vtube-studio' ? 'left' : currentDesktopLayoutSettings.characterPane;
     onDisplayModeChanged(mode);
   };
+  const persistCharacterDisplayMode = (mode: CharacterDisplayMode) =>
+    api
+      ? transitionCharacterDisplayMode({
+          currentMode: activeCharacterDisplayMode,
+          targetMode: mode,
+          applyLocalMode: displayCharacterDisplayMode,
+          persistMode: (targetMode) => api.setCharacterDisplayMode({ mode: targetMode }),
+        })
+      : Promise.resolve({ ok: false, mode, message: '角色显示方式不可用。' });
   for (const [mode, button] of displayTabButtons) {
     button.addEventListener('click', () => showDisplayTab(mode));
   }
@@ -1671,12 +1464,9 @@ export const initializeChat = async ({
     });
   }
   showDisplayTab('live2d');
-  const desktopIntegrationPanel = document.createElement('section');
-  desktopIntegrationPanel.className = 'character-search';
-  const desktopIntegrationHeading = document.createElement('label');
-  desktopIntegrationHeading.className = 'settings-toggle-heading';
-  const desktopIntegrationTitle = document.createElement('strong');
-  desktopIntegrationTitle.textContent = '桌面快捷操作';
+  const desktopIntegrationPanel = el('section', { className: 'character-search' });
+  const desktopIntegrationHeading = el('label', { className: 'settings-toggle-heading' });
+  const desktopIntegrationTitle = el('strong', { textContent: '桌面快捷操作' });
   const globalShortcutInput = document.createElement('input');
   globalShortcutInput.type = 'checkbox';
   globalShortcutInput.setAttribute('aria-label', '仅在桌宠窗口被选中时启用快捷键');
@@ -1689,8 +1479,7 @@ export const initializeChat = async ({
   visibilityShortcutInput.autocomplete = 'off';
   visibilityShortcutInput.spellcheck = false;
   const visibilityShortcutField = createField('切换快捷键', visibilityShortcutInput);
-  const visibilityShortcutHint = document.createElement('small');
-  visibilityShortcutHint.className = 'settings-hint';
+  const visibilityShortcutHint = el('small', { className: 'settings-hint' });
   visibilityShortcutHint.textContent =
     '默认是 、 键（系统记作 \\）；切到其他程序后不会占用。隐藏后请点击托盘图标重新显示。';
   visibilityShortcutField.append(visibilityShortcutHint);
@@ -1699,8 +1488,7 @@ export const initializeChat = async ({
   stopGenerationShortcutInput.autocomplete = 'off';
   stopGenerationShortcutInput.spellcheck = false;
   const stopGenerationShortcutField = createField('停止生成快捷键', stopGenerationShortcutInput);
-  const stopGenerationShortcutHint = document.createElement('small');
-  stopGenerationShortcutHint.className = 'settings-hint';
+  const stopGenerationShortcutHint = el('small', { className: 'settings-hint' });
   stopGenerationShortcutHint.textContent =
     '默认 Ctrl+Shift+Delete；只在桌宠窗口被选中时生效，不记录普通按键。';
   stopGenerationShortcutField.append(stopGenerationShortcutHint);
@@ -1712,15 +1500,12 @@ export const initializeChat = async ({
   inputOverlayKeysInput.autocomplete = 'off';
   inputOverlayKeysInput.spellcheck = false;
   const inputOverlayKeysField = createField('显示按键', inputOverlayKeysInput);
-  const inputOverlayHint = document.createElement('small');
-  inputOverlayHint.className = 'settings-hint';
+  const inputOverlayHint = el('small', { className: 'settings-hint' });
   inputOverlayHint.textContent =
     '默认 W, A, S, D；可用逗号、顿号、分号或空格添加最多 24 个按键，输入时不会被状态刷新覆盖。只显示选定按键，不保存输入内容或轨迹，也不会发送给模型。';
   inputOverlayKeysField.append(inputOverlayHint);
-  const inputOverlayMouseInput = document.createElement('input');
-  inputOverlayMouseInput.type = 'checkbox';
-  const inputOverlayMouseField = document.createElement('label');
-  inputOverlayMouseField.className = 'settings-field';
+  const inputOverlayMouseInput = el('input', { type: 'checkbox' });
+  const inputOverlayMouseField = el('label', { className: 'settings-field' });
   inputOverlayMouseField.append(inputOverlayMouseInput, ' 显示鼠标三键和移动方向');
   const mediaControlInput = document.createElement('input');
   mediaControlInput.type = 'checkbox';
@@ -1728,8 +1513,7 @@ export const initializeChat = async ({
   const desktopIntegrationStatus = document.createElement('p');
   desktopIntegrationStatus.className = 'settings-status';
   desktopIntegrationStatus.textContent = '窗口快捷键默认关闭。';
-  const mediaActions = document.createElement('div');
-  mediaActions.className = 'settings-actions widget-media-actions';
+  const mediaActions = el('div', { className: 'settings-actions widget-media-actions' });
   const previousMediaButton = createButton('上一首', 'text-button');
   const playPauseMediaButton = createButton('播放 / 暂停', 'text-button');
   const nextMediaButton = createButton('下一首', 'text-button');
@@ -1744,19 +1528,13 @@ export const initializeChat = async ({
     stopGenerationShortcutField,
     desktopIntegrationStatus,
   );
-  const widgetsPanel = document.createElement('section');
-  widgetsPanel.className = 'chat-drawer widgets-panel';
-  widgetsPanel.hidden = true;
-  const widgetsHeader = document.createElement('header');
-  widgetsHeader.className = 'chat-drawer__header';
-  const widgetsTitle = document.createElement('strong');
-  widgetsTitle.textContent = '小组件';
+  const widgetsPanel = el('section', { className: 'chat-drawer widgets-panel', hidden: true });
+  const widgetsHeader = el('header', { className: 'chat-drawer__header' });
+  const widgetsTitle = el('strong', { textContent: '小组件' });
   const closeWidgetsButton = createButton('关闭', 'text-button');
   widgetsHeader.append(widgetsTitle, closeWidgetsButton);
-  const widgetsContent = document.createElement('div');
-  widgetsContent.className = 'widgets-panel__content';
-  const widgetsCatalog = document.createElement('div');
-  widgetsCatalog.className = 'widget-catalog';
+  const widgetsContent = el('div', { className: 'widgets-panel__content' });
+  const widgetsCatalog = el('div', { className: 'widget-catalog' });
   let widgetOrder: DesktopWidgetId[] = [];
   const createWidgetCatalogCard = (
     definition: DesktopWidgetDefinition,
@@ -1765,20 +1543,15 @@ export const initializeChat = async ({
     toggleButton: HTMLButtonElement;
     settingsButton: HTMLButtonElement;
   } => {
-    const card = document.createElement('article');
-    card.className = 'widget-catalog-card';
+    const card = el('article', { className: 'widget-catalog-card' });
     const icon = document.createElement('span');
     icon.className = 'widget-catalog-card__icon';
     icon.textContent = definition.iconText;
-    const copy = document.createElement('span');
-    copy.className = 'widget-catalog-card__copy';
-    const title = document.createElement('strong');
-    title.textContent = definition.title;
-    const description = document.createElement('small');
-    description.textContent = definition.description;
+    const copy = el('span', { className: 'widget-catalog-card__copy' });
+    const title = el('strong', { textContent: definition.title });
+    const description = el('small', { textContent: definition.description });
     copy.append(title, description);
-    const actions = document.createElement('span');
-    actions.className = 'widget-catalog-card__actions';
+    const actions = el('span', { className: 'widget-catalog-card__actions' });
     const toggleButton = createButton('已关闭', 'widget-catalog-card__status');
     toggleButton.title = `启用${definition.title}`;
     const settingsButton = createButton('设置', 'widget-catalog-card__settings');
@@ -1793,26 +1566,17 @@ export const initializeChat = async ({
     widgetCards.set(definition.id, card);
     widgetsCatalog.append(card.card);
   }
-  const inputWidget = document.createElement('section');
-  inputWidget.className = 'widget-detail';
-  inputWidget.hidden = true;
-  const inputWidgetHeader = document.createElement('div');
-  inputWidgetHeader.className = 'widget-detail__header';
+  const inputWidget = el('section', { className: 'widget-detail', hidden: true });
+  const inputWidgetHeader = el('div', { className: 'widget-detail__header' });
   const backFromInputWidgetButton = createButton('返回', 'text-button');
-  const inputWidgetTitle = document.createElement('strong');
-  inputWidgetTitle.textContent = '输入显示';
+  const inputWidgetTitle = el('strong', { textContent: '输入显示' });
   inputWidgetHeader.append(backFromInputWidgetButton, inputWidgetTitle, inputOverlayEnabledInput);
   inputWidget.append(inputWidgetHeader, inputOverlayKeysField, inputOverlayMouseField);
-  const mediaWidget = document.createElement('section');
-  mediaWidget.className = 'widget-detail';
-  mediaWidget.hidden = true;
-  const mediaWidgetHeader = document.createElement('div');
-  mediaWidgetHeader.className = 'widget-detail__header';
+  const mediaWidget = el('section', { className: 'widget-detail', hidden: true });
+  const mediaWidgetHeader = el('div', { className: 'widget-detail__header' });
   const backFromMediaWidgetButton = createButton('返回', 'text-button');
-  const mediaWidgetTitle = document.createElement('strong');
-  mediaWidgetTitle.textContent = '听歌控制';
-  const mediaWidgetHint = document.createElement('small');
-  mediaWidgetHint.className = 'settings-hint';
+  const mediaWidgetTitle = el('strong', { textContent: '听歌控制' });
+  const mediaWidgetHint = el('small', { className: 'settings-hint' });
   mediaWidgetHint.textContent =
     '读取并控制 Windows 当前媒体会话，包括网易云音乐、QQ 音乐、Spotify、Apple Music 和支持系统媒体控制的其他播放器。开启后悬浮控制条会固定保留。';
   mediaWidgetHeader.append(backFromMediaWidgetButton, mediaWidgetTitle, mediaControlInput);
@@ -1836,11 +1600,9 @@ export const initializeChat = async ({
   }
   backFromInputWidgetButton.addEventListener('click', () => showWidgetView('catalog'));
   backFromMediaWidgetButton.addEventListener('click', () => showWidgetView('catalog'));
-  const settingsActions = document.createElement('div');
-  settingsActions.className = 'settings-actions';
+  const settingsActions = el('div', { className: 'settings-actions' });
   const testButton = createButton('测试连接', 'secondary-button');
-  const connectionActions = document.createElement('div');
-  connectionActions.className = 'settings-actions connection-actions';
+  const connectionActions = el('div', { className: 'settings-actions connection-actions' });
   connectionActions.append(testButton);
   const saveButton = createButton('保存', 'primary-button');
   saveButton.type = 'submit';
@@ -1853,14 +1615,10 @@ export const initializeChat = async ({
   baseUrlField.hidden = true;
 
   const createSettingsSection = (title: string, description: string): HTMLElement => {
-    const section = document.createElement('section');
-    section.className = 'settings-section';
-    const heading = document.createElement('header');
-    heading.className = 'settings-section__header';
-    const sectionTitle = document.createElement('strong');
-    sectionTitle.textContent = title;
-    const sectionDescription = document.createElement('small');
-    sectionDescription.textContent = description;
+    const section = el('section', { className: 'settings-section' });
+    const heading = el('header', { className: 'settings-section__header' });
+    const sectionTitle = el('strong', { textContent: title });
+    const sectionDescription = el('small', { textContent: description });
     heading.append(sectionTitle, sectionDescription);
     section.append(heading);
     return section;
@@ -1870,12 +1628,12 @@ export const initializeChat = async ({
     '模型与窗口',
     '管理聊天模型、连接方式、密钥、桌宠大小和安全布局位置。',
   );
+  const diagnosticLogButton = createButton('打开诊断日志', 'secondary-button');
+  const diagnosticLogStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
   const assistantWorkspacePanel = document.createElement('section');
   assistantWorkspacePanel.className = 'character-search assistant-workspace-settings';
-  const assistantWorkspaceHeading = document.createElement('strong');
-  assistantWorkspaceHeading.textContent = '工作区与权限';
-  const assistantWorkspaceHint = document.createElement('small');
-  assistantWorkspaceHint.className = 'settings-hint';
+  const assistantWorkspaceHeading = el('strong', { textContent: '工作区与权限' });
+  const assistantWorkspaceHint = el('small', { className: 'settings-hint' });
   assistantWorkspaceHint.textContent =
     '选择工作区即授权助手直接读取、搜索、修改和打开其中的安全文件。工作模式开启后，可把文本或文件拖到整个对话区。工作区外文件操作、脚本或程序打开、固定项目检查仍会显示实际目标并逐次确认；主动拖入文件不会覆盖同名文件。';
   const assistantWorkspaceStatus = document.createElement('p');
@@ -1897,6 +1655,8 @@ export const initializeChat = async ({
     connectionActions,
     connectionStatus,
     modelCollaborationPanel,
+    diagnosticLogButton,
+    diagnosticLogStatus,
   );
 
   const readDesktopLayoutSettings = (): DesktopLayoutSettings => ({
@@ -1913,28 +1673,22 @@ export const initializeChat = async ({
     '工作模式',
     '像小型 Agent 一样处理问答、资料和代码；工作区与已启用小组件采用范围授权，越界和高风险操作逐次确认。',
   );
-  const assistantModeComparison = document.createElement('div');
-  assistantModeComparison.className = 'mode-comparison';
+  const assistantModeComparison = el('div', { className: 'mode-comparison' });
   const createModeComparisonCard = (
     title: string,
     badge: string,
     description: string,
     capabilities: readonly string[],
   ): HTMLElement => {
-    const card = document.createElement('article');
-    card.className = 'mode-comparison__card';
+    const card = el('article', { className: 'mode-comparison__card' });
     const heading = document.createElement('header');
-    const name = document.createElement('strong');
-    name.textContent = title;
-    const state = document.createElement('span');
-    state.textContent = badge;
+    const name = el('strong', { textContent: title });
+    const state = el('span', { textContent: badge });
     heading.append(name, state);
-    const detail = document.createElement('p');
-    detail.textContent = description;
+    const detail = el('p', { textContent: description });
     const list = document.createElement('ul');
     for (const capability of capabilities) {
-      const item = document.createElement('li');
-      item.textContent = capability;
+      const item = el('li', { textContent: capability });
       list.append(item);
     }
     card.append(heading, detail, list);
@@ -1960,8 +1714,7 @@ export const initializeChat = async ({
   );
   const assistantInterfacePanel = document.createElement('section');
   assistantInterfacePanel.className = 'character-search assistant-interface';
-  const assistantInterfaceTitle = document.createElement('strong');
-  assistantInterfaceTitle.textContent = '当前工作接口';
+  const assistantInterfaceTitle = el('strong', { textContent: '当前工作接口' });
   const assistantInterfaceList = document.createElement('ul');
   for (const description of [
     '文件接口：列出、搜索、读取、新建、精确修改或打开文件。',
@@ -1969,8 +1722,7 @@ export const initializeChat = async ({
     '授权边界：工作区内直接操作；工作区外真实路径与可执行文件逐次确认。',
     '小组件边界：启用听歌控制即授权上一首、播放/暂停和下一首。',
   ]) {
-    const item = document.createElement('li');
-    item.textContent = description;
+    const item = el('li', { textContent: description });
     assistantInterfaceList.append(item);
   }
   assistantInterfacePanel.append(assistantInterfaceTitle, assistantInterfaceList);
@@ -1994,8 +1746,7 @@ export const initializeChat = async ({
   const characterLibraryPane = document.createElement('section');
   characterLibraryPane.className = 'display-mode-pane character-page__pane';
   characterLibraryPane.append(characterLibrary);
-  const localCharacterPane = document.createElement('section');
-  localCharacterPane.className = 'display-mode-pane character-page__pane';
+  const localCharacterPane = el('section', { className: 'display-mode-pane character-page__pane' });
   localCharacterPane.append(
     localCharacterActions,
     createField('角色名称', characterNameInput),
@@ -2060,10 +1811,8 @@ export const initializeChat = async ({
     '小组件',
     '集中管理桌面输入显示、听歌控制，并为以后的新组件保留统一接入方式。',
   );
-  const widgetsInterfacePanel = document.createElement('section');
-  widgetsInterfacePanel.className = 'character-search widgets-interface';
-  const widgetsInterfaceTitle = document.createElement('strong');
-  widgetsInterfaceTitle.textContent = '小组件接口';
+  const widgetsInterfacePanel = el('section', { className: 'character-search widgets-interface' });
+  const widgetsInterfaceTitle = el('strong', { textContent: '小组件接口' });
   const widgetsInterfaceDescription = document.createElement('p');
   widgetsInterfaceDescription.textContent =
     '当前组件通过统一目录注册名称、图标、说明和设置页；开关状态会由 Main Process 验证后保存。以后可继续增加日历、待办、系统状态等组件，无需挤进桌面快捷操作页。';
@@ -2089,13 +1838,11 @@ export const initializeChat = async ({
     memoryList,
   );
 
-  const settingsLayout = document.createElement('div');
-  settingsLayout.className = 'settings-layout';
+  const settingsLayout = el('div', { className: 'settings-layout' });
   const settingsNavigation = document.createElement('nav');
   settingsNavigation.className = 'settings-navigation';
   settingsNavigation.setAttribute('aria-label', '设置分类');
-  const settingsContent = document.createElement('div');
-  settingsContent.className = 'settings-content';
+  const settingsContent = el('div', { className: 'settings-content' });
   type SettingsPage =
     'model' | 'assistant' | 'speech' | 'character' | 'display' | 'widgets' | 'desktop' | 'memory';
   const settingsPages = [
@@ -2134,28 +1881,26 @@ export const initializeChat = async ({
   settingsLayout.append(settingsNavigation, settingsContent);
   showSettingsPage(selectedSettingsPage);
 
-  const settingsHeaderActions = document.createElement('div');
-  settingsHeaderActions.className = 'settings-header-actions';
+  const settingsHeaderActions = el('div', { className: 'settings-header-actions' });
   settingsHeaderActions.append(settingsStatus, settingsActions, closeSettingsButton);
   settingsHeader.append(settingsHeaderActions);
   settingsPanel.append(settingsHeader, settingsLayout);
+  const speechAssetDownloadPanel = api
+    ? mountSpeechAssetDownloadPanel(speechAssetDownloadRoot, speechAssetProgressStrip, {
+        getStatus: () => api.getSpeechAssetDownloadStatus(),
+        control: (input) => api.controlSpeechAssetDownload(input),
+      })
+    : undefined;
 
-  const actionDialog = document.createElement('dialog');
-  actionDialog.className = 'app-dialog';
-  const actionDialogForm = document.createElement('form');
-  actionDialogForm.method = 'dialog';
-  const actionDialogTitle = document.createElement('strong');
-  actionDialogTitle.className = 'app-dialog__title';
-  const actionDialogMessage = document.createElement('p');
-  actionDialogMessage.className = 'app-dialog__message';
-  const actionDialogDetails = document.createElement('details');
-  actionDialogDetails.className = 'app-dialog__details';
-  const actionDialogDetailsSummary = document.createElement('summary');
-  actionDialogDetailsSummary.textContent = '.....点击展开';
+  const actionDialog = el('dialog', { className: 'app-dialog' });
+  const actionDialogForm = el('form', { method: 'dialog' });
+  const actionDialogTitle = el('strong', { className: 'app-dialog__title' });
+  const actionDialogMessage = el('p', { className: 'app-dialog__message' });
+  const actionDialogDetails = el('details', { className: 'app-dialog__details' });
+  const actionDialogDetailsSummary = el('summary', { textContent: '.....点击展开' });
   const actionDialogDetailsText = document.createElement('p');
   actionDialogDetails.append(actionDialogDetailsSummary, actionDialogDetailsText);
-  const actionDialogActions = document.createElement('div');
-  actionDialogActions.className = 'app-dialog__actions';
+  const actionDialogActions = el('div', { className: 'app-dialog__actions' });
   const actionDialogCancel = createButton('取消', 'secondary-button');
   actionDialogCancel.type = 'submit';
   actionDialogCancel.value = 'cancel';
@@ -2174,6 +1919,7 @@ export const initializeChat = async ({
   panel.append(
     panelHeader,
     conversationList,
+    speechAssetProgressStrip,
     composer,
     toolbar,
     soundPanel,
@@ -2218,6 +1964,10 @@ export const initializeChat = async ({
   const automaticallyRequestedGlossaryWorks = new Set<string>();
   let activeRequestId: string | undefined;
   let activeReply = '';
+  const resetActiveReply = (): void => {
+    activeReply = '';
+    conversationTimeline.clearActiveReply();
+  };
   let assistantModeEnabled = false;
   let assistantWorkspaceConfigured = false;
   let panelExpanded = false;
@@ -2801,11 +2551,10 @@ export const initializeChat = async ({
     stopSpeech('character-refresh');
     openingLineGeneration += 1;
     openingLineShown = false;
-    activeReply = '';
+    resetActiveReply();
     latestContextDebug = undefined;
     memoryRecords = [];
     memoryCandidates = [];
-    activeReply = '';
     renderConversationTimeline();
     replyStateLabel = '随时可以开始聊天';
     renderContextDebug();
@@ -2831,12 +2580,10 @@ export const initializeChat = async ({
     const entries = await api.listCharacters();
     characterLibraryList.replaceChildren();
     for (const entry of entries) {
-      const row = document.createElement('div');
-      row.className = 'character-library__entry';
+      const row = el('div', { className: 'character-library__entry' });
       const description = document.createElement('span');
       description.textContent = `${entry.profile.name}${entry.active ? '（当前）' : ''}`;
-      const actions = document.createElement('div');
-      actions.className = 'settings-actions';
+      const actions = el('div', { className: 'settings-actions' });
       if (!entry.active) {
         const activate = createButton('切换', 'text-button');
         activate.addEventListener('click', () => {
@@ -2997,69 +2744,29 @@ export const initializeChat = async ({
       debugContent.append(item);
     }
     for (const fallback of latestContextDebug.fallbacks) {
-      const item = document.createElement('p');
-      item.className = 'settings-status';
-      item.textContent = `回退：${fallback}`;
+      const item = el('p', { className: 'settings-status', textContent: `回退：${fallback}` });
       debugContent.append(item);
     }
   };
 
   const renderConversationTimeline = (): void => {
-    conversationList.replaceChildren();
-    const visibleMessages = activeReply
-      ? [
-          ...messages,
-          {
-            id: 'active-reply',
-            role: 'assistant' as const,
-            content: activeReply,
-            createdAt: Date.now(),
-            status: 'complete' as const,
-          },
-        ]
-      : messages;
-    if (visibleMessages.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'conversation-list__empty';
-      empty.textContent = '还没有对话，开始聊吧。';
-      conversationList.append(empty);
-      return;
-    }
-    for (const message of visibleMessages) {
-      const item = document.createElement('article');
-      item.className = `conversation-message conversation-message--${message.role}`;
-      const content = document.createElement('p');
-      content.textContent = message.content;
-      item.append(content);
-      if (message.status === 'cancelled') {
-        const status = document.createElement('small');
-        status.textContent = '已停止';
-        item.append(status);
-      }
-      conversationList.append(item);
-    }
-    conversationList.scrollTop = conversationList.scrollHeight;
+    conversationTimeline.render(messages, activeReply);
   };
 
   const renderHistory = (): void => {
     renderConversationTimeline();
     historyList.replaceChildren();
     if (messages.length === 0) {
-      const empty = document.createElement('p');
-      empty.className = 'history-empty';
-      empty.textContent = '还没有对话，开始聊吧。';
+      const empty = el('p', { className: 'history-empty', textContent: '还没有对话，开始聊吧。' });
       historyList.append(empty);
       return;
     }
     for (const message of messages) {
-      const item = document.createElement('article');
-      item.className = `history-message history-message--${message.role}`;
-      const content = document.createElement('p');
-      content.textContent = message.content;
+      const item = el('article', { className: `history-message history-message--${message.role}` });
+      const content = el('p', { textContent: message.content });
       item.append(content);
       if (message.status === 'cancelled') {
-        const status = document.createElement('small');
-        status.textContent = '已停止';
+        const status = el('small', { textContent: '已停止' });
         item.append(status);
       }
       historyList.append(item);
@@ -3096,18 +2803,14 @@ export const initializeChat = async ({
       return;
     }
     for (const candidate of filtered) {
-      const card = document.createElement('article');
-      card.className = 'memory-card memory-card--candidate';
-      const heading = document.createElement('div');
-      heading.className = 'memory-candidate-heading';
-      const type = document.createElement('strong');
-      type.textContent = memoryTypeLabels[candidate.type];
+      const card = el('article', { className: 'memory-card memory-card--candidate' });
+      const heading = el('div', { className: 'memory-candidate-heading' });
+      const type = el('strong', { textContent: memoryTypeLabels[candidate.type] });
       const state = document.createElement('span');
       state.className = 'memory-badge';
       state.textContent = candidate.status === 'conflict' ? '有冲突' : '待确认';
       heading.append(type, state);
-      const typeSelect = document.createElement('select');
-      typeSelect.setAttribute('aria-label', '候选记忆分类');
+      const typeSelect = el('select', { attrs: { 'aria-label': '候选记忆分类' } });
       for (const memoryType of Object.keys(memoryTypeLabels) as MemoryType[]) {
         const option = document.createElement('option');
         option.value = memoryType;
@@ -3121,8 +2824,7 @@ export const initializeChat = async ({
       content.maxLength = 1_000;
       content.rows = 2;
       content.setAttribute('aria-label', '候选记忆内容');
-      const metrics = document.createElement('div');
-      metrics.className = 'memory-metrics';
+      const metrics = el('div', { className: 'memory-metrics' });
       const importance = document.createElement('input');
       importance.type = 'range';
       importance.min = '0';
@@ -3143,10 +2845,8 @@ export const initializeChat = async ({
         document.createTextNode(' 置信度 '),
         confidence,
       );
-      const expirationField = document.createElement('label');
-      expirationField.className = 'memory-expiration';
-      const expirationLabel = document.createElement('span');
-      expirationLabel.textContent = '有效期（可不填）';
+      const expirationField = el('label', { className: 'memory-expiration' });
+      const expirationLabel = el('span', { textContent: '有效期（可不填）' });
       const expiration = document.createElement('input');
       expiration.type = 'datetime-local';
       expiration.value = formatLocalDateTime(candidate.expiresAt);
@@ -3156,8 +2856,7 @@ export const initializeChat = async ({
         if (expirationField.hidden) expiration.value = '';
       };
       updateExpirationVisibility();
-      const reasons = document.createElement('p');
-      reasons.className = 'memory-source';
+      const reasons = el('p', { className: 'memory-source' });
       reasons.textContent = candidate.reviewReasons.length
         ? candidate.reviewReasons.map((reason) => memoryReviewLabels[reason]).join('；')
         : '自动提取结果，需要你点头才会生效。';
@@ -3171,8 +2870,7 @@ export const initializeChat = async ({
       const evidenceSummary = document.createElement('small');
       evidenceSummary.className = 'memory-source';
       evidenceSummary.textContent = `证据 ${candidate.evidence.length} 条，来自 ${candidate.evidenceDateCount} 个日期`;
-      const evidenceList = document.createElement('ul');
-      evidenceList.className = 'memory-evidence-list';
+      const evidenceList = el('ul', { className: 'memory-evidence-list' });
       for (const evidence of candidate.evidence.slice(0, 3)) {
         const item = document.createElement('li');
         const date = new Date(evidence.observedAt).toLocaleDateString();
@@ -3181,8 +2879,7 @@ export const initializeChat = async ({
           : `${date} · 原消息已从对话历史清除`;
         evidenceList.append(item);
       }
-      const actions = document.createElement('div');
-      actions.className = 'memory-card__actions';
+      const actions = el('div', { className: 'memory-card__actions' });
       const saveDraft = createButton('保存候选修改', 'text-button');
       const confirm = createButton('确认记住', 'text-button');
       const reject = createButton('拒绝', 'text-button danger-button');
@@ -3231,9 +2928,7 @@ export const initializeChat = async ({
           ['replace', '用新记忆替换旧记忆'],
           ['keep-both', '新旧两条都保留'],
         ] as const) {
-          const option = document.createElement('option');
-          option.value = value;
-          option.textContent = label;
+          const option = el('option', { value: value, textContent: label });
           conflictResolution.append(option);
         }
         card.append(conflictResolution);
@@ -3245,14 +2940,10 @@ export const initializeChat = async ({
           other.normalizedKey === candidate.normalizedKey,
       );
       if (mergeableCandidates.length > 0) {
-        const mergeRow = document.createElement('div');
-        mergeRow.className = 'memory-merge-row';
-        const mergeSelect = document.createElement('select');
-        mergeSelect.setAttribute('aria-label', '要合并的候选');
+        const mergeRow = el('div', { className: 'memory-merge-row' });
+        const mergeSelect = el('select', { attrs: { 'aria-label': '要合并的候选' } });
         for (const other of mergeableCandidates) {
-          const option = document.createElement('option');
-          option.value = other.id;
-          option.textContent = other.content.slice(0, 60);
+          const option = el('option', { value: other.id, textContent: other.content.slice(0, 60) });
           mergeSelect.append(option);
         }
         const mergeButton = createButton('合并证据到本条', 'text-button');
@@ -3319,13 +3010,10 @@ export const initializeChat = async ({
       return;
     }
     for (const memory of filtered) {
-      const card = document.createElement('article');
-      card.className = 'memory-card';
+      const card = el('article', { className: 'memory-card' });
       const typeSelect = document.createElement('select');
       for (const type of Object.keys(memoryTypeLabels) as MemoryType[]) {
-        const option = document.createElement('option');
-        option.value = type;
-        option.textContent = memoryTypeLabels[type];
+        const option = el('option', { value: type, textContent: memoryTypeLabels[type] });
         typeSelect.append(option);
       }
       typeSelect.value = memory.type;
@@ -3334,8 +3022,7 @@ export const initializeChat = async ({
       content.maxLength = 1_000;
       content.rows = 2;
       content.setAttribute('aria-label', '记忆内容');
-      const metrics = document.createElement('div');
-      metrics.className = 'memory-metrics';
+      const metrics = el('div', { className: 'memory-metrics' });
       const importance = document.createElement('input');
       importance.type = 'number';
       importance.min = '0';
@@ -3350,8 +3037,7 @@ export const initializeChat = async ({
       confidence.step = '0.05';
       confidence.value = memory.confidence.toFixed(2);
       confidence.setAttribute('aria-label', '置信度');
-      const source = document.createElement('small');
-      source.className = 'memory-source';
+      const source = el('small', { className: 'memory-source' });
       const sourceLabel =
         memory.source === 'manual'
           ? '用户主动记住'
@@ -3367,10 +3053,8 @@ export const initializeChat = async ({
         document.createTextNode(' 置信度 '),
         confidence,
       );
-      const expirationField = document.createElement('label');
-      expirationField.className = 'memory-expiration';
-      const expirationLabel = document.createElement('span');
-      expirationLabel.textContent = '有效期（可不填）';
+      const expirationField = el('label', { className: 'memory-expiration' });
+      const expirationLabel = el('span', { textContent: '有效期（可不填）' });
       const expiration = document.createElement('input');
       expiration.type = 'datetime-local';
       expiration.value = formatLocalDateTime(memory.expiresAt);
@@ -3381,8 +3065,7 @@ export const initializeChat = async ({
       };
       updateExpirationVisibility();
       typeSelect.addEventListener('change', updateExpirationVisibility);
-      const actions = document.createElement('div');
-      actions.className = 'memory-card__actions';
+      const actions = el('div', { className: 'memory-card__actions' });
       const save = createButton('保存修改', 'text-button');
       const remove = createButton('删除', 'text-button danger-button');
       actions.append(save, remove);
@@ -3486,7 +3169,7 @@ export const initializeChat = async ({
     if (event.type === 'text-delta') {
       activeReply += event.text;
       activeSpeechTurn?.appendText(event.text);
-      renderConversationTimeline();
+      conversationTimeline.appendDelta(event.text);
       setReplyStatus('正在回复…');
       void getPresentation()?.setState('talking');
       return;
@@ -3513,7 +3196,7 @@ export const initializeChat = async ({
       return;
     }
     if (event.type === 'completed') {
-      activeReply = '';
+      resetActiveReply();
       setReplyStatus('回复完成');
       messages.push(event.assistantMessage);
       renderHistory();
@@ -3544,8 +3227,8 @@ export const initializeChat = async ({
     if (event.type === 'cancelled') {
       if (!pendingCombinedVoiceCommand) pendingVoiceCommands.clear();
       stopSpeech('conversation-cancelled');
+      resetActiveReply();
       if (event.assistantMessage) {
-        activeReply = '';
         messages.push(event.assistantMessage);
         renderHistory();
       }
@@ -3712,14 +3395,12 @@ export const initializeChat = async ({
         : '请选择正确角色，再生成扮演设定。';
     for (const candidate of candidates) {
       const button = createButton('', 'character-candidate');
-      const title = document.createElement('strong');
-      title.textContent = candidate.name;
+      const title = el('strong', { textContent: candidate.name });
       const source = document.createElement('small');
       source.textContent = `${candidate.sourceName} · ${candidate.sourceWork || '作品待确认'}`;
       const description = document.createElement('span');
       description.textContent = candidate.description || candidate.matchReason;
-      const reason = document.createElement('small');
-      reason.textContent = candidate.matchReason;
+      const reason = el('small', { textContent: candidate.matchReason });
       const action = document.createElement('strong');
       action.className = 'character-candidate__action';
       action.textContent = '选择并生成扮演设定 →';
@@ -3920,16 +3601,13 @@ export const initializeChat = async ({
     inputOverlayKeys.replaceChildren();
     const renderedKeys = new Map<InputOverlayKey, HTMLElement>();
     for (const key of settings.inputOverlayKeys) {
-      const element = document.createElement('kbd');
-      element.className = 'input-overlay__key';
-      element.textContent = key;
+      const element = el('kbd', { className: 'input-overlay__key', textContent: key });
       element.dataset.key = key;
       inputOverlayKeyElements.set(key, element);
       renderedKeys.set(key, element);
     }
     if (['W', 'A', 'S', 'D'].every((key) => renderedKeys.has(key as InputOverlayKey))) {
-      const movementKeys = document.createElement('div');
-      movementKeys.className = 'input-overlay__movement';
+      const movementKeys = el('div', { className: 'input-overlay__movement' });
       for (const key of ['W', 'A', 'S', 'D'] as const) {
         const element = renderedKeys.get(key);
         if (!element) continue;
@@ -3940,8 +3618,7 @@ export const initializeChat = async ({
       inputOverlayKeys.append(movementKeys);
     }
     if (renderedKeys.size > 0) {
-      const additionalKeys = document.createElement('div');
-      additionalKeys.className = 'input-overlay__additional-keys';
+      const additionalKeys = el('div', { className: 'input-overlay__additional-keys' });
       additionalKeys.append(...renderedKeys.values());
       inputOverlayKeys.append(additionalKeys);
     }
@@ -4083,16 +3760,6 @@ export const initializeChat = async ({
     const mediaWidgetVisible = desktopStatus.settings.mediaControlEnabled;
     const inputWidgetVisible =
       desktopStatus.settings.inputOverlayEnabled && desktopStatus.inputOverlayActive;
-    const widgetReserve =
-      mediaWidgetVisible && inputWidgetVisible
-        ? 128
-        : inputWidgetVisible
-          ? 84
-          : mediaWidgetVisible
-            ? 60
-            : 0;
-    root.classList.toggle('desktop-widgets-active', widgetReserve > 0);
-    root.style.setProperty('--desktop-widget-reserve', `${widgetReserve}px`);
     const overlays: Record<DesktopWidgetId, HTMLElement> = {
       input: inputOverlay,
       media: mediaOverlay,
@@ -4100,6 +3767,11 @@ export const initializeChat = async ({
     for (const widget of widgetOrder) {
       desktopOverlayStack.append(overlays[widget]);
     }
+    displayInputOverlay(desktopStatus.settings, desktopStatus.inputOverlayActive);
+    displayMediaOverlay(desktopStatus);
+    desktopWidgetsActive = mediaWidgetVisible || inputWidgetVisible;
+    root.classList.toggle('desktop-widgets-active', desktopWidgetsActive);
+    syncDesktopWidgetReserve();
     const shortcutMessage = desktopStatus.settings.globalShortcutsEnabled
       ? desktopStatus.shortcutRegistered
         ? desktopStatus.stopGenerationShortcutRegistered
@@ -4119,8 +3791,6 @@ export const initializeChat = async ({
         ? `输入显示已开启（${desktopStatus.settings.inputOverlayKeys.join('、')}）`
         : '输入显示启动失败；当前不会监听键盘或鼠标'
       : '输入显示未启用';
-    displayInputOverlay(desktopStatus.settings, desktopStatus.inputOverlayActive);
-    displayMediaOverlay(desktopStatus);
     desktopIntegrationStatus.textContent = `${shortcutMessage}。`;
     widgetsStatus.textContent = `${mediaMessage}；${inputMessage}。`;
   };
@@ -4284,8 +3954,7 @@ export const initializeChat = async ({
       return;
     }
     inventory.expressions.forEach((expression, index) => {
-      const option = document.createElement('option');
-      option.value = String(index);
+      const option = el('option', { value: String(index) });
       const details = [
         ...expression.parameters.map((parameter) => parameter.name),
         ...expression.hotkeyNames,
@@ -4341,13 +4010,12 @@ export const initializeChat = async ({
   };
   const activateConnectedVTubeStudio = async (): Promise<boolean> => {
     if (!api) return false;
-    const displayResult = await api.setCharacterDisplayMode({ mode: 'vtube-studio' });
+    const displayResult = await persistCharacterDisplayMode('vtube-studio');
     if (!displayResult.ok) {
       vTubeStudioStatus.textContent =
         displayResult.message ?? 'VTube Studio 已连接，但角色显示方式无法启用。';
       return false;
     }
-    displayCharacterDisplayMode(displayResult.mode);
     return true;
   };
   const inspectVTubeStudioWhenSelected = (): void => {
@@ -4532,14 +4200,11 @@ export const initializeChat = async ({
       statusTarget.textContent = vTubeStudioSettingsResult.message ?? 'VTube Studio 设置无法保存。';
       return false;
     }
-    const displayModeResult = await api.setCharacterDisplayMode({
-      mode: readCharacterDisplayMode(),
-    });
+    const displayModeResult = await persistCharacterDisplayMode(readCharacterDisplayMode());
     if (!displayModeResult.ok) {
       statusTarget.textContent = displayModeResult.message ?? '角色显示方式无法保存。';
       return false;
     }
-    displayCharacterDisplayMode(displayModeResult.mode);
     try {
       displayDesktopLayoutSettings(
         await api.setDesktopLayoutSettings({ settings: readDesktopLayoutSettings() }),
@@ -4815,95 +4480,6 @@ export const initializeChat = async ({
     });
   }
 
-  const containsDraggedFiles = (event: DragEvent): boolean =>
-    Array.from(event.dataTransfer?.types ?? []).includes('Files');
-  const containsDraggedText = (event: DragEvent): boolean =>
-    Array.from(event.dataTransfer?.types ?? []).includes('text/plain');
-  const containsSupportedDrop = (event: DragEvent): boolean =>
-    containsDraggedFiles(event) || containsDraggedText(event);
-  const preventWindowFileNavigation = (event: DragEvent): void => {
-    if (containsDraggedFiles(event)) event.preventDefault();
-  };
-  const handlePanelDragOver = (event: DragEvent): void => {
-    if (panelView !== 'chat' || !containsSupportedDrop(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
-    panel.classList.add('is-drop-active');
-  };
-  const handlePanelDragLeave = (event: DragEvent): void => {
-    const next = event.relatedTarget;
-    if (!(next instanceof Node) || !panel.contains(next)) {
-      panel.classList.remove('is-drop-active');
-    }
-  };
-  const handlePanelDrop = (event: DragEvent): void => {
-    if (panelView !== 'chat' || !containsSupportedDrop(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    panel.classList.remove('is-drop-active');
-    if (!assistantModeEnabled) {
-      showComposerDropStatus('请先开启工作模式，再拖入文本或文件');
-      return;
-    }
-    if (!containsDraggedFiles(event)) {
-      const droppedText = event.dataTransfer?.getData('text/plain').trim() ?? '';
-      if (!droppedText) return;
-      const separator = input.value && !input.value.endsWith('\n') ? '\n' : '';
-      const remainingLength = input.maxLength - input.value.length - separator.length;
-      if (remainingLength <= 0) {
-        showComposerDropStatus('输入内容已达到长度上限');
-        return;
-      }
-      input.value += `${separator}${droppedText.slice(0, remainingLength)}`;
-      input.focus();
-      showComposerDropStatus('已把拖入文本放进输入框');
-      return;
-    }
-    void (async () => {
-      if (!api) return;
-      if (!assistantWorkspaceConfigured) {
-        showComposerDropStatus('请先在设置中选择工作区');
-        return;
-      }
-      const files = Array.from(event.dataTransfer?.files ?? []);
-      if (files.length === 0 || files.length > MAX_DROPPED_WORKSPACE_FILES) {
-        showComposerDropStatus(`一次最多拖入 ${MAX_DROPPED_WORKSPACE_FILES} 个文件`);
-        return;
-      }
-      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
-      if (files.some((file) => file.size > MAX_DROPPED_WORKSPACE_FILE_BYTES)) {
-        showComposerDropStatus('单个文件不能超过 16 MB');
-        return;
-      }
-      if (totalBytes > MAX_DROPPED_WORKSPACE_TOTAL_BYTES) {
-        showComposerDropStatus('本次文件总大小不能超过 64 MB');
-        return;
-      }
-      showComposerDropStatus('正在放入工作区…', 0);
-      try {
-        const result = await api.importDroppedWorkspaceFiles({
-          assistantMode: assistantModeEnabled,
-          files: await Promise.all(
-            files.map(async (file) => ({
-              name: file.name,
-              bytes: new Uint8Array(await file.arrayBuffer()),
-            })),
-          ),
-        });
-        showComposerDropStatus(result.message);
-        setReplyStatus(result.ok ? `已接收 ${result.imported.length} 个文件` : '文件未导入');
-      } catch {
-        showComposerDropStatus('文件导入失败，聊天仍可继续');
-      }
-    })();
-  };
-  window.addEventListener('dragover', preventWindowFileNavigation);
-  window.addEventListener('drop', preventWindowFileNavigation);
-  panel.addEventListener('dragover', handlePanelDragOver);
-  panel.addEventListener('dragleave', handlePanelDragLeave);
-  panel.addEventListener('drop', handlePanelDrop);
-
   soundButton.addEventListener('click', () => {
     setPanelExpanded(true, 'chat');
     const willOpen = soundPanel.hidden;
@@ -4968,6 +4544,23 @@ export const initializeChat = async ({
   closeSoundButton.addEventListener('click', closeDrawers);
   closeDebugButton.addEventListener('click', closeDrawers);
   closeSettingsButton.addEventListener('click', closeDrawers);
+  diagnosticLogButton.addEventListener('click', () => {
+    if (!api) {
+      diagnosticLogStatus.textContent = '诊断日志不可用。';
+      return;
+    }
+    diagnosticLogStatus.textContent = '正在打开诊断日志…';
+    void api
+      .openDiagnosticLog()
+      .then((result) => {
+        diagnosticLogStatus.textContent =
+          ('message' in result ? result.message : undefined) ??
+          (result.ok ? '已打开。' : '无法打开。');
+      })
+      .catch(() => {
+        diagnosticLogStatus.textContent = '诊断日志无法打开。';
+      });
+  });
   assistantModeButton.addEventListener('click', () => {
     assistantModeEnabled = !assistantModeEnabled;
     displayAssistantMode(
@@ -5605,12 +5198,11 @@ export const initializeChat = async ({
           return;
         }
         setDisplayModeInputs('live2d');
-        const displayResult = await api.setCharacterDisplayMode({ mode: 'live2d' });
+        const displayResult = await persistCharacterDisplayMode('live2d');
         if (!displayResult.ok) {
           live2DImportStatus.textContent = `“${result.modelName}”已导入，但纯 Live2D 显示未能启用。`;
           return;
         }
-        displayCharacterDisplayMode('live2d');
         live2DImportStatus.textContent = `已导入“${result.modelName}”（${result.assetCount} 个素材，约 ${Math.ceil(result.importedBytes / 1024)} KiB）。`;
       } finally {
         importLive2DModelButton.disabled = false;
@@ -5642,13 +5234,13 @@ export const initializeChat = async ({
       const result = await api.clearConversationHistory();
       if (result.ok) {
         messages = [];
-        activeReply = '';
+        resetActiveReply();
         setReplyStatus('对话已清空');
         renderHistory();
       }
     })();
   });
-  stopButton.addEventListener('click', () => {
+  function handleComposerStop(): void {
     pendingVoiceCommands.clear();
     pendingCombinedVoiceCommand = undefined;
     lastFullVoiceCommand = undefined;
@@ -5659,17 +5251,28 @@ export const initializeChat = async ({
         stopButton.disabled = false;
       });
     }
-  });
-  stopSpeechButton.addEventListener('click', () => {
+  }
+  function handleComposerStopSpeech(): void {
     stopSpeech('user-stop-audio');
     drainPendingVoiceCommand();
-  });
-  microphoneButton.addEventListener('click', () => {
+  }
+  async function handleComposerMicrophone(): Promise<void> {
+    if (api) {
+      const assetResult = await startSpeechInputAssetOnDemand(
+        () => api.getSpeechAssetDownloadStatus(),
+        (input) => api.controlSpeechAssetDownload(input),
+      ).catch(() => 'unavailable' as const);
+      if (assetResult === 'started') {
+        speechStatus.textContent = '正在后台准备本地语音识别；完成后即可使用麦克风。';
+        await speechAssetDownloadPanel?.refresh();
+        return;
+      }
+    }
     if (currentSpeechStatus?.settings.inputMode !== 'manual') {
       if (continuousMicrophoneListener?.active) {
-        void stopContinuousListening('持续监听已暂停；点击“开启监听”可恢复。');
+        await stopContinuousListening('持续监听已暂停；点击“开启监听”可恢复。');
       } else {
-        void startContinuousListening();
+        await startContinuousListening();
       }
       return;
     }
@@ -5677,13 +5280,11 @@ export const initializeChat = async ({
       stopMicrophoneRecording();
       return;
     }
-    void startMicrophoneRecording();
-  });
-  composer.addEventListener('submit', (event) => {
-    event.preventDefault();
-    const message = input.value.trim();
+    await startMicrophoneRecording();
+  }
+  function handleComposerSubmit(message: string): boolean {
     if (!api || !message || activeRequestId) {
-      return;
+      return false;
     }
     closeDrawers();
     const wakeFromDrowsy = companionDrowsy;
@@ -5693,8 +5294,7 @@ export const initializeChat = async ({
     stopSpeech('user-started-new-turn');
     activeRequestId = createRequestId('chat');
     openingLineGeneration += 1;
-    activeReply = '';
-    input.value = '';
+    resetActiveReply();
     renderConversationTimeline();
     setReplyStatus('正在思考…');
     setGenerating(true);
@@ -5722,7 +5322,8 @@ export const initializeChat = async ({
           });
         }
       });
-  });
+    return true;
+  }
 
   setPanelExpanded(true, 'chat');
 
@@ -5758,7 +5359,7 @@ export const initializeChat = async ({
 
   return () => {
     controllerDisposed = true;
-    if (composerDropStatusTimer !== undefined) window.clearTimeout(composerDropStatusTimer);
+    composerPanel.dispose();
     pushToTalkPressed = false;
     if (microphoneRecorder?.state === 'recording') microphoneRecorder.stop();
     releaseMicrophone();
@@ -5777,13 +5378,12 @@ export const initializeChat = async ({
     disposeDesktopInputActivity?.();
     clearInputOverlayTimers();
     window.clearInterval(mediaStatusRefreshTimer);
+    desktopWidgetResizeObserver.disconnect();
+    window.removeEventListener('resize', syncDesktopWidgetReserve);
     loreEditorResizeObserver.disconnect();
+    conversationTimeline.dispose();
+    speechAssetDownloadPanel?.dispose();
     windowScaleSync?.dispose();
-    window.removeEventListener('dragover', preventWindowFileNavigation);
-    window.removeEventListener('drop', preventWindowFileNavigation);
-    panel.removeEventListener('dragover', handlePanelDragOver);
-    panel.removeEventListener('dragleave', handlePanelDragLeave);
-    panel.removeEventListener('drop', handlePanelDrop);
     window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
     if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
     shell.remove();

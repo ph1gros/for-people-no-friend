@@ -11,6 +11,7 @@ pnpm-lock.yaml
 assets/models/local/kaltsit-work/
 
 # Preserve the approved planning documents verbatim.
+IMPROVEMENT_TASKS.md
 docs/PRODUCT_PLAN_V1.md
 docs/PROJECT_CONTEXT.md
 docs/TECHNICAL_PLAN_V1.md

@@ -2,7 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-import { app, dialog, ipcMain, screen, shell, type BrowserWindow } from 'electron';
+import {
+  app,
+  dialog,
+  ipcMain,
+  screen,
+  shell,
+  type BrowserWindow,
+  type IpcMainInvokeEvent,
+} from 'electron';
 
 import {
   parseSetCharacterDisplayModeInput,
@@ -65,6 +73,7 @@ import {
   parseSpeechTranscriptionInput,
   type SpeechStatus,
 } from '../../shared/speech-ipc';
+import { parseSpeechAssetControlInput } from '../../shared/speech-asset-ipc';
 import {
   parseSetViewerExSettingsInput,
   parseViewerExPresentationInput,
@@ -103,12 +112,38 @@ import {
 import type { LocalAssetOperationResult } from '../../shared/local-asset-ipc';
 import type { LocalSpeechAssetService } from '../speech/local-speech-asset-service';
 import type { BundledVTubeModelInstaller } from '../vtube-studio/bundled-vtube-model-installer';
+import type { SafeDiagnosticLog } from '../diagnostics/safe-diagnostic-log';
+import type { SpeechAssetManager } from '../speech/speech-asset-manager';
 
 export interface IpcWindowController {
   getWindow(): BrowserWindow | undefined;
   getScale(): number;
   setScale(scale: number): number;
   setChatPanelExpanded(expanded: boolean, settingsExpanded?: boolean): void;
+}
+
+export interface IpcHandlerDependencies {
+  windows: IpcWindowController;
+  models: ModelRuntime;
+  conversations: ConversationRuntime;
+  profiles: CharacterProfileStore;
+  memories: MemoryService;
+  characterResearch: CharacterResearchService;
+  workGlossary: WorkGlossaryService;
+  desktopIntegrations?: DesktopIntegrationService;
+  characterPackages?: CharacterPackageService;
+  live2DModelImports?: Live2DModelImportService;
+  speech?: SpeechService;
+  viewerEx?: ViewerExService;
+  vTubeStudio?: VTubeStudioService;
+  characterDisplay?: CharacterDisplayConfigStore;
+  onCharacterDisplayModeChanged?: (mode: CharacterDisplayMode) => void | Promise<void>;
+  assistantTools?: AssistantToolService;
+  desktopLayout?: DesktopLayoutStore;
+  localSpeechAssets?: LocalSpeechAssetService;
+  bundledVTubeModel?: BundledVTubeModelInstaller;
+  diagnosticLog?: SafeDiagnosticLog;
+  speechAssetManager?: SpeechAssetManager;
 }
 
 const requireTrustedSender = (
@@ -119,6 +154,32 @@ const requireTrustedSender = (
     throw new Error('Unauthorized IPC sender.');
   }
 };
+
+interface IpcHandlerRegistry {
+  handle(
+    channel: string,
+    handler: (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown,
+  ): void;
+}
+
+export const createTrustedIpcHandlerRegistrar =
+  (
+    ipc: IpcHandlerRegistry,
+    windows: IpcWindowController,
+    untrustedBehavior: 'throw' | 'return-undefined' = 'throw',
+  ) =>
+  (channel: string, handler: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void => {
+    ipc.handle(channel, (event, ...args) => {
+      if (
+        untrustedBehavior === 'return-undefined' &&
+        !isTrustedIpcSender(event, windows.getWindow())
+      ) {
+        return undefined;
+      }
+      requireTrustedSender(event, windows);
+      return handler(event, ...(args as never[]));
+    });
+  };
 
 const runModelOperation = async (
   operation: () => Promise<void>,
@@ -166,27 +227,31 @@ const showOpenDialog = (
   return window ? dialog.showOpenDialog(window, options) : dialog.showOpenDialog(options);
 };
 
-export const registerIpcHandlers = (
-  windows: IpcWindowController,
-  models: ModelRuntime,
-  conversations: ConversationRuntime,
-  profiles: CharacterProfileStore,
-  memories: MemoryService,
-  characterResearch: CharacterResearchService,
-  workGlossary: WorkGlossaryService,
-  desktopIntegrations?: DesktopIntegrationService,
-  characterPackages?: CharacterPackageService,
-  live2DModelImports?: Live2DModelImportService,
-  speech?: SpeechService,
-  viewerEx?: ViewerExService,
-  vTubeStudio?: VTubeStudioService,
-  characterDisplay?: CharacterDisplayConfigStore,
-  onCharacterDisplayModeChanged?: (mode: CharacterDisplayMode) => void | Promise<void>,
-  assistantTools?: AssistantToolService,
-  desktopLayout?: DesktopLayoutStore,
-  localSpeechAssets?: LocalSpeechAssetService,
-  bundledVTubeModel?: BundledVTubeModelInstaller,
-): void => {
+export const registerIpcHandlers = ({
+  windows,
+  models,
+  conversations,
+  profiles,
+  memories,
+  characterResearch,
+  workGlossary,
+  desktopIntegrations,
+  characterPackages,
+  live2DModelImports,
+  speech,
+  viewerEx,
+  vTubeStudio,
+  characterDisplay,
+  onCharacterDisplayModeChanged,
+  assistantTools,
+  desktopLayout,
+  localSpeechAssets,
+  bundledVTubeModel,
+  diagnosticLog,
+  speechAssetManager,
+}: IpcHandlerDependencies): void => {
+  const handle = createTrustedIpcHandlerRegistrar(ipcMain, windows);
+  const handleSilent = createTrustedIpcHandlerRegistrar(ipcMain, windows, 'return-undefined');
   const notifyCharacterDisplayModeChanged = async (mode: CharacterDisplayMode): Promise<void> => {
     try {
       await onCharacterDisplayModeChanged?.(mode);
@@ -246,15 +311,19 @@ export const registerIpcHandlers = (
     }
   };
 
-  ipcMain.handle(IPC_CHANNELS.getAppVersion, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getAppVersion, (event) => {
     return app.getVersion();
   });
+  handle(IPC_CHANNELS.openDiagnosticLog, async (): Promise<LocalAssetOperationResult> => {
+    if (!diagnosticLog) return { ok: false, canceled: false, message: '诊断日志不可用。' };
+    await diagnosticLog.ensureFile();
+    const errorMessage = await shell.openPath(diagnosticLog.filePath);
+    return errorMessage
+      ? { ok: false, canceled: false, message: '诊断日志无法打开。' }
+      : { ok: true, canceled: false, message: '已打开诊断日志。' };
+  });
 
-  ipcMain.handle(IPC_CHANNELS.getGlobalTrackingPoint, (event) => {
-    if (!isTrustedIpcSender(event, windows.getWindow())) {
-      return undefined;
-    }
+  handleSilent(IPC_CHANNELS.getGlobalTrackingPoint, () => {
     const window = windows.getWindow();
     if (!window) {
       return undefined;
@@ -263,88 +332,70 @@ export const registerIpcHandlers = (
     const workArea = screen.getDisplayMatching(bounds).workArea;
     return normalizeCursorToWorkArea(screen.getCursorScreenPoint(), workArea);
   });
-  ipcMain.handle(IPC_CHANNELS.getCharacterDisplayMode, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getCharacterDisplayMode, async (event) => {
     return resolveCharacterDisplayMode();
   });
-  ipcMain.handle(IPC_CHANNELS.setCharacterDisplayMode, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setCharacterDisplayMode, async (event, input: unknown) => {
     return applyCharacterDisplayMode(parseSetCharacterDisplayModeInput(input).mode);
   });
 
-  ipcMain.handle(IPC_CHANNELS.listModelProviders, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.listModelProviders, (event) => {
     return models.listProviders();
   });
-  ipcMain.handle(IPC_CHANNELS.getProviderConfiguration, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getProviderConfiguration, async (event) => {
     return models.getConfiguration();
   });
-  ipcMain.handle(IPC_CHANNELS.setProviderConfiguration, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setProviderConfiguration, (event, input: unknown) => {
     return runModelOperation(() => models.setConfiguration(parseProviderConfiguration(input)));
   });
-  ipcMain.handle(IPC_CHANNELS.getProviderSecretStatus, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getProviderSecretStatus, async (event) => {
     return models.getSecretStatus();
   });
-  ipcMain.handle(IPC_CHANNELS.setProviderSecret, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setProviderSecret, (event, input: unknown) => {
     return runModelOperation(() => {
       const parsed = parseSetProviderSecretInput(input);
       return models.setSecret(parsed.providerId, parsed.apiKey);
     });
   });
-  ipcMain.handle(IPC_CHANNELS.deleteProviderSecret, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.deleteProviderSecret, (event, input: unknown) => {
     return runModelOperation(() => {
       const parsed = parseDeleteProviderSecretInput(input);
       return models.deleteSecret(parsed.providerId);
     });
   });
-  ipcMain.handle(IPC_CHANNELS.testProviderConnection, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.testProviderConnection, (event, input: unknown) => {
     return models.testConnection(parseTestProviderConnectionInput(input));
   });
-  ipcMain.handle(IPC_CHANNELS.cancelProviderRequest, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.cancelProviderRequest, (event, input: unknown) => {
     return models.cancel(parseCancelProviderRequestInput(input).requestId);
   });
 
-  ipcMain.handle(IPC_CHANNELS.getConversationConfiguration, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getConversationConfiguration, async (event) => {
     return models.getConversationConfiguration();
   });
-  ipcMain.handle(IPC_CHANNELS.setConversationConfiguration, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setConversationConfiguration, (event, input: unknown) => {
     return runModelOperation(() =>
       models.setConversationConfiguration(parseConversationConfiguration(input)),
     );
   });
-  ipcMain.handle(IPC_CHANNELS.getCharacterProfile, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getCharacterProfile, async (event) => {
     return profiles.get();
   });
-  ipcMain.handle(IPC_CHANNELS.setCharacterProfile, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setCharacterProfile, (event, input: unknown) => {
     return runModelOperation(() =>
       conversations.setCharacterProfile(parseCharacterProfileInput(input)),
     );
   });
-  ipcMain.handle(IPC_CHANNELS.getConversationHistory, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getConversationHistory, async (event) => {
     return conversations.listHistory();
   });
-  ipcMain.handle(IPC_CHANNELS.clearConversationHistory, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.clearConversationHistory, (event) => {
     return runModelOperation(() => conversations.clearHistory());
   });
-  ipcMain.handle(IPC_CHANNELS.generateContextualOpeningLine, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.generateContextualOpeningLine, (event) => {
     return conversations.generateContextualOpeningLine();
   });
-  ipcMain.handle(IPC_CHANNELS.startConversation, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.startConversation, (event, input: unknown) => {
     const sender = event.sender;
     return conversations.start(parseStartConversationInput(input), (conversationEvent) => {
       const window = windows.getWindow();
@@ -358,12 +409,10 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.cancelConversation, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.cancelConversation, (event, input: unknown) => {
     return conversations.cancel(parseCancelConversationInput(input).requestId);
   });
-  ipcMain.handle(IPC_CHANNELS.getAssistantToolStatus, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getAssistantToolStatus, (event) => {
     return (
       assistantTools?.getStatus() ?? {
         workspaceConfigured: false,
@@ -371,8 +420,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.selectAssistantWorkspace, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.selectAssistantWorkspace, async (event) => {
     if (!assistantTools) {
       return { workspaceConfigured: false, webAvailable: false, canceled: true };
     }
@@ -389,23 +437,20 @@ export const registerIpcHandlers = (
     await assistantTools.setWorkspace(selected);
     return { ...(await assistantTools.getStatus()), canceled: false };
   });
-  ipcMain.handle(IPC_CHANNELS.importDroppedWorkspaceFiles, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.importDroppedWorkspaceFiles, async (event, input: unknown) => {
     if (!assistantTools) {
       return { ok: false, imported: [], message: '工作区文件服务不可用。' };
     }
     return assistantTools.importDroppedFiles(parseImportDroppedWorkspaceFilesInput(input));
   });
-  ipcMain.handle(IPC_CHANNELS.resolveAssistantToolApproval, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.resolveAssistantToolApproval, (event, input: unknown) => {
     const parsed = parseResolveAssistantToolApprovalInput(input);
     return conversations.resolveToolApproval(parsed.requestId, parsed.approvalId, parsed.approved);
   });
 
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.searchCharacters,
     async (event, input: unknown): Promise<CharacterSearchResult> => {
-      requireTrustedSender(event, windows);
       try {
         const parsed = parseSearchCharactersInput(input);
         return {
@@ -421,10 +466,9 @@ export const registerIpcHandlers = (
       }
     },
   );
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.buildCharacterDraft,
     async (event, input: unknown): Promise<CharacterDraftResult> => {
-      requireTrustedSender(event, windows);
       try {
         const parsed = parseBuildCharacterDraftInput(input);
         return {
@@ -436,16 +480,13 @@ export const registerIpcHandlers = (
       }
     },
   );
-  ipcMain.handle(IPC_CHANNELS.cancelCharacterResearch, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.cancelCharacterResearch, (event, input: unknown) => {
     return characterResearch.cancel(parseCancelCharacterResearchInput(input).requestId);
   });
-  ipcMain.handle(IPC_CHANNELS.listCharacters, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.listCharacters, (event) => {
     return characterPackages?.list() ?? [];
   });
-  ipcMain.handle(IPC_CHANNELS.createLocalCharacter, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.createLocalCharacter, (event, input: unknown) => {
     return runModelOperation(async () => {
       const { name } = parseCreateLocalCharacterInput(input);
       const suffix = randomUUID().replaceAll('-', '').slice(0, 16);
@@ -459,17 +500,15 @@ export const registerIpcHandlers = (
       await profiles.activate(`local-${suffix}`);
     }, '本地角色创建失败。');
   });
-  ipcMain.handle(IPC_CHANNELS.clearInactiveCharacters, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.clearInactiveCharacters, (event) => {
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
       await characterPackages.clearInactive();
     }, '角色库无法清空，当前角色和已有资料均已保留。');
   });
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.previewCharacterPackage,
     async (event): Promise<CharacterPackageFileResult> => {
-      requireTrustedSender(event, windows);
       if (!characterPackages) {
         return { ok: false, canceled: false, message: '角色包服务不可用。' };
       }
@@ -496,10 +535,9 @@ export const registerIpcHandlers = (
       }
     },
   );
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.confirmCharacterPackageImport,
     async (event, input: unknown): Promise<CharacterPackageFileResult> => {
-      requireTrustedSender(event, windows);
       if (!characterPackages) {
         return { ok: false, canceled: false, message: '角色包服务不可用。' };
       }
@@ -516,10 +554,9 @@ export const registerIpcHandlers = (
       }
     },
   );
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.exportActiveCharacterPackage,
     async (event): Promise<CharacterPackageFileResult> => {
-      requireTrustedSender(event, windows);
       if (!characterPackages) {
         return { ok: false, canceled: false, message: '角色包服务不可用。' };
       }
@@ -546,31 +583,27 @@ export const registerIpcHandlers = (
       }
     },
   );
-  ipcMain.handle(IPC_CHANNELS.activateCharacter, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.activateCharacter, (event, input: unknown) => {
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
       conversations.cancelOpeningLine();
       await characterPackages.activate(parseCharacterIdInput(input).characterId);
     }, '角色切换失败。');
   });
-  ipcMain.handle(IPC_CHANNELS.removeCharacter, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.removeCharacter, (event, input: unknown) => {
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
       conversations.cancelOpeningLine();
       await characterPackages.remove(parseCharacterIdInput(input).characterId);
     }, '角色删除失败。');
   });
-  ipcMain.handle(IPC_CHANNELS.getActiveCharacterModelManifest, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getActiveCharacterModelManifest, async (event) => {
     return (
       (await live2DModelImports?.getActiveModelManifest()) ??
       (await characterPackages?.getActiveModelManifest())
     );
   });
-  ipcMain.handle(IPC_CHANNELS.importLive2DModel, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.importLive2DModel, async (event) => {
     if (!live2DModelImports) {
       return { ok: false, canceled: false, message: 'Live2D 模型导入服务不可用。' } as const;
     }
@@ -593,8 +626,7 @@ export const registerIpcHandlers = (
       } as const;
     }
   });
-  ipcMain.handle(IPC_CHANNELS.exportActiveLive2DModel, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.exportActiveLive2DModel, async (event) => {
     if (!live2DModelImports) {
       return { ok: false, canceled: false, message: 'Live2D 模型导出服务不可用。' } as const;
     }
@@ -622,38 +654,31 @@ export const registerIpcHandlers = (
       } as const;
     }
   });
-  ipcMain.handle(IPC_CHANNELS.getWorkGlossaryStatus, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getWorkGlossaryStatus, (event, input: unknown) => {
     return workGlossary.getStatus(parseWorkGlossaryInput(input).sourceWork);
   });
-  ipcMain.handle(IPC_CHANNELS.syncWorkGlossary, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.syncWorkGlossary, (event, input: unknown) => {
     return workGlossary.sync(parseWorkGlossaryInput(input).sourceWork);
   });
 
-  ipcMain.handle(IPC_CHANNELS.getMemorySettings, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getMemorySettings, (event) => {
     return memories.getSettings();
   });
-  ipcMain.handle(IPC_CHANNELS.setMemorySettings, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setMemorySettings, (event, input: unknown) => {
     return runMemoryOperation(() => {
       const parsed = parseSetMemorySettingsInput(input);
       return memories.setSettings(parsed);
     });
   });
-  ipcMain.handle(IPC_CHANNELS.listMemories, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.listMemories, async (event) => {
     const profile = await profiles.get();
     return memories.list(profile.memoryNamespace);
   });
-  ipcMain.handle(IPC_CHANNELS.listMemoryCandidates, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.listMemoryCandidates, async (event) => {
     const profile = await profiles.get();
     return memories.listCandidates(profile.memoryNamespace);
   });
-  ipcMain.handle(IPC_CHANNELS.updateMemoryCandidate, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.updateMemoryCandidate, async (event, input: unknown) => {
     const parsed = parseUpdateMemoryCandidateInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
@@ -662,8 +687,7 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.mergeMemoryCandidates, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.mergeMemoryCandidates, async (event, input: unknown) => {
     const parsed = parseMergeMemoryCandidatesInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
@@ -672,8 +696,7 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.confirmMemoryCandidate, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.confirmMemoryCandidate, async (event, input: unknown) => {
     const { id, conflictResolution } = parseConfirmMemoryCandidateInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
@@ -682,8 +705,7 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.rejectMemoryCandidate, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.rejectMemoryCandidate, async (event, input: unknown) => {
     const { id } = parseMemoryIdInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
@@ -692,8 +714,7 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.updateMemory, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.updateMemory, async (event, input: unknown) => {
     const parsed = parseUpdateMemoryInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
@@ -702,8 +723,7 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.deleteMemory, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.deleteMemory, async (event, input: unknown) => {
     const { id } = parseMemoryIdInput(input);
     const profile = await profiles.get();
     return runMemoryOperation(() => {
@@ -712,15 +732,13 @@ export const registerIpcHandlers = (
       }
     });
   });
-  ipcMain.handle(IPC_CHANNELS.clearMemories, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.clearMemories, async (event) => {
     const profile = await profiles.get();
     return runMemoryOperation(() => {
       memories.clear(profile.memoryNamespace);
     });
   });
-  ipcMain.handle(IPC_CHANNELS.exportMemories, async (event): Promise<MemoryFileOperationResult> => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.exportMemories, async (event): Promise<MemoryFileOperationResult> => {
     const result = await showSaveDialog(windows, {
       title: '导出 For People No Friend 记忆',
       defaultPath: path.join(app.getPath('documents'), 'for-people-no-friend-memories.json'),
@@ -741,8 +759,7 @@ export const registerIpcHandlers = (
       return { ok: false, canceled: false, message: '记忆 JSON 导出失败。' };
     }
   });
-  ipcMain.handle(IPC_CHANNELS.backupMemory, async (event): Promise<MemoryFileOperationResult> => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.backupMemory, async (event): Promise<MemoryFileOperationResult> => {
     const result = await showSaveDialog(windows, {
       title: '备份 For People No Friend 本地数据库',
       defaultPath: path.join(app.getPath('documents'), 'for-people-no-friend-memory-backup.sqlite'),
@@ -755,37 +772,35 @@ export const registerIpcHandlers = (
       await memories.backup(result.filePath);
       return { ok: true, canceled: false };
     } catch {
-      return { ok: false, canceled: false, message: 'SQLite 数据库备份失败。' };
+      return {
+        ok: false,
+        canceled: false,
+        message: '当前运行环境不支持数据库备份，或备份文件无法写入。',
+      };
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.getWindowScale, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getWindowScale, (event) => {
     return windows.getScale();
   });
-  ipcMain.handle(IPC_CHANNELS.setWindowScale, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setWindowScale, (event, input: unknown) => {
     return windows.setScale(parseSetWindowScaleInput(input).scale);
   });
-  ipcMain.handle(IPC_CHANNELS.setChatPanelExpanded, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setChatPanelExpanded, (event, input: unknown) => {
     const parsed = parseSetChatPanelExpandedInput(input);
     windows.setChatPanelExpanded(parsed.expanded, parsed.view === 'settings');
   });
-  ipcMain.handle(IPC_CHANNELS.getDesktopLayoutSettings, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getDesktopLayoutSettings, async (event) => {
     return desktopLayout?.get() ?? { ...DEFAULT_DESKTOP_LAYOUT_SETTINGS };
   });
-  ipcMain.handle(IPC_CHANNELS.setDesktopLayoutSettings, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setDesktopLayoutSettings, async (event, input: unknown) => {
     const { settings } = parseSetDesktopLayoutSettingsInput(input);
     await desktopLayout?.set(settings);
     return settings;
   });
-  ipcMain.handle(
+  handle(
     IPC_CHANNELS.getDesktopIntegrationStatus,
     async (event): Promise<DesktopIntegrationStatus> => {
-      requireTrustedSender(event, windows);
       return desktopIntegrations
         ? desktopIntegrations.getStatus()
         : {
@@ -806,22 +821,18 @@ export const registerIpcHandlers = (
           };
     },
   );
-  ipcMain.handle(IPC_CHANNELS.setDesktopIntegrationSettings, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setDesktopIntegrationSettings, async (event, input: unknown) => {
     const { settings } = parseSetDesktopIntegrationSettingsInput(input);
     await desktopIntegrations?.setSettings(settings);
   });
-  ipcMain.handle(IPC_CHANNELS.setDesktopWidgetEnabled, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setDesktopWidgetEnabled, async (event, input: unknown) => {
     const { widgetId, enabled } = parseSetDesktopWidgetEnabledInput(input);
     await desktopIntegrations?.setWidgetEnabled(widgetId, enabled);
   });
-  ipcMain.handle(IPC_CHANNELS.sendMediaCommand, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.sendMediaCommand, (event, input: unknown) => {
     return desktopIntegrations?.sendMediaCommand(parseMediaCommandInput(input).command) ?? false;
   });
-  ipcMain.handle(IPC_CHANNELS.getSpeechStatus, async (event): Promise<SpeechStatus> => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getSpeechStatus, async (event): Promise<SpeechStatus> => {
     return speech
       ? speech.getStatus()
       : {
@@ -846,8 +857,7 @@ export const registerIpcHandlers = (
           },
         };
   });
-  ipcMain.handle(IPC_CHANNELS.setSpeechSettings, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setSpeechSettings, async (event, input: unknown) => {
     const { settings } = parseSetSpeechSettingsInput(input);
     const result = await (speech?.setSettings(settings) ??
       Promise.resolve({ ok: false as const, message: '语音服务不可用。' }));
@@ -860,17 +870,14 @@ export const registerIpcHandlers = (
     }
     return result;
   });
-  ipcMain.handle(IPC_CHANNELS.setSpeechSecret, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setSpeechSecret, (event, input: unknown) => {
     const { apiKey } = parseSetSpeechSecretInput(input);
     return speech?.setSecret(apiKey) ?? { ok: false, message: '语音服务不可用。' };
   });
-  ipcMain.handle(IPC_CHANNELS.deleteSpeechSecret, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.deleteSpeechSecret, (event) => {
     return speech?.deleteSecret() ?? { ok: false, message: '语音服务不可用。' };
   });
-  ipcMain.handle(IPC_CHANNELS.synthesizeSpeech, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.synthesizeSpeech, (event, input: unknown) => {
     const parsed = parseSpeechSynthesisInput(input);
     return (
       speech?.synthesize(parsed) ?? {
@@ -881,8 +888,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.transcribeSpeech, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.transcribeSpeech, (event, input: unknown) => {
     const parsed = parseSpeechTranscriptionInput(input);
     return (
       speech?.transcribe(parsed) ?? {
@@ -893,12 +899,10 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.cancelSpeech, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.cancelSpeech, (event, input: unknown) => {
     return speech?.cancel(parseCancelSpeechInput(input).requestId) ?? false;
   });
-  ipcMain.handle(IPC_CHANNELS.getLocalSpeechAssetStatus, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getLocalSpeechAssetStatus, async (event) => {
     return (
       (await localSpeechAssets?.getStatus()) ?? {
         voiceName: '本地音色',
@@ -911,35 +915,54 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(
-    IPC_CHANNELS.exportLocalVoice,
-    async (event): Promise<LocalAssetOperationResult> => {
-      requireTrustedSender(event, windows);
-      if (!localSpeechAssets) {
-        return { ok: false, canceled: false, message: '本地音色导出服务不可用。' };
+  handle(IPC_CHANNELS.getSpeechAssetDownloadStatus, async () => {
+    return (
+      (await speechAssetManager?.getStatus()) ?? {
+        sourceConfigured: false,
+        metered: false,
+        busy: false,
+        tiers: [],
+        message: '尚未配置语音资产下载源。',
       }
-      const selection = await showOpenDialog(windows, {
-        title: '选择音色导出位置',
-        buttonLabel: '导出到这里',
-        properties: ['openDirectory', 'createDirectory'],
-      });
-      if (selection.canceled || !selection.filePaths[0]) return { ok: true, canceled: true };
-      try {
-        const exported = await localSpeechAssets.exportVoice(selection.filePaths[0]);
-        return {
-          ok: true,
-          canceled: false,
-          message: `已导出到“${exported.directoryName}”（${exported.fileCount} 个文件，约 ${Math.ceil(exported.exportedBytes / 1024 / 1024)} MiB）。`,
-        };
-      } catch (error) {
-        return {
-          ok: false,
-          canceled: false,
-          message: error instanceof Error ? error.message : '本地音色导出失败。',
-        };
+    );
+  });
+  handle(IPC_CHANNELS.controlSpeechAssetDownload, async (event, input: unknown) => {
+    const parsed = parseSpeechAssetControlInput(input);
+    return (
+      (await speechAssetManager?.control(parsed)) ?? {
+        sourceConfigured: false,
+        metered: false,
+        busy: false,
+        tiers: [],
+        message: '尚未配置语音资产下载源。',
       }
-    },
-  );
+    );
+  });
+  handle(IPC_CHANNELS.exportLocalVoice, async (event): Promise<LocalAssetOperationResult> => {
+    if (!localSpeechAssets) {
+      return { ok: false, canceled: false, message: '本地音色导出服务不可用。' };
+    }
+    const selection = await showOpenDialog(windows, {
+      title: '选择音色导出位置',
+      buttonLabel: '导出到这里',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (selection.canceled || !selection.filePaths[0]) return { ok: true, canceled: true };
+    try {
+      const exported = await localSpeechAssets.exportVoice(selection.filePaths[0]);
+      return {
+        ok: true,
+        canceled: false,
+        message: `已导出到“${exported.directoryName}”（${exported.fileCount} 个文件，约 ${Math.ceil(exported.exportedBytes / 1024 / 1024)} MiB）。`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        canceled: false,
+        message: error instanceof Error ? error.message : '本地音色导出失败。',
+      };
+    }
+  });
   const openSpeechAsset = async (
     resolvePath: () => string,
     unavailableMessage: string,
@@ -957,23 +980,19 @@ export const registerIpcHandlers = (
       };
     }
   };
-  ipcMain.handle(IPC_CHANNELS.openSpeechTrainingSources, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.openSpeechTrainingSources, (event) => {
     return openSpeechAsset(
       () => localSpeechAssets!.getTrainingSourcePath(),
       '训练音源文件夹不可用。',
     );
   });
-  ipcMain.handle(IPC_CHANNELS.launchSpeechTrainer, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.launchSpeechTrainer, (event) => {
     return openSpeechAsset(() => localSpeechAssets!.getTrainerPath(), '本地训练工具不可用。');
   });
-  ipcMain.handle(IPC_CHANNELS.getViewerExStatus, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getViewerExStatus, (event) => {
     return viewerEx?.getStatus();
   });
-  ipcMain.handle(IPC_CHANNELS.setViewerExSettings, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setViewerExSettings, async (event, input: unknown) => {
     const { settings } = parseSetViewerExSettingsInput(input);
     const mode = await resolveCharacterDisplayMode();
     return (
@@ -983,12 +1002,10 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.presentInViewerEx, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.presentInViewerEx, (event, input: unknown) => {
     return viewerEx?.present(parseViewerExPresentationInput(input)) ?? false;
   });
-  ipcMain.handle(IPC_CHANNELS.getVTubeStudioStatus, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.getVTubeStudioStatus, async (event) => {
     const status = await vTubeStudio?.getStatus();
     return status
       ? {
@@ -997,8 +1014,7 @@ export const registerIpcHandlers = (
         }
       : undefined;
   });
-  ipcMain.handle(IPC_CHANNELS.launchVTubeStudio, async (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.launchVTubeStudio, async (event) => {
     try {
       await shell.openExternal('steam://rungameid/1325860');
       return { ok: true, message: '已请求 Steam 启动 VTube Studio。' };
@@ -1006,8 +1022,7 @@ export const registerIpcHandlers = (
       return { ok: false, message: '无法通过 Steam 启动 VTube Studio，请确认已安装 Steam。' };
     }
   });
-  ipcMain.handle(IPC_CHANNELS.installBundledVTubeStudioModel, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.installBundledVTubeStudioModel, (event) => {
     return (
       bundledVTubeModel?.install() ?? {
         ok: false,
@@ -1015,8 +1030,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.setVTubeStudioSettings, async (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.setVTubeStudioSettings, async (event, input: unknown) => {
     const { settings } = parseSetVTubeStudioSettingsInput(input);
     const mode = await resolveCharacterDisplayMode();
     return (
@@ -1026,8 +1040,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.authorizeVTubeStudio, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.authorizeVTubeStudio, (event) => {
     return (
       vTubeStudio?.authorize() ?? {
         ok: false,
@@ -1035,8 +1048,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.inspectVTubeStudio, (event) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.inspectVTubeStudio, (event) => {
     return (
       vTubeStudio?.inspect() ?? {
         ok: false,
@@ -1044,8 +1056,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.previewVTubeStudioExpression, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.previewVTubeStudioExpression, (event, input: unknown) => {
     return (
       vTubeStudio?.previewExpression(parseVTubeStudioExpressionPreviewInput(input)) ?? {
         ok: false,
@@ -1053,8 +1064,7 @@ export const registerIpcHandlers = (
       }
     );
   });
-  ipcMain.handle(IPC_CHANNELS.presentInVTubeStudio, (event, input: unknown) => {
-    requireTrustedSender(event, windows);
+  handle(IPC_CHANNELS.presentInVTubeStudio, (event, input: unknown) => {
     return (
       vTubeStudio?.present(parseVTubeStudioPresentationInput(input)) ?? {
         ok: false,

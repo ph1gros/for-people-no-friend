@@ -7,9 +7,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  BundledSpeechInputRuntime,
   BundledSpeechRuntime,
-  resolveBundledSpeechInputRuntimeCandidate,
   resolveBundledSpeechRuntimeSources,
 } from '../src/main/speech/bundled-speech-runtime';
 
@@ -42,21 +40,27 @@ describe('bundled speech runtime', () => {
     expect(source).toContain('@app.get("/ready")');
   });
 
-  it('adds the explicit private development runtime without weakening packaged lookup', () => {
+  it('prefers downloaded user assets without removing packaged or development fallbacks', () => {
     expect(
       resolveBundledSpeechRuntimeSources({
         appPath: 'C:\\workspace',
         resourcesPath: 'C:\\electron-resources',
+        userDataPath: 'C:\\user-data',
         packaged: true,
       }),
-    ).toEqual(['C:\\electron-resources\\voice-runtime']);
+    ).toEqual([
+      { runtimeRoot: 'C:\\user-data\\speech-assets\\voice-runtime', downloadedAsset: true },
+      'C:\\electron-resources\\voice-runtime',
+    ]);
     expect(
       resolveBundledSpeechRuntimeSources({
         appPath: 'C:\\workspace',
         resourcesPath: 'C:\\electron-resources',
+        userDataPath: 'C:\\user-data',
         packaged: false,
       }),
     ).toEqual([
+      { runtimeRoot: 'C:\\user-data\\speech-assets\\voice-runtime', downloadedAsset: true },
       'C:\\electron-resources\\voice-runtime',
       {
         runtimeRoot: 'C:\\workspace\\data\\v1.6-portable-voice-runtime',
@@ -65,41 +69,23 @@ describe('bundled speech runtime', () => {
     ]);
   });
 
-  it('uses an independent packaged ASR runtime instead of the larger TTS environment', () => {
-    expect(
-      resolveBundledSpeechInputRuntimeCandidate({
-        appPath: 'C:\\workspace',
-        resourcesPath: 'C:\\electron-resources',
+  it('does not reuse unverified downloaded executables left by an older build', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'fpnf-legacy-speech-'));
+    const downloaded = path.join(directory, 'speech-assets', 'voice-runtime');
+    for (const relativePath of requiredFiles) {
+      const destination = path.join(downloaded, relativePath);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await writeFile(destination, 'fake');
+    }
+    const runtime = new BundledSpeechRuntime(
+      resolveBundledSpeechRuntimeSources({
+        appPath: directory,
+        resourcesPath: path.join(directory, 'resources'),
+        userDataPath: directory,
         packaged: true,
       }),
-    ).toEqual({
-      pythonRoot: 'C:\\electron-resources\\speech-input-runtime\\python',
-      assetRoot: 'C:\\electron-resources\\speech-input-runtime',
-      serviceRoot: 'C:\\electron-resources\\speech-input-runtime',
-    });
-    expect(
-      resolveBundledSpeechInputRuntimeCandidate({
-        appPath: 'C:\\workspace',
-        resourcesPath: 'C:\\electron-resources',
-        packaged: false,
-      }),
-    ).toEqual({
-      pythonRoot: 'C:\\workspace\\data\\sensevoice-sherpa-runtime\\python',
-      assetRoot: 'C:\\workspace\\data\\sensevoice-sherpa-runtime',
-      serviceRoot: 'C:\\workspace\\resources\\speech-input-runtime',
-    });
-  });
-
-  it('uses the bounded sherpa-onnx INT8 service without FunASR or PyTorch', async () => {
-    const source = await readFile(
-      path.join(process.cwd(), 'resources', 'speech-input-runtime', 'sensevoice_asr_service.py'),
-      'utf8',
     );
-    expect(source).toContain('import sherpa_onnx');
-    expect(source).toContain('OfflineRecognizer.from_sense_voice(');
-    expect(source).toContain('model.int8.onnx');
-    expect(source).not.toContain('from funasr import AutoModel');
-    expect(source).not.toContain('model.pt');
+    await expect(runtime.resolveAvailableRoot()).resolves.toBeUndefined();
   });
 
   it('starts only the fixed bundled executable and local-only arguments', async () => {
@@ -154,7 +140,11 @@ describe('bundled speech runtime', () => {
         cwd: canonicalDirectory,
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'pipe'],
-        env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1', NO_PROXY: '127.0.0.1,localhost' },
+        env: {
+          ...process.env,
+          PYTHONDONTWRITEBYTECODE: '1',
+          NO_PROXY: '127.0.0.1,localhost',
+        },
       },
     );
     expect(fetchHealth).toHaveBeenCalledWith(
@@ -291,76 +281,6 @@ describe('bundled speech runtime', () => {
         cwd: canonicalServiceRoot,
         env: expect.objectContaining({
           FPNF_BUNDLED_VOICE_ROOT: path.join(canonicalRuntimeRoot, 'voice', 'ireina'),
-        }),
-      }),
-    );
-    runtime.dispose();
-  });
-
-  it('starts the fixed local SenseVoice service with explicit private development assets', async () => {
-    directory = await mkdtemp(path.join(os.tmpdir(), 'fpnf-speech-input-runtime-'));
-    const pythonRoot = path.join(directory, 'python-runtime');
-    const assetRoot = path.join(directory, 'private-asr-assets');
-    const serviceRoot = path.join(directory, 'maintained-service');
-    const pythonExecutable = path.join(pythonRoot, 'python.exe');
-    for (const file of [
-      pythonExecutable,
-      path.join(pythonRoot, 'Lib', 'site-packages', 'sherpa_onnx', '__init__.py'),
-      path.join(assetRoot, 'models', 'sensevoice', 'model.int8.onnx'),
-      path.join(assetRoot, 'models', 'sensevoice', 'tokens.txt'),
-      path.join(serviceRoot, 'sensevoice_asr_service.py'),
-    ]) {
-      await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, 'fake');
-    }
-    const canonicalPythonRoot = await realpath(pythonRoot);
-    const canonicalAssetRoot = await realpath(assetRoot);
-    const canonicalServiceRoot = await realpath(serviceRoot);
-    let checks = 0;
-    const fetchHealth = vi.fn(async () => {
-      checks += 1;
-      return new Response(
-        JSON.stringify({ status: 'ready', model: 'SenseVoiceSmall', provider: 'sherpa-onnx-cpu' }),
-        {
-          status: checks > 1 ? 200 : 503,
-          headers: { 'content-type': 'application/json' },
-        },
-      );
-    });
-    const child = Object.assign(new EventEmitter(), {
-      exitCode: null as number | null,
-      killed: false,
-      kill: vi.fn(() => true),
-      stderr: new PassThrough(),
-    });
-    const spawnRuntime = vi.fn(() => child as never);
-    const runtime = new BundledSpeechInputRuntime(
-      { pythonRoot, assetRoot, serviceRoot },
-      fetchHealth,
-      spawnRuntime,
-    );
-
-    await expect(runtime.ensureRunning()).resolves.toBe(true);
-    expect(spawnRuntime).toHaveBeenCalledWith(
-      path.join(canonicalPythonRoot, 'python.exe'),
-      [
-        '-m',
-        'uvicorn',
-        '--app-dir',
-        canonicalServiceRoot,
-        'sensevoice_asr_service:app',
-        '--host',
-        '127.0.0.1',
-        '--port',
-        '9880',
-        '--log-level',
-        'warning',
-      ],
-      expect.objectContaining({
-        cwd: canonicalServiceRoot,
-        env: expect.objectContaining({
-          FPNF_ASR_MODEL_ROOT: path.join(canonicalAssetRoot, 'models', 'sensevoice'),
-          FPNF_ASR_TEMP_ROOT: path.join(canonicalAssetRoot, 'tmp'),
         }),
       }),
     );

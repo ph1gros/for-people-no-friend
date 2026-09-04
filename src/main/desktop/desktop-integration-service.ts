@@ -7,6 +7,7 @@ import type {
   InputOverlayKey,
 } from '../../shared/desktop-integration-ipc';
 import type { DesktopIntegrationStore } from '../storage/desktop-integration-store';
+import type { SafeDiagnosticSink } from '../diagnostics/safe-diagnostic-log';
 
 export interface GlobalShortcutAdapter {
   register(accelerator: string, callback: () => void): boolean;
@@ -62,12 +63,17 @@ export class DesktopIntegrationService {
     private readonly inputActivity: InputActivityMonitorAdapter = unsupportedInputActivity,
     private readonly emitInputActivity: (event: DesktopInputActivityEvent) => void = () =>
       undefined,
+    private readonly diagnostics?: SafeDiagnosticSink,
   ) {}
 
   public async initialize(): Promise<void> {
-    this.settings = await this.store.get();
-    this.applyShortcut();
-    await this.applyInputOverlay();
+    try {
+      this.settings = await this.store.get();
+      this.applyShortcut();
+      await this.applyInputOverlay();
+    } catch {
+      this.diagnostics?.('desktop-integration-start-failed');
+    }
   }
 
   public async getStatus(): Promise<DesktopIntegrationStatus> {
@@ -177,6 +183,7 @@ export class DesktopIntegrationService {
       if (registered) this.registeredShortcuts.add(accelerator);
       return registered;
     } catch {
+      this.diagnostics?.('desktop-integration-configuration-failed');
       return false;
     }
   }
@@ -207,7 +214,10 @@ export class DesktopIntegrationService {
         },
         this.emitInputActivity,
       )
-      .catch(() => false);
+      .catch(() => {
+        this.diagnostics?.('desktop-integration-configuration-failed');
+        return false;
+      });
     this.inputOverlayActive = this.settings.inputOverlayEnabled && monitorActive;
   }
 }

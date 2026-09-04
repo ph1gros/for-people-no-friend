@@ -1,8 +1,21 @@
 import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
 export type ProjectCheck = 'test' | 'lint' | 'typecheck' | 'build';
+
+export interface ProjectCheckPlan {
+  check: ProjectCheck;
+  manager: 'pnpm' | 'npm' | 'yarn';
+  fingerprint: string;
+  scripts: Array<{ name: string; command: string }>;
+}
+
+export interface ProjectCheckRunner {
+  inspect(root: string, check: ProjectCheck): Promise<ProjectCheckPlan>;
+  run(root: string, plan: ProjectCheckPlan, signal?: AbortSignal): Promise<string>;
+}
 
 type ExecFileResult = { stdout: string; stderr: string; exitCode: number | null };
 type ExecFileImplementation = (
@@ -85,53 +98,85 @@ const fileExists = async (target: string): Promise<boolean> => {
   }
 };
 
+const inspectProjectCheck = async (
+  root: string,
+  check: ProjectCheck,
+): Promise<ProjectCheckPlan> => {
+  const realRoot = await realpath(root);
+  const packagePath = path.join(realRoot, 'package.json');
+  const packageInfo = await lstat(packagePath);
+  if (
+    packageInfo.isSymbolicLink() ||
+    !packageInfo.isFile() ||
+    packageInfo.size > MAX_PACKAGE_BYTES
+  ) {
+    throw new Error('工作区根目录没有可安全读取的 package.json。');
+  }
+  const realPackagePath = await realpath(packagePath);
+  if (isOutside(realRoot, realPackagePath)) throw new Error('package.json 超出工作区。');
+  const parsed = JSON.parse(await readFile(realPackagePath, 'utf8')) as unknown;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('package.json 格式无效。');
+  }
+  const scripts = 'scripts' in parsed ? parsed.scripts : undefined;
+  if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) {
+    throw new Error('package.json 没有 scripts。');
+  }
+  const scriptRecord = scripts as Record<string, unknown>;
+  const script = check in scriptRecord ? scriptRecord[check] : undefined;
+  if (typeof script !== 'string' || !script.trim()) {
+    throw new Error(`package.json 没有 ${check} 脚本。`);
+  }
+
+  const selectedScripts: ProjectCheckPlan['scripts'] = [];
+  for (const name of [`pre${check}`, check, `post${check}`]) {
+    const command = scriptRecord[name];
+    if (command === undefined) continue;
+    if (typeof command !== 'string' || !command.trim()) {
+      throw new Error(`package.json 的 ${name} 脚本无效。`);
+    }
+    selectedScripts.push({ name, command: command.trim() });
+  }
+
+  const pnpmLock = path.join(realRoot, 'pnpm-lock.yaml');
+  const npmLock = path.join(realRoot, 'package-lock.json');
+  const yarnLock = path.join(realRoot, 'yarn.lock');
+  let manager: ProjectCheckPlan['manager'];
+  if (await fileExists(pnpmLock)) manager = 'pnpm';
+  else if (await fileExists(npmLock)) manager = 'npm';
+  else if (await fileExists(yarnLock)) manager = 'yarn';
+  else throw new Error('未找到受支持的包管理器锁文件。');
+
+  return {
+    check,
+    manager,
+    scripts: selectedScripts,
+    fingerprint: createHash('sha256')
+      .update(JSON.stringify({ check, manager, scripts: selectedScripts }), 'utf8')
+      .digest('hex'),
+  };
+};
+
 export const createProjectCheckRunner = (
   execute: ExecFileImplementation = defaultExecFile,
-): ((root: string, check: ProjectCheck, signal?: AbortSignal) => Promise<string>) => {
-  return async (root, check, signal) => {
+): ProjectCheckRunner => ({
+  inspect: inspectProjectCheck,
+  run: async (root, plan, signal) => {
+    const approvedPlan = await inspectProjectCheck(root, plan.check);
+    if (approvedPlan.fingerprint !== plan.fingerprint) {
+      throw new Error('package.json 的项目检查脚本已变化，请重新确认。');
+    }
     const realRoot = await realpath(root);
-    const packagePath = path.join(realRoot, 'package.json');
-    const packageInfo = await lstat(packagePath);
-    if (
-      packageInfo.isSymbolicLink() ||
-      !packageInfo.isFile() ||
-      packageInfo.size > MAX_PACKAGE_BYTES
-    ) {
-      throw new Error('工作区根目录没有可安全读取的 package.json。');
-    }
-    const realPackagePath = await realpath(packagePath);
-    if (isOutside(realRoot, realPackagePath)) throw new Error('package.json 超出工作区。');
-    const parsed = JSON.parse(await readFile(realPackagePath, 'utf8')) as unknown;
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('package.json 格式无效。');
-    }
-    const scripts = 'scripts' in parsed ? parsed.scripts : undefined;
-    if (!scripts || typeof scripts !== 'object' || Array.isArray(scripts)) {
-      throw new Error('package.json 没有 scripts。');
-    }
-    const script = check in scripts ? (scripts as Record<string, unknown>)[check] : undefined;
-    if (typeof script !== 'string' || !script.trim()) {
-      throw new Error(`package.json 没有 ${check} 脚本。`);
-    }
-
-    const pnpmLock = path.join(realRoot, 'pnpm-lock.yaml');
-    const npmLock = path.join(realRoot, 'package-lock.json');
-    const yarnLock = path.join(realRoot, 'yarn.lock');
-    let manager: 'pnpm' | 'npm' | 'yarn';
-    if (await fileExists(pnpmLock)) manager = 'pnpm';
-    else if (await fileExists(npmLock)) manager = 'npm';
-    else if (await fileExists(yarnLock)) manager = 'yarn';
-    else throw new Error('未找到受支持的包管理器锁文件。');
 
     const executable =
       process.platform === 'win32'
         ? (process.env.ComSpec ??
           path.join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'cmd.exe'))
-        : manager;
+        : plan.manager;
     const args =
       process.platform === 'win32'
-        ? ['/d', '/s', '/c', `${manager}.cmd`, 'run', check]
-        : ['run', check];
+        ? ['/d', '/s', '/c', `${plan.manager}.cmd`, 'run', plan.check]
+        : ['run', plan.check];
     const result = await execute(executable, args, {
       cwd: realRoot,
       env: safeChildEnvironment(),
@@ -141,7 +186,8 @@ export const createProjectCheckRunner = (
       windowsHide: true,
     });
     const output = [result.stdout.trim(), result.stderr.trim()].filter(Boolean).join('\n');
-    const summary = result.exitCode === 0 ? `${check} 检查通过。` : `${check} 检查未通过。`;
+    const summary =
+      result.exitCode === 0 ? `${plan.check} 检查通过。` : `${plan.check} 检查未通过。`;
     return `${summary}${output ? `\n${output.slice(0, MAX_CHECK_OUTPUT_CHARACTERS)}` : ''}`;
-  };
-};
+  },
+});

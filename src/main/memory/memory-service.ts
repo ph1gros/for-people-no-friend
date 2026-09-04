@@ -28,6 +28,7 @@ import type { MemoryIndexConfigStore } from '../storage/memory-index-config-stor
 import { MemoryStore } from '../storage/memory-store';
 import { Neo4jRelationshipMemoryIndex, QdrantMemoryIndex } from './external-memory-indexes';
 import { LocalEmbeddingMemoryIndex, LocalRelationshipMemoryIndex } from './local-memory-indexes';
+import type { SafeDiagnosticSink } from '../diagnostics/safe-diagnostic-log';
 
 const RECENT_MESSAGES_OUTSIDE_SUMMARY = 20;
 const INITIAL_SUMMARY_MESSAGES = 10;
@@ -149,6 +150,7 @@ export class MemoryService {
     private readonly indexConfiguration?: MemoryIndexConfigStore,
     private readonly secrets?: SecretStore,
     private readonly fetcher: typeof fetch = fetch,
+    private readonly diagnostics?: SafeDiagnosticSink,
   ) {
     this.store = new MemoryStore(database);
   }
@@ -178,20 +180,25 @@ export class MemoryService {
   }
 
   public async setSettings(settings: SetMemorySettingsInput): Promise<void> {
-    this.setAutomaticMemoryEnabled(settings.automaticMemoryEnabled);
-    if (this.indexConfiguration) {
-      await this.indexConfiguration.set({
-        semanticIndex: settings.semanticIndex ?? 'local',
-        relationshipIndex: settings.relationshipIndex ?? 'local',
-        qdrantUrl: settings.qdrantUrl ?? 'http://127.0.0.1:6333',
-        qdrantCollection: settings.qdrantCollection ?? 'deskpet_memories',
-        neo4jUrl: settings.neo4jUrl ?? 'http://127.0.0.1:7474',
-        neo4jDatabase: settings.neo4jDatabase ?? 'neo4j',
-        neo4jUsername: settings.neo4jUsername ?? 'neo4j',
-      });
+    try {
+      this.setAutomaticMemoryEnabled(settings.automaticMemoryEnabled);
+      if (this.indexConfiguration) {
+        await this.indexConfiguration.set({
+          semanticIndex: settings.semanticIndex ?? 'local',
+          relationshipIndex: settings.relationshipIndex ?? 'local',
+          qdrantUrl: settings.qdrantUrl ?? 'http://127.0.0.1:6333',
+          qdrantCollection: settings.qdrantCollection ?? 'deskpet_memories',
+          neo4jUrl: settings.neo4jUrl ?? 'http://127.0.0.1:7474',
+          neo4jDatabase: settings.neo4jDatabase ?? 'neo4j',
+          neo4jUsername: settings.neo4jUsername ?? 'neo4j',
+        });
+      }
+      if (settings.qdrantApiKey) await this.secrets?.set('qdrant-api-key', settings.qdrantApiKey);
+      if (settings.neo4jPassword) await this.secrets?.set('neo4j-password', settings.neo4jPassword);
+    } catch (error) {
+      this.diagnostics?.('memory-index-configuration-failed');
+      throw error;
     }
-    if (settings.qdrantApiKey) await this.secrets?.set('qdrant-api-key', settings.qdrantApiKey);
-    if (settings.neo4jPassword) await this.secrets?.set('neo4j-password', settings.neo4jPassword);
   }
 
   public list(namespace: string): MemoryRecord[] {
@@ -328,10 +335,14 @@ export class MemoryService {
           )
         : new LocalRelationshipMemoryIndex(records);
     if (semanticIndex instanceof QdrantMemoryIndex) {
-      await semanticIndex.sync(namespace, records).catch(() => undefined);
+      await semanticIndex.sync(namespace, records).catch(() => {
+        this.diagnostics?.('memory-index-start-failed');
+      });
     }
     if (relationshipIndex instanceof Neo4jRelationshipMemoryIndex) {
-      await relationshipIndex.sync(namespace, records).catch(() => undefined);
+      await relationshipIndex.sync(namespace, records).catch(() => {
+        this.diagnostics?.('memory-index-start-failed');
+      });
     }
     const matches = await retrieveHybridMemories({
       namespace,

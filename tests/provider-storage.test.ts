@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -57,6 +57,63 @@ describe('local provider storage', () => {
 
     await expect(store.set('anthropic', '')).rejects.toThrow(/unmasked/);
     await expect(store.set('anthropic', '********')).rejects.toThrow(/unmasked/);
+  });
+
+  it('serializes concurrent secret writes without losing entries', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-secret-test-'));
+    const store = new SecretStore(directory, new FakeEncryption());
+
+    await Promise.all(
+      Array.from({ length: 5 }, (_, index) => store.set(`provider-${index}`, `fake-${index}`)),
+    );
+
+    await expect(
+      Promise.all(Array.from({ length: 5 }, (_, index) => store.get(`provider-${index}`))),
+    ).resolves.toEqual(['fake-0', 'fake-1', 'fake-2', 'fake-3', 'fake-4']);
+  });
+
+  it('serializes interleaved writes and deletes in call order', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-secret-test-'));
+    const store = new SecretStore(directory, new FakeEncryption());
+
+    await Promise.all([
+      store.set('provider-a', 'first'),
+      store.delete('provider-a'),
+      store.set('provider-b', 'second'),
+    ]);
+
+    await expect(store.get('provider-a')).resolves.toBeUndefined();
+    await expect(store.get('provider-b')).resolves.toBe('second');
+  });
+
+  it('skips a malformed entry while preserving valid encrypted secrets', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-secret-test-'));
+    const encryption = new FakeEncryption();
+    const diagnostics: string[] = [];
+    await writeFile(
+      path.join(directory, 'secrets.v1.json'),
+      JSON.stringify({
+        version: 1,
+        secrets: {
+          anthropic: (await encryption.encryptStringAsync('fake-valid')).toString('base64'),
+          '../unsafe-id': 'not base64',
+        },
+      }),
+      'utf8',
+    );
+    const store = new SecretStore(directory, encryption, (event) => diagnostics.push(event));
+
+    await expect(store.get('anthropic')).resolves.toBe('fake-valid');
+    expect(diagnostics).toEqual(['secret-store-invalid-entry-skipped']);
+    expect(diagnostics.join('\n')).not.toContain('unsafe-id');
+  });
+
+  it('still rejects a secret store whose document is not valid JSON', async () => {
+    directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-secret-test-'));
+    await writeFile(path.join(directory, 'secrets.v1.json'), '{not-json', 'utf8');
+    const store = new SecretStore(directory, new FakeEncryption());
+
+    await expect(store.has('anthropic')).rejects.toThrow();
   });
 
   it('persists only validated non-secret provider configuration', async () => {

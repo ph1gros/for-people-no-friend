@@ -36,6 +36,22 @@ export interface CharacterLoreDiagnosticSink {
   recordCharacterLore(event: CharacterLoreDiagnosticEvent): Promise<void>;
 }
 
+export type SafeDiagnosticEventName =
+  | 'secret-store-invalid-entry-skipped'
+  | 'speech-runtime-start-failed'
+  | 'speech-configuration-failed'
+  | 'vtube-studio-configuration-failed'
+  | 'vtube-studio-connection-failed'
+  | 'viewerex-configuration-failed'
+  | 'viewerex-connection-failed'
+  | 'desktop-integration-start-failed'
+  | 'desktop-integration-configuration-failed'
+  | 'memory-index-start-failed'
+  | 'memory-index-configuration-failed'
+  | 'sqlite-backup-unavailable';
+
+export type SafeDiagnosticSink = (event: SafeDiagnosticEventName) => void;
+
 const cleanIdentifier = (value: string): string =>
   Array.from(value, (character) => {
     const codePoint = character.codePointAt(0) ?? 0;
@@ -58,7 +74,7 @@ export class SafeDiagnosticLog implements CharacterLoreDiagnosticSink {
   }
 
   public recordCharacterLore(event: CharacterLoreDiagnosticEvent): Promise<void> {
-    this.pending = this.pending.then(async () => {
+    return this.enqueue(async () => {
       const record = {
         version: 1,
         event: 'character-lore-generation',
@@ -74,18 +90,36 @@ export class SafeDiagnosticLog implements CharacterLoreDiagnosticSink {
         ...(event.errorCode ? { errorCode: event.errorCode } : {}),
         ...(event.fieldSummary ? { fieldSummary: event.fieldSummary } : {}),
       };
-      const line = `${JSON.stringify(record)}\n`;
-      const lineBytes = Buffer.byteLength(line, 'utf8');
-      const currentBytes = await stat(this.filePath)
-        .then((value) => value.size)
-        .catch(() => 0);
-      if (currentBytes + lineBytes > this.maxLogBytes) {
-        await writeFile(this.filePath, line, { encoding: 'utf8', mode: 0o600 });
-        return;
-      }
-      await appendFile(this.filePath, line, { encoding: 'utf8', mode: 0o600 });
+      await this.writeRecord(record);
     });
+  }
+
+  public record(event: SafeDiagnosticEventName): Promise<void> {
+    return this.enqueue(() =>
+      this.writeRecord({ version: 1, event, recordedAt: new Date().toISOString() }),
+    );
+  }
+
+  public ensureFile(): Promise<void> {
+    return this.enqueue(() => appendFile(this.filePath, '', { encoding: 'utf8', mode: 0o600 }));
+  }
+
+  private enqueue(operation: () => Promise<void>): Promise<void> {
+    this.pending = this.pending.then(operation);
     this.pending = this.pending.catch(() => undefined);
     return this.pending;
+  }
+
+  private async writeRecord(record: Record<string, unknown>): Promise<void> {
+    const line = `${JSON.stringify(record)}\n`;
+    const lineBytes = Buffer.byteLength(line, 'utf8');
+    const currentBytes = await stat(this.filePath)
+      .then((value) => value.size)
+      .catch(() => 0);
+    if (currentBytes + lineBytes > this.maxLogBytes) {
+      await writeFile(this.filePath, line, { encoding: 'utf8', mode: 0o600 });
+      return;
+    }
+    await appendFile(this.filePath, line, { encoding: 'utf8', mode: 0o600 });
   }
 }

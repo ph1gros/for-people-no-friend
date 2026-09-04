@@ -14,7 +14,7 @@ import {
 
 import { CharacterPackageService } from './character/character-package-service';
 import { CharacterResearchService } from './character/character-research-service';
-import { SafeDiagnosticLog } from './diagnostics/safe-diagnostic-log';
+import { SafeDiagnosticLog, type SafeDiagnosticSink } from './diagnostics/safe-diagnostic-log';
 import { ConversationRuntime } from './conversation/conversation-runtime';
 import { DesktopIntegrationService } from './desktop/desktop-integration-service';
 import { NativeInputActivityMonitor } from './desktop/native-input-activity-monitor';
@@ -43,13 +43,15 @@ import { GenieTtsAdapter } from '../adapters/speech/genie-tts';
 import { OpenAICompatibleTranscriptionAdapter } from '../adapters/speech/openai-compatible-asr';
 import { SpeechService } from './speech/speech-service';
 import { LocalSpeechAssetService } from './speech/local-speech-asset-service';
+import { SpeechAssetManager } from './speech/speech-asset-manager';
 import {
-  BundledSpeechInputRuntime,
   BundledSpeechRuntime,
-  resolveBundledSpeechInputRuntimeCandidate,
   resolveBundledSpeechRuntimeSources,
 } from './speech/bundled-speech-runtime';
-import { probeLoopbackSpeechService } from './speech/loopback-speech-service-probe';
+import {
+  LocalSherpaAsrAdapter,
+  resolveLocalSherpaModelRoots,
+} from '../adapters/speech/local-sherpa-asr';
 import { BundledVTubeModelInstaller } from './vtube-studio/bundled-vtube-model-installer';
 import { SpeechConfigStore } from './storage/speech-config-store';
 import { ViewerExConfigStore } from './storage/viewerex-config-store';
@@ -94,8 +96,8 @@ if (!hasSingleInstanceLock) {
   let live2DModelImports: Live2DModelImportService | undefined;
   let speechService: SpeechService | undefined;
   let localSpeechAssets: LocalSpeechAssetService | undefined;
+  let speechAssetManager: SpeechAssetManager | undefined;
   let bundledSpeechRuntime: BundledSpeechRuntime | undefined;
-  let bundledSpeechInputRuntime: BundledSpeechInputRuntime | undefined;
   let bundledVTubeModel: BundledVTubeModelInstaller | undefined;
   let viewerExService: ViewerExService | undefined;
   let vTubeStudioService: VTubeStudioService | undefined;
@@ -116,6 +118,8 @@ if (!hasSingleInstanceLock) {
       (event) => vTubeStudioService?.setDisplayTransportDiagnostic(event),
     );
     const userDataPath = app.getPath('userData');
+    const diagnosticLog = new SafeDiagnosticLog(userDataPath);
+    const recordDiagnostic: SafeDiagnosticSink = (event) => void diagnosticLog.record(event);
     desktopLayout = new DesktopLayoutStore(userDataPath);
     const providerConfiguration = new ProviderConfigStore(userDataPath);
     const characterProfiles = new CharacterProfileStore(userDataPath, DEFAULT_CHARACTER_PROFILE);
@@ -144,24 +148,22 @@ if (!hasSingleInstanceLock) {
       }
     });
     database = new DeskpetDatabase(userDataPath);
-    const secrets = new SecretStore(userDataPath, safeStorage);
-    modelRuntime = new ModelRuntime(
-      secrets,
-      providerConfiguration,
-      new SafeDiagnosticLog(userDataPath),
-    );
+    const secrets = new SecretStore(userDataPath, safeStorage, recordDiagnostic);
+    modelRuntime = new ModelRuntime(secrets, providerConfiguration, diagnosticLog);
     bundledSpeechRuntime = new BundledSpeechRuntime(
       resolveBundledSpeechRuntimeSources({
         appPath: app.getAppPath(),
         resourcesPath: process.resourcesPath,
+        userDataPath,
         packaged: app.isPackaged,
       }),
     );
     const bundledSpeechRoot = await bundledSpeechRuntime.resolveAvailableRoot();
-    bundledSpeechInputRuntime = new BundledSpeechInputRuntime(
-      resolveBundledSpeechInputRuntimeCandidate({
+    const localTranscriptionAdapter = new LocalSherpaAsrAdapter(
+      resolveLocalSherpaModelRoots({
         appPath: app.getAppPath(),
         resourcesPath: process.resourcesPath,
+        userDataPath,
         packaged: app.isPackaged,
       }),
     );
@@ -181,8 +183,20 @@ if (!hasSingleInstanceLock) {
       ),
     );
     const bundledVoiceAvailable = (await localSpeechAssets.getStatus()).voiceAvailable;
+    const speechConfigStore = new SpeechConfigStore(userDataPath, bundledVoiceAvailable);
+    speechAssetManager = new SpeechAssetManager(
+      path.join(userDataPath, 'speech-assets'),
+      process.env.FPNF_SPEECH_ASSET_MANIFEST_URL,
+      {
+        fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+        allowLocalhostHttp: !app.isPackaged,
+        onTierReady: async (id) => {
+          if (id === 'voice-runtime') await speechConfigStore.enableBundledVoiceIfUnconfigured();
+        },
+      },
+    );
     speechService = new SpeechService(
-      new SpeechConfigStore(userDataPath, bundledVoiceAvailable),
+      speechConfigStore,
       secrets,
       new OpenAICompatibleSpeechAdapter({
         fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
@@ -200,10 +214,14 @@ if (!hasSingleInstanceLock) {
           fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
         }),
       },
-      (baseUrl) => probeLoopbackSpeechService(baseUrl, (input, init) => net.fetch(input, init)),
-      () => bundledSpeechInputRuntime!.ensureRunning(),
+      recordDiagnostic,
+      localTranscriptionAdapter,
     );
-    viewerExService = new ViewerExService(new ViewerExConfigStore(userDataPath));
+    viewerExService = new ViewerExService(
+      new ViewerExConfigStore(userDataPath),
+      undefined,
+      recordDiagnostic,
+    );
     vTubeStudioService = new VTubeStudioService(
       new VTubeStudioConfigStore(userDataPath),
       secrets,
@@ -218,6 +236,8 @@ if (!hasSingleInstanceLock) {
           proximity: cursorProximityToArea(cursor, bounds),
         };
       },
+      undefined,
+      recordDiagnostic,
     );
     memoryService = new MemoryService(
       database,
@@ -225,6 +245,7 @@ if (!hasSingleInstanceLock) {
       new MemoryIndexConfigStore(userDataPath),
       secrets,
       (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      recordDiagnostic,
     );
     characterResearch = new CharacterResearchService(
       (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
@@ -239,7 +260,7 @@ if (!hasSingleInstanceLock) {
         openPath: (target) => shell.openPath(target),
         sendMediaCommand: (command) =>
           desktopIntegrations?.sendMediaCommand(command) ?? Promise.resolve(false),
-        runProjectCheck: createProjectCheckRunner(),
+        projectChecks: createProjectCheckRunner(),
       },
     );
     conversationRuntime = new ConversationRuntime(
@@ -264,6 +285,7 @@ if (!hasSingleInstanceLock) {
           window.webContents.send(IPC_CHANNELS.desktopInputActivity, event);
         }
       },
+      recordDiagnostic,
     );
     await desktopIntegrations.initialize();
     const initialSpeechStatus = await speechService.getStatus();
@@ -273,28 +295,31 @@ if (!hasSingleInstanceLock) {
         ? initialSpeechStatus.settings.pushToTalkKey
         : undefined,
     );
-    registerIpcHandlers(
-      windowManager,
-      modelRuntime,
-      conversationRuntime,
-      characterProfiles,
-      memoryService,
+    registerIpcHandlers({
+      windows: windowManager,
+      models: modelRuntime,
+      conversations: conversationRuntime,
+      profiles: characterProfiles,
+      memories: memoryService,
       characterResearch,
       workGlossary,
       desktopIntegrations,
       characterPackages,
       live2DModelImports,
-      speechService,
-      viewerExService,
-      vTubeStudioService,
-      characterDisplayConfiguration,
-      (mode) => vTubeStudioSpoutOverlay?.setMode(mode),
+      speech: speechService,
+      viewerEx: viewerExService,
+      vTubeStudio: vTubeStudioService,
+      characterDisplay: characterDisplayConfiguration,
+      onCharacterDisplayModeChanged: (mode) => vTubeStudioSpoutOverlay?.setMode(mode),
       assistantTools,
       desktopLayout,
       localSpeechAssets,
       bundledVTubeModel,
-    );
+      diagnosticLog,
+      speechAssetManager,
+    });
     const mainWindow = windowManager.create();
+    void speechAssetManager.scheduleInitialDownload();
     desktopIntegrations.setShortcutWindowFocused(mainWindow.isFocused());
     mainWindow.on('focus', () => desktopIntegrations?.setShortcutWindowFocused(true));
     mainWindow.on('blur', () => desktopIntegrations?.setShortcutWindowFocused(false));
@@ -327,8 +352,8 @@ if (!hasSingleInstanceLock) {
     speechService = undefined;
     bundledSpeechRuntime?.dispose();
     bundledSpeechRuntime = undefined;
-    bundledSpeechInputRuntime?.dispose();
-    bundledSpeechInputRuntime = undefined;
+    speechAssetManager?.dispose();
+    speechAssetManager = undefined;
     bundledVTubeModel = undefined;
     viewerExService?.dispose();
     viewerExService = undefined;

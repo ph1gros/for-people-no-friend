@@ -21,6 +21,7 @@ describe('IPC whitelist', () => {
   it('contains only the expected named desktop surface', () => {
     expect(Object.values(IPC_CHANNELS)).toEqual([
       'app:getVersion',
+      'app:openDiagnosticLog',
       'tracking:getGlobalPoint',
       'model:listProviders',
       'model:getProviderConfiguration',
@@ -94,6 +95,8 @@ describe('IPC whitelist', () => {
       'speech:transcribe',
       'speech:cancel',
       'speechAssets:getStatus',
+      'speechAssets:getDownloadStatus',
+      'speechAssets:controlDownload',
       'speechAssets:exportVoice',
       'speechAssets:openTrainingSources',
       'speechAssets:launchTrainer',
