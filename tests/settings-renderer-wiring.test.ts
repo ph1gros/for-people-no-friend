@@ -5,6 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 describe('settings renderer regression wiring', () => {
+  const controllerSource = readFileSync(resolve('src/renderer/chat/chat-controller.ts'), 'utf8');
   const source = [
     'chat-controller',
     'settings-provider',
@@ -356,6 +357,9 @@ describe('settings renderer regression wiring', () => {
   });
 
   it('keeps all character management in one left-navigation category', () => {
+    expect(controllerSource).not.toContain('const characterPageBody =');
+    expect(controllerSource).toContain('characterSettingsSection.append(characterPanel.pageBody)');
+    expect(source.match(/const characterPageBody =/gu)).toHaveLength(1);
     expect(readElementOption('settingsTitle', 'textContent')).toBe('设置');
     expect(readElementOption('settingsTitle', 'textContent')).not.toBe('For People No Friend 设置');
     expect(source).toContain("settingsNavigation.setAttribute('aria-label', '设置分类')");

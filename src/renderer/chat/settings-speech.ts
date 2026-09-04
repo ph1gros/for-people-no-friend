@@ -536,6 +536,10 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
       updateSpeechProviderFields,
     },
     displayLocalSpeechAssetStatus,
+    onWakeWordChanged(callback: () => void): void {
+      lifetime.on(speechWakeWordSourceSelect, 'change', callback);
+      lifetime.on(speechCustomWakeWordInput, 'input', callback);
+    },
     dispose(): void {
       lifetime.dispose();
       feedback.dispose();

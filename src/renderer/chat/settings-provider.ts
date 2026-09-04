@@ -237,7 +237,7 @@ export const mountProviderSettings = (options: ProviderPanelOptions) => {
     dispose(): void {
       lifetime.dispose();
       if (pendingTest) {
-        void api?.cancelProviderRequest({ requestId: pendingTest });
+        void api?.cancelProviderRequest({ requestId: pendingTest }).catch(() => undefined);
         pendingTest = undefined;
       }
       apiKeyInput.value = '';

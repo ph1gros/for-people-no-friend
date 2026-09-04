@@ -428,13 +428,8 @@ export const initializeChat = async ({
   const {
     characterNameInput,
     characterSearchNameInput,
-    characterLibrary,
-    localCharacterActions,
-    loreSourceWorkInput,
-    characterSearch,
     characterSearchStatus,
     characterSearchCandidates,
-    glossaryPanel,
     loreEditor,
     userNameInput,
     bioInput,
@@ -883,59 +878,6 @@ export const initializeChat = async ({
     '集中管理角色库、角色包、自建资料和联网查找。',
   );
   characterSettingsSection.append(characterPanel.pageBody);
-  const characterPageBody = document.createElement('div');
-  characterPageBody.className = 'display-mode-settings__body character-page__body';
-  const characterPageTabs = document.createElement('nav');
-  characterPageTabs.className = 'display-mode-tabs character-page__tabs';
-  characterPageTabs.setAttribute('aria-label', '角色设置分类');
-  const characterPageContent = document.createElement('div');
-  characterPageContent.className = 'display-mode-content character-page__content';
-  const characterLibraryPane = document.createElement('section');
-  characterLibraryPane.className = 'display-mode-pane character-page__pane';
-  characterLibraryPane.append(characterLibrary);
-  const localCharacterPane = el('section', { className: 'display-mode-pane character-page__pane' });
-  localCharacterPane.append(
-    localCharacterActions,
-    createField('角色名称', characterNameInput),
-    loreEditor,
-  );
-  const characterResearchPane = document.createElement('section');
-  characterResearchPane.className = 'display-mode-pane character-page__pane';
-  characterResearchPane.append(
-    createField('查找角色', characterSearchNameInput),
-    createField('来源作品或游戏', loreSourceWorkInput),
-    characterSearch,
-    glossaryPanel,
-  );
-  type CharacterPage = 'library' | 'local' | 'research';
-  const characterPanes = [
-    ['library', '角色库与角色包', characterLibraryPane],
-    ['local', '自建角色', localCharacterPane],
-    ['research', '网络查找', characterResearchPane],
-  ] as const satisfies readonly (readonly [CharacterPage, string, HTMLElement])[];
-  const characterPageButtons = new Map<CharacterPage, HTMLButtonElement>();
-  const showCharacterPage = (page: CharacterPage): void => {
-    for (const [candidate, , pane] of characterPanes) {
-      const selected = candidate === page;
-      pane.hidden = !selected;
-      const button = characterPageButtons.get(candidate);
-      button?.classList.toggle('is-active', selected);
-      button?.setAttribute('aria-pressed', String(selected));
-    }
-    if (page === 'local' && loreEditor.open) resizeLoreTextareas();
-  };
-  for (const [page, label, pane] of characterPanes) {
-    const button = createButton(label, 'display-mode-tab character-page__tab');
-    button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('click', () => showCharacterPage(page));
-    characterPageButtons.set(page, button);
-    characterPageTabs.append(button);
-    characterPageContent.append(pane);
-  }
-  characterPageBody.append(characterPageTabs, characterPageContent);
-  characterSettingsSection.append(characterPageBody);
-  showCharacterPage('library');
-
   const speechSettingsSection = createSettingsSection(
     '语音和语音输入',
     '分开管理语音生成与中文麦克风输入，并为本地语音模型和在线 TTS 保留扩展位置。',
@@ -2588,8 +2530,7 @@ export const initializeChat = async ({
     speechVolumeOutput.textContent = `${Math.round(volume * 100)}%`;
     speechPlayer.setVolume(volume);
   });
-  speechWakeWordSourceSelect.addEventListener('change', updatePreciseWakeWordFields);
-  speechCustomWakeWordInput.addEventListener('input', updatePreciseWakeWordFields);
+  speechPanel.onWakeWordChanged(updatePreciseWakeWordFields);
   speechVolumeInput.addEventListener('change', () => {
     void (async () => {
       if (!api || !currentSpeechStatus) return;
