@@ -28,7 +28,7 @@
     "smoke:sqlite-backup": "electron scripts/verify-electron-sqlite-backup.cjs",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
-    "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm build && pnpm smoke:preload && pnpm smoke:sherpa-addon && pnpm smoke:sqlite-backup"
+    "verify": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm build && pnpm test && pnpm smoke:preload && pnpm smoke:sherpa-addon && pnpm smoke:sqlite-backup"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
