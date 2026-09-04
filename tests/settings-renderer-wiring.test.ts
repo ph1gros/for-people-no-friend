@@ -5,7 +5,7 @@ import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 
 describe('settings renderer regression wiring', () => {
-  const source = ['chat-controller', 'settings-provider', 'settings-speech']
+  const source = ['chat-controller', 'settings-provider', 'settings-speech', 'settings-vtube']
     .map((name) => readFileSync(resolve(`src/renderer/chat/${name}.ts`), 'utf8'))
     .join('\n');
   const sourceAst = ts.createSourceFile('chat-controller.ts', source, ts.ScriptTarget.Latest, true);
@@ -265,7 +265,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain("viewerExWorkshopItemInput.placeholder = '例如：2380801353'");
     expect(source).toContain("createField('状态动作映射', viewerExStateMotionsInput)");
     expect(source).toContain("createField('情绪表情编号映射', viewerExEmotionExpressionsInput)");
-    expect(source).toContain("viewerExMappingTestButton.addEventListener('click'");
+    expect(source).toContain("lifetime.on(viewerExMappingTestButton, 'click'");
   });
 
   it('wires VTube Studio authorization and read-only inventory separately from presentation', () => {
@@ -314,7 +314,7 @@ describe('settings renderer regression wiring', () => {
     );
     expect(source).toContain("displayModeResult.mode === 'vtube-studio'");
     expect(source).toContain('await inspectSelectedVTubeStudio();');
-    expect(source).toContain("settingsTabButtons.get('display')?.addEventListener");
+    expect(source).toContain("vtubePanel.listenForSelection(settingsTabButtons.get('display')");
     expect(source).toContain(".get('vtube-studio')");
   });
 
