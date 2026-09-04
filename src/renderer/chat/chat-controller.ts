@@ -1,3 +1,4 @@
+import { mountProviderSettings } from './settings-provider';
 import type { CharacterLore } from '../../core/character/character-lore';
 import { CHARACTER_EMOTIONS, type CharacterEmotion } from '../../core/character/character-reply';
 import type { CharacterPresentationPort } from '../../core/presentation/character-presentation';
@@ -450,60 +451,32 @@ export const initializeChat = async ({
   const scaleLabel = el('span', { textContent: '桌宠大小' });
   scaleField.append(scaleLabel, scaleControl);
 
-  const providerSelect = document.createElement('select');
-  for (const [value, label] of [
-    ['anthropic', 'Anthropic Claude'],
-    ['deepseek', 'DeepSeek'],
-    ['openai-compatible', 'OpenAI / Ollama 兼容'],
-  ]) {
-    const option = el('option', { value: value, textContent: label });
-    providerSelect.append(option);
-  }
-  const modelInput = el('input', { maxLength: 256, placeholder: '例如 Claude 或本地模型 ID' });
-  const baseUrlInput = el('input', { type: 'url', maxLength: 2_048 });
-  baseUrlInput.placeholder = '例如：http://127.0.0.1:11434/v1';
-  const modelCollaborationPanel = el('section', { className: 'character-search' });
-  const modelCollaborationHeading = el('label', { className: 'settings-toggle-heading' });
-  const modelCollaborationTitle = el('strong', { textContent: '本地 / 远端模型协作' });
-  const allowRemoteComplexTasksInput = document.createElement('input');
-  allowRemoteComplexTasksInput.type = 'checkbox';
-  allowRemoteComplexTasksInput.setAttribute('aria-label', '允许复杂整理使用指定远端模型');
-  modelCollaborationHeading.append(modelCollaborationTitle, allowRemoteComplexTasksInput);
-  const modelCollaborationHint = document.createElement('small');
-  modelCollaborationHint.className = 'settings-hint settings-toggle-hint';
-  modelCollaborationHint.textContent = '允许复杂整理使用指定远端模型';
-  const remoteProviderSelect = document.createElement('select');
-  for (const [value, label] of [
-    ['anthropic', 'Anthropic Claude'],
-    ['deepseek', 'DeepSeek'],
-  ]) {
-    const option = el('option', { value: value, textContent: label });
-    remoteProviderSelect.append(option);
-  }
-  const remoteModelInput = el('input', { maxLength: 256, placeholder: '远端模型 ID' });
-  const remoteApiKeyInput = document.createElement('input');
-  remoteApiKeyInput.type = 'password';
-  remoteApiKeyInput.maxLength = 32_768;
-  remoteApiKeyInput.autocomplete = 'off';
-  remoteApiKeyInput.placeholder = '留空则保留远端提供商已有密钥';
-  const remoteSecretStatus = el('p', { className: 'settings-status' });
-  const modelCollaborationStatus = el('p', { className: 'settings-status' });
-  modelCollaborationStatus.textContent =
-    '资料检索对所有模型使用同一来源与超时策略。默认关闭时，角色整理、摘要和记忆候选都由当前模型处理，本地 Ollama 无需联网；开启后才会发送给指定远端模型，失败会回退当前模型。';
-  modelCollaborationPanel.append(
-    modelCollaborationHeading,
-    modelCollaborationHint,
-    createField('远端提供商', remoteProviderSelect),
-    createField('远端模型', remoteModelInput),
-    createField('远端 API Key', remoteApiKeyInput),
-    remoteSecretStatus,
-    modelCollaborationStatus,
-  );
-  const apiKeyInput = document.createElement('input');
-  apiKeyInput.type = 'password';
-  apiKeyInput.maxLength = 32_768;
-  apiKeyInput.autocomplete = 'off';
-  apiKeyInput.placeholder = '留空则保留现有密钥';
+  const providerPanel = mountProviderSettings({
+    api,
+    save: (status) => saveSettings(status, false),
+    setStatus: (message) => {
+      settingsStatus.textContent = message;
+    },
+    formatError: (error) => errorMessages[error.code],
+    createRequestId: () => createRequestId('test'),
+  });
+  const {
+    providerSelect,
+    modelInput,
+    baseUrlInput,
+    allowRemoteComplexTasksInput,
+    remoteProviderSelect,
+    remoteModelInput,
+    remoteApiKeyInput,
+    apiKeyInput,
+    modelCollaborationPanel,
+    baseUrlField,
+    secretRow,
+    connectionActions,
+    connectionStatus,
+  } = providerPanel.elements;
+  const { updateProviderVisibility, updateCollaborationVisibility, updateSecretStatus } =
+    providerPanel;
   const characterNameInput = el('input', { maxLength: 80, autocomplete: 'off' });
   const characterSearchNameInput = document.createElement('input');
   characterSearchNameInput.maxLength = 80;
@@ -634,16 +607,7 @@ export const initializeChat = async ({
     loreActions,
   );
 
-  const secretStatus = el('small', { className: 'settings-status' });
-  const secretRow = el('div', { className: 'settings-secret-row' });
-  const deleteSecretButton = createButton('删除当前密钥', 'text-button');
-  deleteSecretButton.hidden = true;
-  secretRow.append(secretStatus, deleteSecretButton);
   const settingsStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
-  const connectionStatus = document.createElement('p');
-  connectionStatus.className = 'settings-status connection-status';
-  connectionStatus.setAttribute('role', 'status');
-  connectionStatus.setAttribute('aria-live', 'polite');
   const modelCapabilityStatus = el('p', { className: 'settings-status' });
   const speechSettingsPanel = el('section', { className: 'display-mode-settings speech-settings' });
   const speechSettingsHeading = el('label', { className: 'settings-toggle-heading' });
@@ -1485,19 +1449,9 @@ export const initializeChat = async ({
   backFromInputWidgetButton.addEventListener('click', () => showWidgetView('catalog'));
   backFromMediaWidgetButton.addEventListener('click', () => showWidgetView('catalog'));
   const settingsActions = el('div', { className: 'settings-actions' });
-  const testButton = createButton('测试连接', 'secondary-button');
-  const connectionActions = el('div', { className: 'settings-actions connection-actions' });
-  connectionActions.append(testButton);
   const saveButton = createButton('保存', 'primary-button');
   saveButton.type = 'submit';
   settingsActions.append(saveButton);
-  const baseUrlField = createField('兼容接口地址（仅 OpenAI / Ollama）', baseUrlInput);
-  const baseUrlHint = document.createElement('small');
-  baseUrlHint.className = 'settings-hint';
-  baseUrlHint.textContent = '用于连接本地 Ollama 或其他 OpenAI 兼容服务；Claude 不使用此地址。';
-  baseUrlField.append(baseUrlHint);
-  baseUrlField.hidden = true;
-
   const createSettingsSection = (title: string, description: string): HTMLElement => {
     const section = el('section', { className: 'settings-section' });
     const heading = el('header', { className: 'settings-section__header' });
@@ -2583,49 +2537,6 @@ export const initializeChat = async ({
         panelExpanded = !expanded;
         displayPanelExpanded(!expanded);
       });
-  };
-
-  const updateProviderVisibility = (): void => {
-    baseUrlField.hidden = providerSelect.value !== 'openai-compatible';
-    modelInput.placeholder =
-      providerSelect.value === 'deepseek'
-        ? '例如：deepseek-v4-flash'
-        : providerSelect.value === 'anthropic'
-          ? '例如：Claude 模型 ID'
-          : '例如：OpenAI 或本地模型 ID';
-  };
-
-  const updateCollaborationVisibility = (): void => {
-    const enabled = allowRemoteComplexTasksInput.checked;
-    const sharesProvider = remoteProviderSelect.value === providerSelect.value;
-    remoteProviderSelect.disabled = !enabled;
-    remoteModelInput.disabled = !enabled;
-    remoteApiKeyInput.disabled = !enabled || sharesProvider;
-    remoteApiKeyInput.placeholder = sharesProvider
-      ? '与上方当前提供商共用密钥'
-      : '留空则保留远端提供商已有密钥';
-  };
-
-  const updateSecretStatus = async (): Promise<void> => {
-    if (!api) {
-      return;
-    }
-    const secrets = await api.getProviderSecretStatus();
-    const selected = providerSelect.value as ConfigurableProviderId;
-    deleteSecretButton.hidden = !secrets[selected];
-    secretStatus.textContent = secrets[selected]
-      ? '已安全保存密钥；留空不会覆盖。'
-      : selected === 'openai-compatible'
-        ? '未保存密钥；本地 Ollama 可保持为空。'
-        : '尚未保存密钥。';
-    const remoteSelected = remoteProviderSelect.value as ConfigurableProviderId;
-    const sharesProvider = remoteSelected === selected;
-    remoteSecretStatus.textContent = sharesProvider
-      ? '远端模型与上方使用同一提供商，将共用该提供商的密钥。'
-      : secrets[remoteSelected]
-        ? '远端提供商的密钥已安全保存；留空不会覆盖。'
-        : '远端提供商尚未保存密钥。';
-    updateCollaborationVisibility();
   };
 
   const closeDrawers = (): void => {
@@ -4292,12 +4203,6 @@ export const initializeChat = async ({
         : result.message;
     })();
   });
-  providerSelect.addEventListener('change', () => {
-    updateProviderVisibility();
-    remoteApiKeyInput.value = '';
-    connectionStatus.textContent = '';
-    void updateSecretStatus();
-  });
   speechProviderSelect.addEventListener('change', () => {
     speechApiKeyInput.value = '';
     updateSpeechProviderFields(true);
@@ -4319,23 +4224,6 @@ export const initializeChat = async ({
   for (const input of [speechBaseUrlInput, speechModelInput, speechLanguageInput]) {
     input.addEventListener('input', () => updateSpeechProviderFields());
   }
-  allowRemoteComplexTasksInput.addEventListener('change', () => {
-    updateCollaborationVisibility();
-    void updateSecretStatus();
-  });
-  remoteProviderSelect.addEventListener('change', () => {
-    remoteApiKeyInput.value = '';
-    void updateSecretStatus();
-  });
-  modelInput.addEventListener('input', () => {
-    connectionStatus.textContent = '';
-  });
-  baseUrlInput.addEventListener('input', () => {
-    connectionStatus.textContent = '';
-  });
-  apiKeyInput.addEventListener('input', () => {
-    connectionStatus.textContent = '';
-  });
   scaleInput.addEventListener('input', () => windowScaleSync?.preview(Number(scaleInput.value)));
   scaleInput.addEventListener('change', () => {
     void windowScaleSync?.commit(Number(scaleInput.value));
@@ -4358,49 +4246,6 @@ export const initializeChat = async ({
       } finally {
         saveButton.disabled = false;
       }
-    })();
-  });
-  testButton.addEventListener('click', () => {
-    void (async () => {
-      if (!api) {
-        return;
-      }
-      if (!modelInput.value.trim()) {
-        connectionStatus.textContent = '请填写 AI 对话模型名称。';
-        modelInput.focus();
-        return;
-      }
-      if (!(await saveSettings(connectionStatus, false))) {
-        return;
-      }
-      connectionStatus.textContent = '正在测试连接…';
-      testButton.disabled = true;
-      const requestId = createRequestId('test');
-      try {
-        const result = await api.testProviderConnection({
-          requestId,
-          providerId: providerSelect.value as ConfigurableProviderId,
-          modelId: modelInput.value.trim(),
-        });
-        connectionStatus.textContent = result.ok
-          ? `连接成功，约 ${result.latencyMs} ms。`
-          : errorMessages[result.error.code];
-      } catch {
-        connectionStatus.textContent = '连接测试失败，请检查配置后重试。';
-      } finally {
-        testButton.disabled = false;
-      }
-    })();
-  });
-  deleteSecretButton.addEventListener('click', () => {
-    void (async () => {
-      if (!api || !window.confirm('确定删除当前提供商已保存的 API Key 吗？')) {
-        return;
-      }
-      const providerId = providerSelect.value as ConfigurableProviderId;
-      const result = await api.deleteProviderSecret({ providerId });
-      settingsStatus.textContent = result.ok ? '密钥已删除。' : result.error.message;
-      await updateSecretStatus();
     })();
   });
   deleteSpeechSecretButton.addEventListener('click', () => {
@@ -4878,6 +4723,7 @@ export const initializeChat = async ({
     controllerDisposed = true;
     composerPanel.dispose();
     memoryPanel.dispose();
+    providerPanel.dispose();
     pushToTalkPressed = false;
     if (microphoneRecorder?.state === 'recording') microphoneRecorder.stop();
     releaseMicrophone();

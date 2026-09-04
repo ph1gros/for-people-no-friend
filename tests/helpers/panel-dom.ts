@@ -11,6 +11,10 @@ export class PanelElement extends EventTarget {
   hidden = false;
   disabled = false;
   checked = false;
+  focused = false;
+  focus(): void {
+    this.focused = true;
+  }
   placeholder = '';
   dataset: Record<string, string> = {};
   style: Record<string, string> = {};
