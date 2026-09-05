@@ -35,6 +35,37 @@ describe('IPC sender validation', () => {
     resource.isDestroyed = () => true;
     expect(() => handlers.get('resources')!(event as never)).toThrow('Unauthorized');
   });
+  it('treats an additional window as trusted on silent handlers too', () => {
+    // The two branches of the registrar must agree on who is trusted. If the silent branch only
+    // consulted the main window, a legitimate call from the resource window would return
+    // undefined with no error at all — the hardest kind of failure to trace.
+    const handlers = new Map<string, (event: never, ...args: unknown[]) => unknown>();
+    const ipc = {
+      handle: (channel: string, handler: (event: never, ...args: unknown[]) => unknown) =>
+        handlers.set(channel, handler),
+    };
+    const main = { isDestroyed: () => false, webContents: { mainFrame: {} } };
+    const resource = { isDestroyed: () => false, webContents: { mainFrame: {} } };
+    createTrustedIpcHandlerRegistrar(
+      ipc as never,
+      { getWindow: () => main } as never,
+      'return-undefined',
+      () => resource as never,
+    )('silent-scoped', () => 'allowed');
+
+    const fromResource = {
+      sender: resource.webContents,
+      senderFrame: resource.webContents.mainFrame,
+    };
+    expect(handlers.get('silent-scoped')!(fromResource as never)).toBe('allowed');
+
+    const fromMain = { sender: main.webContents, senderFrame: main.webContents.mainFrame };
+    expect(handlers.get('silent-scoped')!(fromMain as never)).toBe('allowed');
+
+    const stranger = { sender: {}, senderFrame: {} };
+    expect(handlers.get('silent-scoped')!(stranger as never)).toBeUndefined();
+  });
+
   it('requires both the trusted webContents and its main frame', () => {
     const mainFrame = {};
     const webContents = { mainFrame };

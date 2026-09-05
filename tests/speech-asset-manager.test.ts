@@ -300,6 +300,53 @@ describe('speech asset manager', () => {
     }
   });
 
+  it.each(['start', 'resume'] as const)(
+    'keeps an explicit %s running while network cost stays unknown or becomes metered',
+    async (action) => {
+      vi.useFakeTimers();
+      let networkCost: boolean | undefined;
+      const pause = vi.fn();
+      const install = vi.fn(async () => await new Promise<never>(() => undefined));
+      const manager = new SpeechAssetManager(
+        await makeRoot(),
+        'https://manifest.example.com/v1.json',
+        {
+          loadManifest: async () => manifest,
+          detectMetered: async () => networkCost,
+          createInstaller: () => ({ install, pause, cancel: vi.fn() }),
+        },
+      );
+      try {
+        await manager.control({ tierId: 'voice-runtime', action });
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(install).toHaveBeenCalledOnce();
+        expect(pause).not.toHaveBeenCalled();
+        expect(await manager.getStatus()).toMatchObject({
+          busy: true,
+          tiers: expect.arrayContaining([
+            expect.objectContaining({ id: 'voice-runtime', state: 'downloading' }),
+          ]),
+        });
+
+        networkCost = true;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(pause).not.toHaveBeenCalled();
+        expect((await manager.getStatus()).busy).toBe(true);
+
+        // An unmetered connection ends the earlier consent. A later hotspot requires consent again.
+        networkCost = false;
+        await vi.advanceTimersByTimeAsync(10_000);
+        networkCost = true;
+        await vi.advanceTimersByTimeAsync(10_000);
+        expect(pause).toHaveBeenCalledWith('voice-runtime');
+        expect((await manager.getStatus()).message).toContain('网络已切换');
+      } finally {
+        manager.dispose();
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it('does not start automatically when network cost detection fails', async () => {
     const install = vi.fn();
     const manager = new SpeechAssetManager(

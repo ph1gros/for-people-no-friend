@@ -180,13 +180,17 @@ export const createTrustedIpcHandlerRegistrar =
   ) =>
   (channel: string, handler: (event: IpcMainInvokeEvent, ...args: never[]) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
+      // Both branches must agree on who counts as trusted. Checking only the main window here
+      // would make a legitimate call from an additional window fail silently with no error.
+      const extra = additionalWindow?.();
       if (
         untrustedBehavior === 'return-undefined' &&
-        !isTrustedIpcSender(event, windows.getWindow())
+        !isTrustedIpcSender(event, windows.getWindow()) &&
+        !isTrustedIpcSender(event, extra)
       ) {
         return undefined;
       }
-      requireTrustedSender(event, windows, additionalWindow?.());
+      requireTrustedSender(event, windows, extra);
       return handler(event, ...(args as never[]));
     });
   };

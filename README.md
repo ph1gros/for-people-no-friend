@@ -8,7 +8,7 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-当前仓库是 **Live2D Version**，当前版本为 **[v1.8.0](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.0)**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+当前仓库是 **Live2D Version**，当前版本为 **[v1.8.1](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.1)**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
 v1.8.0 新增独立资源中心，将本地语音拆为“引擎、基础模型、音色模型、语音识别”四类。主程序保持轻量，所需组件通过 [公开资源仓库](https://github.com/ph1gros/fpnf-resources) 按需安装；新增受管理的 Genie-TTS 与圣园未花日语音色，修复句尾终止标记、长停顿噪声及打断后无法继续合成的问题，语音后台预热不再阻挡主窗口。记忆、模型连接、语音、VTube／ViewerEX、角色五个面板已拆分并补齐生命周期验证。
 
@@ -122,6 +122,13 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 ## 版本记录
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
+
+### v1.8.1
+
+- **完成**：统一样式 token、降低大面积紫色彩度、Live2D 角色侧无框布局、小组件容器透明；增大输入显示的字号和键帽，提高文字与描边对比度。
+- **修复**：未知计费状态下手动下载反复暂停；子进程改用环境变量白名单；补齐资源窗口 IPC 来源判断和生产 CSP，隔离各面板销毁步骤。
+- **验证**：133 个测试文件、640 项测试；两个 Python 语音运行时实际启动和合成通过，输入小组件渲染、窄容器及长按键检查通过。
+- **范围**：沿用 v1.8.0 的七项组件与 Genie 引擎 1.0.4，无需重新下载未变更的组件。完整的左右角色、静态模式、多屏布局及桌面点击穿透仍待人工验收；静态模式边框暂时保留。详见 [本轮验收记录](docs/UI_ROUND3_VERIFICATION.md)。
 
 ### v1.8.0
 

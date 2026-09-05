@@ -28,7 +28,7 @@ describe('Windows portable package configuration', () => {
   it('keeps application dependencies inside ASAR and excludes development-only path trees', () => {
     const manifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as PackageManifest;
 
-    expect(manifest.version).toBe('1.8.0');
+    expect(manifest.version).toBe('1.8.1');
     expect(manifest.productName).toBe('For People No Friend');
     expect(manifest.build?.appId).toBe('com.ph1gros.forpeoplenofriend');
     expect(manifest.build?.asar).toEqual({ smartUnpack: false });

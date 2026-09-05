@@ -272,9 +272,9 @@ export class SpeechAssetManager {
         return;
       }
       for (const id of this.active) {
-        // An explicit start while already metered is consent for that connection.
-        // A later switch from unmetered (or an unknown cost) must pause and ask via status.
-        if (this.metered === true && this.meteredConsent.has(id)) continue;
+        // Explicit start/resume accepts the current metered or unknown cost. The unmetered
+        // branch above clears that consent, so a later switch still pauses and asks via status.
+        if (this.meteredConsent.has(id)) continue;
         this.installer.pause(id);
         this.message = this.metered
           ? '网络已切换为按流量计费，下载已暂停；点击继续可使用当前网络下载。'
@@ -377,7 +377,7 @@ export class SpeechAssetManager {
     const operationVersion = (this.operationVersions.get(tier.id) ?? 0) + 1;
     this.operationVersions.set(tier.id, operationVersion);
     this.active.add(tier.id);
-    if (this.metered === true) this.meteredConsent.add(tier.id);
+    if (this.metered !== false) this.meteredConsent.add(tier.id);
     else this.meteredConsent.delete(tier.id);
     if (!this.networkWatch) {
       this.networkWatch = setInterval(() => {

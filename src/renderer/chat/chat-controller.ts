@@ -1006,7 +1006,7 @@ export const initializeChat = async ({
   settingsHeaderActions.append(settingsStatus, settingsActions, closeSettingsButton);
   settingsHeader.append(settingsHeaderActions);
   settingsPanel.append(settingsHeader, settingsLayout);
-  const speechAssetDownloadPanel = api
+  const resourceCenterPanel = api
     ? mountResourceCenter(resourceCenterRoot, speechAssetProgressStrip, {
         getStatus: () => api.getResourceCenterStatus(),
         refreshCatalog: () => api.refreshResourceCatalog(),
@@ -1774,6 +1774,7 @@ export const initializeChat = async ({
       api.listMemories(),
       api.listMemoryCandidates(),
     ]);
+    if (controllerDisposed) return;
     memoryPanel.showSettings(settings);
     memoryRecords = records;
     memoryCandidates = candidates;
@@ -2799,7 +2800,7 @@ export const initializeChat = async ({
       ).catch(() => 'unavailable' as const);
       if (assetResult === 'started') {
         speechStatus.textContent = '正在后台准备本地语音识别；完成后即可使用麦克风。';
-        await speechAssetDownloadPanel?.refresh();
+        await resourceCenterPanel?.refresh();
         return;
       }
     }
@@ -2894,37 +2895,52 @@ export const initializeChat = async ({
 
   return () => {
     controllerDisposed = true;
-    composerPanel.dispose();
-    memoryPanel.dispose();
-    providerPanel.dispose();
-    pushToTalkPressed = false;
-    if (microphoneRecorder?.state === 'recording') microphoneRecorder.stop();
-    releaseMicrophone();
-    void stopContinuousListening();
-    if (api && activeTranscriptionId) {
-      void api.cancelSpeech({ requestId: activeTranscriptionId });
-      activeTranscriptionId = undefined;
+    // Each step is isolated: one panel throwing must not strand the listeners, timers and IPC
+    // subscriptions that come after it, which would leak across a window rebuild.
+    for (const step of [
+      () => composerPanel.dispose(),
+      () => memoryPanel.dispose(),
+      () => providerPanel.dispose(),
+      () => characterPanel.dispose(),
+      () => speechPanel.dispose(),
+      () => vtubePanel.dispose(),
+      () => conversationTimeline.dispose(),
+      () => resourceCenterPanel?.dispose(),
+      () => windowScaleSync?.dispose(),
+      () => feedback.dispose(),
+      () => {
+        pushToTalkPressed = false;
+        if (microphoneRecorder?.state === 'recording') microphoneRecorder.stop();
+        releaseMicrophone();
+      },
+      () => void stopContinuousListening(),
+      () => {
+        if (api && activeTranscriptionId) {
+          void api.cancelSpeech({ requestId: activeTranscriptionId });
+          activeTranscriptionId = undefined;
+        }
+      },
+      () => stopSpeech('window-dispose'),
+      () => idleCompanion.destroy(),
+      () => void speechPlayer.dispose(),
+      () => disposeConversationListener?.(),
+      () => disposeDesktopInputActivity?.(),
+      () => clearInputOverlayTimers(),
+      () => window.clearInterval(mediaStatusRefreshTimer),
+      () => desktopWidgetResizeObserver.disconnect(),
+      () => window.removeEventListener('resize', syncDesktopWidgetReserve),
+      () => window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded),
+      () => {
+        if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
+      },
+      () => shell.remove(),
+      () => desktopOverlayStack.remove(),
+    ]) {
+      try {
+        step();
+      } catch {
+        // A cleanup failure is already terminal for that resource; keep releasing the rest.
+      }
     }
-    stopSpeech('window-dispose');
-    idleCompanion.destroy();
-    void speechPlayer.dispose();
-    characterPanel.dispose();
-    disposeConversationListener?.();
-    disposeDesktopInputActivity?.();
-    clearInputOverlayTimers();
-    window.clearInterval(mediaStatusRefreshTimer);
-    speechPanel.dispose();
-    vtubePanel.dispose();
-    feedback.dispose();
-    desktopWidgetResizeObserver.disconnect();
-    window.removeEventListener('resize', syncDesktopWidgetReserve);
-
-    conversationTimeline.dispose();
-    speechAssetDownloadPanel?.dispose();
-    windowScaleSync?.dispose();
-    window.removeEventListener('deskpet:character-loaded', handleCharacterLoaded);
-    if (panelExpanded) void api?.setChatPanelExpanded({ expanded: false });
-    shell.remove();
-    desktopOverlayStack.remove();
   };
 };

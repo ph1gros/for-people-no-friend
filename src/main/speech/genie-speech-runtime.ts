@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import { createChildEnvironment, PYTHON_RUNTIME_ENV_NAMES } from '../security/child-environment';
 import { isSpeechAssetActivated } from './speech-asset-activation';
 import { validateInstalledSpeechAssetTarget } from './speech-asset-downloader';
 import { GENIE_MIKA_PRESET } from '../../shared/speech-ipc';
@@ -122,17 +123,17 @@ export class GenieSpeechRuntime {
         cwd: runtime,
         windowsHide: true,
         stdio: 'ignore',
-        env: {
-          ...process.env,
+        env: createChildEnvironment(PYTHON_RUNTIME_ENV_NAMES, {
           PYTHONDONTWRITEBYTECODE: '1',
           PYTHONNOUSERSITE: '1',
+          NO_PROXY: '127.0.0.1,localhost',
           HF_HUB_OFFLINE: '1',
           HF_HUB_DISABLE_IMPLICIT_TOKEN: '1',
           HF_HUB_DISABLE_TELEMETRY: '1',
           GENIE_DATA_DIR: path.join(root, 'genie-data'),
           FPNF_GENIE_VOICE_ROOT: path.join(root, 'voice-genie-mika'),
           FPNF_GENIE_SESSION_TOKEN: this.token,
-        },
+        }),
       },
     );
     this.child = child;

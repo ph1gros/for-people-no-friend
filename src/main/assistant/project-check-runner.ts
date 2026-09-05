@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
+import { createChildEnvironment, MINIMAL_CHILD_ENV_NAMES } from '../security/child-environment';
+
 export type ProjectCheck = 'test' | 'lint' | 'typecheck' | 'build';
 
 export interface ProjectCheckPlan {
@@ -39,28 +41,8 @@ const isOutside = (root: string, target: string): boolean => {
   return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
 };
 
-const safeChildEnvironment = (): NodeJS.ProcessEnv => {
-  const result: NodeJS.ProcessEnv = {};
-  const safeNames = new Set([
-    'APPDATA',
-    'ComSpec',
-    'HOME',
-    'LOCALAPPDATA',
-    'Path',
-    'PATH',
-    'PATHEXT',
-    'SystemRoot',
-    'TEMP',
-    'TMP',
-    'USERPROFILE',
-    'WINDIR',
-  ]);
-  for (const [name, value] of Object.entries(process.env)) {
-    if (safeNames.has(name) && value !== undefined) result[name] = value;
-  }
-  result.CI = '1';
-  return result;
-};
+const safeChildEnvironment = (): NodeJS.ProcessEnv =>
+  createChildEnvironment(MINIMAL_CHILD_ENV_NAMES, { CI: '1' });
 
 const defaultExecFile: ExecFileImplementation = (executable, args, options) =>
   new Promise((resolve) => {

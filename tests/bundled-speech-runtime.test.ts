@@ -7,6 +7,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createChildEnvironment,
+  PYTHON_RUNTIME_ENV_NAMES,
+} from '../src/main/security/child-environment';
+import {
   BundledSpeechRuntime,
   resolveBundledSpeechRuntimeSources,
 } from '../src/main/speech/bundled-speech-runtime';
@@ -114,6 +118,7 @@ describe('bundled speech runtime', () => {
       kill: vi.fn(() => true),
       stderr,
     });
+    process.env.FPNF_TEST_FAKE_SECRET = 'must-not-reach-the-child';
     const spawnRuntime = vi.fn(() => child as never);
     const diagnostics: string[] = [];
     const runtime = new BundledSpeechRuntime(directory, fetchHealth, spawnRuntime, (event) => {
@@ -141,8 +146,9 @@ describe('bundled speech runtime', () => {
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'pipe'],
         env: {
-          ...process.env,
+          ...createChildEnvironment(PYTHON_RUNTIME_ENV_NAMES),
           PYTHONDONTWRITEBYTECODE: '1',
+          PYTHONNOUSERSITE: '1',
           NO_PROXY: '127.0.0.1,localhost',
           FPNF_BUNDLED_VOICE_ROOT: path.join(canonicalDirectory, 'voice', 'ireina'),
           FPNF_BUNDLED_BERT_ROOT: '',
@@ -150,6 +156,10 @@ describe('bundled speech runtime', () => {
         },
       },
     );
+    // The child receives an allow-list, not the developer's whole environment.
+    const passedEnv = spawnRuntime.mock.calls[0]?.[2]?.env ?? {};
+    expect(passedEnv).not.toHaveProperty('FPNF_TEST_FAKE_SECRET');
+    expect(passedEnv.PYTHONNOUSERSITE).toBe('1');
     expect(fetchHealth).toHaveBeenCalledWith(
       'http://127.0.0.1:9881/ready',
       expect.objectContaining({ method: 'GET', redirect: 'error' }),

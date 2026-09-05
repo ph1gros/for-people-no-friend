@@ -465,39 +465,39 @@ describe('settings renderer regression wiring', () => {
     expect(styles).toMatch(
       /#app\.chat-expanded::before\s*\{[^}]*right:\s*calc\(50% \+ 8px\);[^}]*border:\s*0;[^}]*border-radius:\s*14px;[^}]*background:\s*transparent;/su,
     );
-    expect(styles).toContain('0 0 0 9999px rgb(24 25 28 / 90%)');
+    expect(styles).toContain('0 0 0 9999px var(--fill-1)');
     expect(styles).toMatch(
       /#app\.chat-expanded\[data-character-pane='right'\]:not\(\.settings-expanded\)::before\s*\{[^}]*right:\s*10px;[^}]*left:\s*calc\(50% \+ 8px\);/su,
     );
     expect(styles).toMatch(
-      /#app\.chat-expanded\[data-character-display-mode='live2d'\]:not\(\.character-is-loading\)::before\s*\{[^}]*top:\s*var\(--visible-frame-top\);[^}]*right:\s*auto;[^}]*bottom:\s*auto;[^}]*left:\s*var\(--visible-frame-left\);[^}]*width:\s*var\(--visible-frame-width\);[^}]*height:\s*var\(--visible-frame-height\);/su,
+      /#app\.chat-expanded\[data-character-display-mode='live2d'\]:not\(\.character-is-loading\)::before\s*\{[^}]*top:\s*0;[^}]*right:\s*calc\(50% \+ 8px\);[^}]*bottom:\s*0;[^}]*left:\s*0;[^}]*width:\s*auto;[^}]*height:\s*auto;[^}]*border-radius:\s*0 14px 14px 0;/su,
     );
     expect(styles).toMatch(
-      /#app\.chat-expanded\[data-character-display-mode='live2d'\]\[data-character-pane='right'\]:not\(\s*\.character-is-loading\s*\)::before\s*\{[^}]*left:\s*calc\(50% \+ var\(--visible-frame-left\)\);/su,
+      /#app\.chat-expanded\[data-character-display-mode='live2d'\]\[data-character-pane='right'\]:not\(\s*\.character-is-loading\s*\)::before\s*\{[^}]*right:\s*0;[^}]*left:\s*calc\(50% \+ 8px\);[^}]*border-radius:\s*14px 0 0 14px;/su,
     );
     expect(styles).toMatch(
       /\.chat-panel\s*\{[^}]*border:\s*0;[^}]*background:\s*transparent;[^}]*box-shadow:\s*none;/su,
     );
     expect(styles).toMatch(
-      /\.settings-expanded \.chat-panel\s*\{[^}]*overflow:\s*hidden;[^}]*border:\s*1px solid rgb\(225 228 234 \/ 24%\);[^}]*border-radius:\s*24px;[^}]*background:\s*linear-gradient\(145deg, #242529, #17181b\);[^}]*box-shadow:\s*none;/su,
+      /\.settings-expanded \.chat-panel\s*\{[^}]*overflow:\s*hidden;[^}]*border:\s*1px solid var\(--line-4\);[^}]*border-radius:\s*24px;[^}]*background:\s*linear-gradient\(145deg, var\(--fill-6\), var\(--shadow-2\)\);[^}]*box-shadow:\s*none;/su,
     );
     expect(styles).toMatch(
       /\.settings-expanded \.settings-panel > \.chat-drawer__header\s*\{[^}]*border-radius:\s*23px 23px 0 0;/su,
     );
     expect(styles).toMatch(
-      /\.settings-expanded \.settings-navigation\s*\{[^}]*background:\s*rgb\(31 32 35 \/ 98%\);/su,
+      /\.settings-expanded \.settings-navigation\s*\{[^}]*background:\s*var\(--fill-4\);/su,
     );
     expect(styles).toMatch(
-      /\.settings-expanded \.settings-section\s*\{[^}]*background:\s*rgb\(35 36 40 \/ 92%\);/su,
+      /\.settings-expanded \.settings-section\s*\{[^}]*background:\s*var\(--fill-5\);/su,
     );
     expect(styles).toMatch(
-      /\.settings-expanded \.settings-field input,[^}]*background:\s*rgb\(45 46 50 \/ 96%\);/su,
+      /\.settings-expanded \.settings-field input,[^}]*background:\s*var\(--fill-8\);/su,
     );
     expect(styles).toMatch(
-      /\.conversation-list\s*\{[^}]*border-radius:\s*12px 12px 0 0;[^}]*background:\s*rgb\(29 30 33 \/ 94%\);/su,
+      /\.conversation-list\s*\{[^}]*border-radius:\s*12px 12px 0 0;[^}]*background:\s*var\(--fill-3\);/su,
     );
     expect(styles).toMatch(
-      /\.chat-composer\s*\{[^}]*border-top:\s*0;[^}]*border-radius:\s*0 0 14px 14px;[^}]*background:\s*rgb\(33 34 37 \/ 94%\);/su,
+      /\.chat-composer\s*\{[^}]*border-top:\s*0;[^}]*border-radius:\s*0 0 14px 14px;[^}]*background:\s*var\(--fill-5\);/su,
     );
     expect(styles).toMatch(/\.chat-toolbar__button,[^}]*border-radius:\s*10px;/su);
     expect(styles).toMatch(
@@ -544,7 +544,7 @@ describe('settings renderer regression wiring', () => {
     expect(source).not.toContain('完全监听中');
     expect(source).not.toContain('精准监听中');
     expect(styles).toMatch(
-      /\.chat-composer__microphone\[aria-pressed='true'\]\s*\{[^}]*background:\s*rgb\(44 45 49 \/ 96%\);/su,
+      /\.chat-composer__microphone\[aria-pressed='true'\]\s*\{[^}]*background:\s*var\(--fill-8\);/su,
     );
     expect(styles).toMatch(/\.chat-panel\s*\{[^}]*gap:\s*0;/su);
     expect(styles).toMatch(/\.chat-panel__header\s*\{[^}]*margin-bottom:\s*8px;/su);
@@ -573,13 +573,13 @@ describe('settings renderer regression wiring', () => {
       /\.conversation-message--user p\s*\{[^}]*background:\s*rgb\(68 70 74 \/ 94%\);/su,
     );
     expect(styles).toMatch(
-      /\.conversation-message--assistant\s+p\s*\{[^}]*background:\s*rgb\(48 50 54 \/ 94%\);/su,
+      /\.conversation-message--assistant\s+p\s*\{[^}]*background:\s*var\(--fill-10\);/su,
     );
   });
 
-  it('rounds the transparent model area upward into the square widget reserve', () => {
+  it('keeps widgets above the model reserve without an opaque or interactive container', () => {
     expect(styles).toMatch(
-      /\.desktop-widgets-active \.desktop-overlay-stack\s*\{[^}]*z-index:\s*10;[^}]*bottom:\s*0;[^}]*padding:\s*8px;[^}]*border-radius:\s*0;[^}]*background:\s*rgb\(24 25 28\);/su,
+      /\.desktop-widgets-active \.desktop-overlay-stack\s*\{[^}]*z-index:\s*10;[^}]*bottom:\s*0;[^}]*padding:\s*8px;[^}]*border-radius:\s*0;[^}]*background:\s*transparent;[^}]*pointer-events:\s*none;/su,
     );
     expect(styles).toMatch(/#app\.chat-expanded::before\s*\{[^}]*background:\s*transparent;/su);
     expect(styles).toMatch(

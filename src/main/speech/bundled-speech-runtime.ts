@@ -2,6 +2,8 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { lstat, realpath } from 'node:fs/promises';
 import path from 'node:path';
 
+import { createChildEnvironment, PYTHON_RUNTIME_ENV_NAMES } from '../security/child-environment';
+
 import { isSpeechAssetActivated } from './speech-asset-activation';
 import { validateInstalledSpeechAssetTarget } from './speech-asset-downloader';
 
@@ -208,15 +210,15 @@ export class BundledSpeechRuntime {
         cwd: runtime.serviceRoot,
         windowsHide: true,
         stdio: ['ignore', 'ignore', 'pipe'],
-        env: {
-          ...process.env,
+        env: createChildEnvironment(PYTHON_RUNTIME_ENV_NAMES, {
           PYTHONDONTWRITEBYTECODE: '1',
+          PYTHONNOUSERSITE: '1',
           NO_PROXY: '127.0.0.1,localhost',
           FPNF_BUNDLED_VOICE_ROOT:
             runtime.voiceRoot ?? path.join(runtime.runtimeRoot, 'voice', 'ireina'),
           FPNF_BUNDLED_BERT_ROOT: runtime.bertRoot ?? '',
           FPNF_BUNDLED_OUTPUT_ROOT: path.join(runtime.runtimeRoot, 'recent-output'),
-        },
+        }),
       },
     );
     this.child = child;
