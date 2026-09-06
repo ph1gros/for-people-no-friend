@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { readFile, stat, writeFile } from 'node:fs/promises';
+import { stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 import {
@@ -87,7 +87,12 @@ import type { CharacterResearchService } from '../character/character-research-s
 import type { WorkGlossaryService } from '../glossary/work-glossary-service';
 import type { ConversationRuntime } from '../conversation/conversation-runtime';
 import type { CharacterPackageService } from '../character/character-package-service';
-import { MAX_CHARACTER_PACKAGE_BYTES } from '../character/character-package-archive';
+import {
+  confirmCharacterPackageImport,
+  importLive2DModelFile,
+  previewCharacterPackageFile,
+  type CharacterImportDependencies,
+} from '../character/character-import-operations';
 import type { Live2DModelImportService } from '../live2d/live2d-model-import-service';
 import type { DesktopIntegrationService } from '../desktop/desktop-integration-service';
 import type { ModelRuntime } from '../llm/model-runtime';
@@ -275,6 +280,11 @@ export const registerIpcHandlers = ({
     await resourceWindow.open();
   });
   const handleSilent = createTrustedIpcHandlerRegistrar(ipcMain, windows, 'return-undefined');
+  const characterImports = (): CharacterImportDependencies => ({
+    ...(characterPackages ? { characterPackages } : {}),
+    ...(live2DModelImports ? { live2DModelImports } : {}),
+    showOpenDialog: (options) => showOpenDialog(windows, options),
+  });
   const notifyCharacterDisplayModeChanged = async (mode: CharacterDisplayMode): Promise<void> => {
     try {
       await onCharacterDisplayModeChanged?.(mode);
@@ -532,49 +542,16 @@ export const registerIpcHandlers = ({
   handle(
     IPC_CHANNELS.previewCharacterPackage,
     async (event): Promise<CharacterPackageFileResult> => {
-      if (!characterPackages) {
-        return { ok: false, canceled: false, message: '角色包服务不可用。' };
-      }
-      const selection = await showOpenDialog(windows, {
-        title: '预览角色包',
-        properties: ['openFile'],
-        filters: [{ name: 'For People No Friend 角色包', extensions: ['zip'] }],
-      });
-      if (selection.canceled || !selection.filePaths[0]) return { ok: true, canceled: true };
-      try {
-        const filePath = selection.filePaths[0];
-        if ((await stat(filePath)).size > MAX_CHARACTER_PACKAGE_BYTES) throw new Error();
-        return {
-          ok: true,
-          canceled: false,
-          preview: await characterPackages.preview(new Uint8Array(await readFile(filePath))),
-        };
-      } catch {
-        return {
-          ok: false,
-          canceled: false,
-          message: '角色包无效、不兼容、过大，或包含不安全文件。',
-        };
-      }
+      return previewCharacterPackageFile(characterImports());
     },
   );
   handle(
     IPC_CHANNELS.confirmCharacterPackageImport,
     async (event, input: unknown): Promise<CharacterPackageFileResult> => {
-      if (!characterPackages) {
-        return { ok: false, canceled: false, message: '角色包服务不可用。' };
-      }
-      try {
-        const parsed = parseConfirmCharacterPackageImportInput(input);
-        await characterPackages.confirmImport(parsed.previewId, parsed.replaceExisting);
-        return { ok: true, canceled: false };
-      } catch (error) {
-        return {
-          ok: false,
-          canceled: false,
-          message: error instanceof Error ? error.message : '角色包导入失败。',
-        };
-      }
+      return confirmCharacterPackageImport(
+        characterImports(),
+        parseConfirmCharacterPackageImportInput(input),
+      );
     },
   );
   handle(
@@ -627,27 +604,7 @@ export const registerIpcHandlers = ({
     );
   });
   handle(IPC_CHANNELS.importLive2DModel, async (event) => {
-    if (!live2DModelImports) {
-      return { ok: false, canceled: false, message: 'Live2D 模型导入服务不可用。' } as const;
-    }
-    const selection = await showOpenDialog(windows, {
-      title: '导入 Live2D 模型',
-      properties: ['openFile'],
-      filters: [{ name: 'Live2D Cubism 模型（.model3.json）', extensions: ['json'] }],
-    });
-    if (selection.canceled || !selection.filePaths[0]) {
-      return { ok: true, canceled: true } as const;
-    }
-    try {
-      const imported = await live2DModelImports.importModel(selection.filePaths[0]);
-      return { ok: true, canceled: false, ...imported } as const;
-    } catch (error) {
-      return {
-        ok: false,
-        canceled: false,
-        message: error instanceof Error ? error.message : 'Live2D 模型导入失败。',
-      } as const;
-    }
+    return importLive2DModelFile(characterImports());
   });
   handle(IPC_CHANNELS.exportActiveLive2DModel, async (event) => {
     if (!live2DModelImports) {
