@@ -15,6 +15,42 @@ export const GENIE_MIKA_PRESET = Object.freeze({
   speed: 1,
 } as const);
 
+/** Fixed managed voices. Endpoints are application-owned, never derived from a resource catalog. */
+export const GENIE_VOICE_PRESETS = Object.freeze([
+  Object.freeze({
+    ...GENIE_MIKA_PRESET,
+    name: '圣园未花（Mika）',
+    languageName: '日语',
+    assetId: 'voice-genie-mika',
+    port: 9882,
+  }),
+  Object.freeze({
+    ...GENIE_MIKA_PRESET,
+    name: '菲比（Feibi）',
+    languageName: '中文',
+    voiceId: 'feibi',
+    language: 'zh-CN',
+    baseUrl: 'http://127.0.0.1:9883',
+    assetId: 'voice-genie-feibi',
+    port: 9883,
+  }),
+  Object.freeze({
+    ...GENIE_MIKA_PRESET,
+    name: '37（ThirtySeven）',
+    languageName: '英语',
+    voiceId: 'thirtyseven',
+    language: 'en-US',
+    baseUrl: 'http://127.0.0.1:9884',
+    assetId: 'voice-genie-thirtyseven',
+    port: 9884,
+  }),
+] as const);
+export type GenieVoiceId = (typeof GENIE_VOICE_PRESETS)[number]['voiceId'];
+export const findGenieVoicePreset = (voiceId: string) =>
+  GENIE_VOICE_PRESETS.find((preset) => preset.voiceId === voiceId);
+export const isManagedGenieEndpoint = (baseUrl: string): boolean =>
+  GENIE_VOICE_PRESETS.some((preset) => preset.baseUrl === baseUrl);
+
 export const BUNDLED_IREINA_SPEECH_PRESET = Object.freeze({
   providerId: 'openai-compatible',
   baseUrl: 'http://127.0.0.1:9881/v1',

@@ -203,6 +203,21 @@ export const IPC_CHANNELS = {
   inspectVTubeStudio: 'vtubeStudio:inspect',
   previewVTubeStudioExpression: 'vtubeStudio:previewExpression',
   presentInVTubeStudio: 'vtubeStudio:present',
+  getSetupState: 'setup:getState',
+  getSetupResources: 'setup:getResources',
+  controlSetupResources: 'setup:controlResources',
+  advanceSetup: 'setup:advance',
+  goBackInSetup: 'setup:back',
+  cancelSetup: 'setup:cancel',
+  completeSetup: 'setup:complete',
+  getSetupProviderStatus: 'setup:getProviderStatus',
+  applySetupProvider: 'setup:applyProvider',
+  testSetupProvider: 'setup:testProvider',
+  cancelSetupProviderTest: 'setup:cancelProviderTest',
+  getSetupCharacterStatus: 'setup:getCharacterStatus',
+  previewSetupCharacterPackage: 'setup:previewCharacterPackage',
+  confirmSetupCharacterPackage: 'setup:confirmCharacterPackage',
+  importSetupLive2DModel: 'setup:importLive2DModel',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

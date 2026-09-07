@@ -75,14 +75,18 @@ describe('VTube Studio presentation mapping', () => {
       parameters: [],
     });
 
-    expect(suggested).toEqual({
-      emotionExpressions: {
-        happy: 'EyesLove.exp3.json',
-        sad: 'EyesCry.exp3.json',
-        angry: 'SignAngry.exp3.json',
-        surprised: 'SignShock.exp3.json',
-      },
-      actionHotkeys: { nod: 'nod-hotkey' },
+    expect(suggested.emotionExpressions).toEqual({
+      happy: 'EyesLove.exp3.json',
+      sad: 'EyesCry.exp3.json',
+      angry: 'SignAngry.exp3.json',
+      surprised: 'SignShock.exp3.json',
+    });
+    expect(suggested.actionHotkeys).toEqual({ nod: 'nod-hotkey' });
+    expect(suggested.sources.emotionExpressions).toEqual({
+      happy: 'name',
+      sad: 'name',
+      angry: 'name',
+      surprised: 'name',
     });
     expect(
       resolveConfirmedModelMapping(
@@ -258,5 +262,206 @@ describe('VTube Studio presentation mapping', () => {
     expect(resolveHotkeyForEmotion(hotkeys, 'angry')?.file).toBe('Param102.exp3.json');
     expect(resolveHotkeyForEmotion(hotkeys, 'shy')?.file).toBe('Param103.exp3.json');
     expect(resolveHotkeyForEmotion(hotkeys, 'playful')?.file).toBe('Param104.exp3.json');
+  });
+});
+
+const expression = (
+  file: string,
+  parameters: ReadonlyArray<{ name: string; value: number }> = [],
+  hotkeyNames: readonly string[] = [],
+): VTubeStudioExpressionSummary => ({
+  name: file.replace('.exp3.json', ''),
+  file,
+  active: false,
+  deactivateWhenKeyIsLetGo: false,
+  parameters: [...parameters],
+  hotkeyNames: [...hotkeyNames],
+});
+
+const inventoryOf = (
+  expressions: readonly VTubeStudioExpressionSummary[],
+  hotkeys: readonly VTubeStudioHotkeySummary[] = [],
+) => ({
+  model: {
+    loaded: true,
+    name: 'm',
+    id: 'm',
+    vtsModelName: 'm',
+    live2DModelName: 'm',
+    parameterCount: 0,
+    artmeshCount: 0,
+    textureCount: 0,
+    textureResolution: 0,
+  },
+  expressions: [...expressions],
+  hotkeys: [...hotkeys],
+  parameters: [],
+});
+
+const toggle = (name: string, file: string): VTubeStudioHotkeySummary => ({
+  name,
+  type: 'ToggleExpression',
+  file,
+  hotkeyId: `${file}-id`,
+  onScreenButtonId: -1,
+});
+
+describe('VTube Studio mapping against the models on this machine', () => {
+  // heibaiMaoMao ships twelve expressions named Param100…Param109; every one of them writes a
+  // single opaque toggle (`Param103: 1`) and nothing standard, so the only thing that can be read
+  // is the Chinese hotkey name VTube Studio attaches to the file.
+  it('maps the bundled kitten from its hotkey names alone', () => {
+    const files = [
+      ['星星眼', 'Param100.exp3.json'],
+      ['哭哭', 'Param101.exp3.json'],
+      ['黑脸', 'Param102.exp3.json'],
+      ['害羞', 'Param103.exp3.json'],
+      ['白眼', 'Param104.exp3.json'],
+      ['生气', 'Param105.exp3.json'],
+      ['麦克风', 'Param106.exp3.json'],
+      ['兽耳兽尾', 'Param107.exp3.json'],
+      ['身体Z切换', 'ParamshentiZ.exp3.json'],
+    ] as const;
+    const suggested = suggestVTubeStudioModelMapping(
+      inventoryOf(
+        files.map(([name, file]) =>
+          expression(file, [{ name: file.split('.')[0], value: 1 }], [name]),
+        ),
+        files.map(([name, file]) => toggle(name, file)),
+      ),
+    );
+
+    expect(suggested.emotionExpressions).toEqual({
+      happy: 'Param100.exp3.json',
+      sad: 'Param101.exp3.json',
+      angry: 'Param102.exp3.json',
+      shy: 'Param103.exp3.json',
+      playful: 'Param104.exp3.json',
+    });
+    // The model has nothing for "surprised", and inventing one would be worse than leaving it out.
+    expect(suggested.emotionExpressions.surprised).toBeUndefined();
+    // 黑脸 and 生气 both mean anger; the first decisive winner keeps the slot instead of the two
+    // cancelling each other out.
+    expect(Object.values(suggested.emotionExpressions)).not.toContain('Param105.exp3.json');
+    // 麦克风 and 兽耳兽尾 are props, not feelings.
+    expect(Object.values(suggested.emotionExpressions)).not.toContain('Param106.exp3.json');
+    expect(Object.values(suggested.emotionExpressions)).not.toContain('Param107.exp3.json');
+  });
+
+  // ATRI's sixteen "expressions" are costumes and props — dress1, shoe2, Blood, Bird — plus one
+  // blush. The right answer is almost entirely "nothing", and claiming otherwise would put a
+  // costume change on the character's face every time it felt something.
+  it('refuses to read costumes and props as emotions', () => {
+    const suggested = suggestVTubeStudioModelMapping(
+      inventoryOf(
+        [
+          expression('expression1.exp3.json', [{ name: 'ParamCheek', value: 1 }], ['blush']),
+          expression('expression3.exp3.json', [{ name: 'Param18', value: 30 }], ['dress1']),
+          expression('expression5.exp3.json', [{ name: 'Param19', value: 30 }], ['shoe1']),
+          expression('expression9.exp3.json', [{ name: 'Param36', value: 30 }], ['Blood']),
+          expression('expression10.exp3.json', [{ name: 'Param37', value: 30 }], ['Bird']),
+          expression('expression13.exp3.json', [{ name: 'Param39', value: 30 }], ['YES']),
+        ],
+        [
+          toggle('blush', 'expression1.exp3.json'),
+          toggle('dress1', 'expression3.exp3.json'),
+          toggle('shoe1', 'expression5.exp3.json'),
+          toggle('Blood', 'expression9.exp3.json'),
+          toggle('Bird', 'expression10.exp3.json'),
+          toggle('YES', 'expression13.exp3.json'),
+        ],
+      ),
+    );
+    expect(suggested.emotionExpressions).toEqual({ shy: 'expression1.exp3.json' });
+    // YES toggles a pose and would stay stuck on; a nod must stay with the programmatic motion.
+    expect(suggested.actionHotkeys.nod).toBeUndefined();
+  });
+
+  it('reads a nameless model through its standard Cubism parameters', () => {
+    const suggested = suggestVTubeStudioModelMapping(
+      inventoryOf([
+        expression('a.exp3.json', [
+          { name: 'ParamMouthForm', value: 1 },
+          { name: 'ParamEyeLSmile', value: 1 },
+          { name: 'ParamEyeRSmile', value: 1 },
+        ]),
+        expression('b.exp3.json', [
+          { name: 'ParamMouthForm', value: -0.8 },
+          { name: 'ParamBrowLY', value: -0.7 },
+          { name: 'ParamBrowRY', value: -0.7 },
+        ]),
+        expression('c.exp3.json', [
+          { name: 'ParamBrowLForm', value: -1 },
+          { name: 'ParamBrowRForm', value: -1 },
+        ]),
+        expression('d.exp3.json', [
+          { name: 'ParamMouthOpenY', value: 1 },
+          { name: 'ParamBrowLY', value: 0.8 },
+          { name: 'ParamBrowRY', value: 0.8 },
+        ]),
+        expression('e.exp3.json', [{ name: 'ParamCheek', value: 1 }]),
+        expression('f.exp3.json', [
+          { name: 'ParamEyeLOpen', value: 0 },
+          { name: 'ParamEyeROpen', value: 1 },
+        ]),
+        // A parameter no standard covers must contribute nothing at all.
+        expression('g.exp3.json', [{ name: 'Param77', value: 1 }]),
+      ]),
+    );
+
+    expect(suggested.emotionExpressions).toEqual({
+      happy: 'a.exp3.json',
+      sad: 'b.exp3.json',
+      angry: 'c.exp3.json',
+      surprised: 'd.exp3.json',
+      shy: 'e.exp3.json',
+      playful: 'f.exp3.json',
+    });
+    expect(suggested.sources.emotionExpressions.sad).toBe('parameters');
+    expect(suggested.sources.emotionExpressions.angry).toBe('parameters');
+  });
+
+  it('never lets one expression file stand for two emotions', () => {
+    const suggested = suggestVTubeStudioModelMapping(
+      inventoryOf([
+        expression('only.exp3.json', [
+          { name: 'ParamCheek', value: 1 },
+          { name: 'ParamMouthForm', value: 1 },
+          { name: 'ParamEyeLSmile', value: 1 },
+        ]),
+      ]),
+    );
+    const files = Object.values(suggested.emotionExpressions);
+    expect(new Set(files).size).toBe(files.length);
+  });
+
+  it('prefers the more specific word when two emotions share a shorter one', () => {
+    // 坏笑 (a smirk) contains 笑 (a smile); the longer word is the one the author meant.
+    const suggested = suggestVTubeStudioModelMapping(
+      inventoryOf([expression('x.exp3.json', [], ['坏笑'])]),
+    );
+    expect(suggested.emotionExpressions.playful).toBe('x.exp3.json');
+    expect(suggested.emotionExpressions.happy).toBeUndefined();
+  });
+
+  it('reads Japanese and Korean expression names', () => {
+    const suggested = suggestVTubeStudioModelMapping(
+      inventoryOf([
+        expression('j1.exp3.json', [], ['嬉しい']),
+        expression('j2.exp3.json', [], ['悲しい']),
+        expression('j3.exp3.json', [], ['怒り']),
+        expression('j4.exp3.json', [], ['びっくり']),
+        expression('j5.exp3.json', [], ['照れ']),
+        expression('k1.exp3.json', [], ['윙크']),
+      ]),
+    );
+    expect(suggested.emotionExpressions).toEqual({
+      happy: 'j1.exp3.json',
+      sad: 'j2.exp3.json',
+      angry: 'j3.exp3.json',
+      surprised: 'j4.exp3.json',
+      shy: 'j5.exp3.json',
+      playful: 'k1.exp3.json',
+    });
   });
 });

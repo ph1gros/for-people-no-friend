@@ -11,6 +11,19 @@ import { ResourceCenter, fetchResourceCatalog } from '../src/main/resources/reso
 const downloads = { sourceConfigured: false, metered: false, busy: false, tiers: [] };
 
 describe('resource catalog', () => {
+  it('retains new built-in voices when an older remote catalog omits them', async () => {
+    const remote = { schemaVersion: 1, resources: [BUNDLED_RESOURCE_CATALOG.resources[0]] };
+    const center = new ResourceCenter(
+      { getStatus: async () => downloads, refreshManifest: async () => downloads },
+      'https://example.com/catalog.json',
+      { fetch: async () => new Response(JSON.stringify(remote)) },
+    );
+    const status = await center.getStatus();
+    expect(status.catalog.resources.some((r) => r.id === 'voice-genie-feibi')).toBe(true);
+    expect(status.catalog.resources.some((r) => r.id === 'voice-genie-thirtyseven')).toBe(true);
+    expect(status.downloads.tiers).toEqual([]);
+    center.dispose();
+  });
   it('accepts display metadata without authorizing installation', () => {
     expect(parseResourceCatalog(catalogTemplate)).toEqual(BUNDLED_RESOURCE_CATALOG);
     expect(parseResourceCatalog(BUNDLED_RESOURCE_CATALOG)).toEqual(BUNDLED_RESOURCE_CATALOG);

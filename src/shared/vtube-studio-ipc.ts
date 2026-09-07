@@ -19,9 +19,19 @@ export interface VTubeStudioModelMapping {
   actionHotkeys: Record<string, string>;
 }
 
+/**
+ * Which tier of evidence produced a suggestion. Shown to the user so a guess made from what an
+ * expression *does* can be reviewed more carefully than one made from what it is called.
+ */
+export type VTubeStudioMappingSource = 'name' | 'parameters';
+
 export interface VTubeStudioModelMappingSuggestion {
   emotionExpressions: Partial<Record<CharacterEmotion, string>>;
   actionHotkeys: Record<string, string>;
+  sources: {
+    emotionExpressions: Partial<Record<CharacterEmotion, VTubeStudioMappingSource>>;
+    actionHotkeys: Record<string, VTubeStudioMappingSource>;
+  };
 }
 
 export type VTubeStudioConnectionState =
@@ -114,6 +124,8 @@ export interface VTubeStudioPresentationInput {
 
 export type VTubeStudioPresentationReason =
   | 'presented'
+  /** 没有可用的表情文件，改用 VTube Studio 标准输入参数表达情绪——不需要逐模型映射。 */
+  | 'presented-generic'
   | 'disabled'
   | 'not-authorized'
   | 'model-not-loaded'

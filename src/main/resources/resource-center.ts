@@ -139,7 +139,17 @@ export class ResourceCenter {
           signal: this.lifetime.signal,
         });
         if (this.lifetime.signal.aborted) return;
-        this.catalog = catalog;
+        // Older remote catalogs must not hide new built-in presets. Missing routes
+        // remain unavailable until a matching, pinned component is published.
+        this.catalog = {
+          ...catalog,
+          resources: [
+            ...catalog.resources,
+            ...BUNDLED_RESOURCE_CATALOG.resources.filter(
+              (entry) => !catalog.resources.some(({ id }) => id === entry.id),
+            ),
+          ],
+        };
         this.catalogSource = 'remote';
         this.catalogMessage = undefined;
         this.checkedAt = new Date().toISOString();

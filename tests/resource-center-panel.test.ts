@@ -167,7 +167,9 @@ describe('resource center panel', () => {
     expect(visible()).toHaveLength(2);
     for (const category of categories.slice(1)) {
       category.dispatchEvent(new Event('click'));
-      expect(visible()).toHaveLength(category.textContent === '语音识别' ? 1 : 2);
+      expect(visible()).toHaveLength(
+        category.textContent === '语音识别' ? 1 : category.textContent === '基础模型' ? 3 : 4,
+      );
     }
     expect(control).not.toHaveBeenCalled();
     mounted.dispose();
@@ -199,7 +201,7 @@ describe('resource center panel', () => {
     expect(category.attributes.get('aria-pressed')).toBe('true');
     expect(
       all(root).filter((node) => node.className === 'resource-center__card' && !node.hidden),
-    ).toHaveLength(2);
+    ).toHaveLength(4);
     const voices = all(root)
       .filter((node) => node.className === 'resource-center__card' && !node.hidden)
       .map(text)
@@ -208,6 +210,11 @@ describe('resource center panel', () => {
     expect(voices).toContain('仅限非商业使用');
     expect(voices).toContain('圣园未花（Mika）');
     expect(voices).toContain('角色出自《蔚蓝档案》');
+    expect(voices).toContain('菲比（Feibi）');
+    expect(voices).toContain('角色出自《鸣潮》');
+    expect(voices).toContain('37（ThirtySeven）');
+    expect(voices).toContain('角色出自《重返未来：1999》');
+    expect(voices).toContain('Genie 中英文发音词典');
     all(root)
       .find(
         (node) => node.className === 'resource-center__category' && node.textContent === '语音识别',

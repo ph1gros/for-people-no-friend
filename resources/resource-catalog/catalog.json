@@ -13,7 +13,7 @@
       "name": "Genie-TTS 引擎",
       "summary": "将文字合成为语音，提供 Genie-TTS 推理程序与独立运行环境。",
       "license": "引擎 MIT；依赖和模型按各自许可",
-      "latestVersion": "1.0.4"
+      "latestVersion": "1.1.2"
     },
     {
       "id": "genie-data",
@@ -26,6 +26,27 @@
       "id": "voice-genie-mika",
       "name": "圣园未花（Mika）音色",
       "summary": "提供圣园未花（Mika）的日语音色，决定角色发声特征；角色出自《蔚蓝档案》。",
+      "license": "上游仓库标注 MIT；角色及声音权利另行适用，见随附说明",
+      "latestVersion": "1.0.0"
+    },
+    {
+      "id": "genie-language-data",
+      "name": "Genie 中英文发音词典",
+      "summary": "为语音合成提供中英文文本读音，帮助引擎处理分词、读音与词性，不决定角色音色。",
+      "license": "上游仓库标注 MIT；词典与依赖按各自许可，见随附说明",
+      "latestVersion": "1.0.0"
+    },
+    {
+      "id": "voice-genie-feibi",
+      "name": "菲比（Feibi）音色",
+      "summary": "提供菲比（Feibi）的中文音色，决定角色发声特征；角色出自《鸣潮》。",
+      "license": "上游仓库标注 MIT；角色及声音权利另行适用，见随附说明",
+      "latestVersion": "1.0.0"
+    },
+    {
+      "id": "voice-genie-thirtyseven",
+      "name": "37（ThirtySeven）音色",
+      "summary": "提供37（ThirtySeven）的英语音色，决定角色发声特征；角色出自《重返未来：1999》。",
       "license": "上游仓库标注 MIT；角色及声音权利另行适用，见随附说明",
       "latestVersion": "1.0.0"
     },

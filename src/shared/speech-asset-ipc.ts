@@ -6,6 +6,9 @@ export const SPEECH_ASSET_TIER_IDS = [
   'genie-tts',
   'genie-data',
   'voice-genie-mika',
+  'genie-language-data',
+  'voice-genie-feibi',
+  'voice-genie-thirtyseven',
 ] as const;
 export type SpeechAssetTierId = (typeof SPEECH_ASSET_TIER_IDS)[number];
 

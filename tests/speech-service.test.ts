@@ -15,6 +15,7 @@ import type { SpeechConfigStore } from '../src/main/storage/speech-config-store'
 import {
   BUNDLED_IREINA_SPEECH_PRESET,
   GENIE_MIKA_PRESET,
+  GENIE_VOICE_PRESETS,
   type SpeechSettings,
 } from '../src/shared/speech-ipc';
 import { GenieTtsAdapter } from '../src/adapters/speech/genie-tts';
@@ -40,6 +41,65 @@ const enabledSettings = (): SpeechSettings => ({
 });
 
 describe('speech service', () => {
+  it('reads Chinese directly with Feibi and translates Chinese to English only for ThirtySeven', async () => {
+    let settings: SpeechSettings = {
+      ...enabledSettings(),
+      ...GENIE_VOICE_PRESETS[1],
+      inputEnabled: false,
+    };
+    const english = vi.fn(async () => 'Hello, let us go for a walk.');
+    const japanese = vi.fn(async () => 'こんにちは。');
+    const synthesize = vi.fn(async () => ({
+      audio: new Uint8Array([1, 2]),
+      mimeType: 'audio/wav',
+    }));
+    const ensure = vi.fn(async () => true);
+    const service = new SpeechService(
+      { get: async () => settings } as SpeechConfigStore,
+      { has: async () => false } as unknown as SecretStore,
+      {} as OpenAICompatibleSpeechAdapter,
+      undefined,
+      japanese,
+      undefined,
+      {
+        genieTts: { synthesize } as unknown as GenieTtsAdapter,
+        ensureGenieRuntime: ensure,
+        translateToEnglish: english,
+      },
+    );
+    expect((await service.getStatus()).output.available).toBe(true);
+    expect(
+      await service.synthesize({ requestId: 'feibi-test', text: '你好，我们去散步吧。' }),
+    ).toMatchObject({ ok: true, text: '你好，我们去散步吧。' });
+    expect(english).not.toHaveBeenCalled();
+    expect(japanese).not.toHaveBeenCalled();
+    settings = { ...settings, ...GENIE_VOICE_PRESETS[2] };
+    expect((await service.getStatus()).output.available).toBe(true);
+    expect(ensure.mock.calls.map((call) => call[0])).toEqual(['feibi', 'thirtyseven']);
+    expect(
+      await service.synthesize({ requestId: 'english-test', text: '你好，我们去散步吧。' }),
+    ).toMatchObject({ ok: true, text: 'Hello, let us go for a walk.' });
+    expect(synthesize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        characterName: 'thirtyseven',
+        text: 'Hello, let us go for a walk.',
+      }),
+      expect.any(AbortSignal),
+    );
+    english.mockRejectedValueOnce(new Error('offline'));
+    expect(
+      await service.synthesize({ requestId: 'failed-translation', text: '你好' }),
+    ).toMatchObject({ ok: false });
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    settings = { ...settings, language: 'ja-JP' };
+    expect((await service.getStatus()).output.available).toBe(false);
+    expect(await service.synthesize({ requestId: 'wrong-language', text: '你好' })).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('不匹配'),
+    });
+    expect(synthesize).toHaveBeenCalledTimes(2);
+    service.dispose();
+  });
   it('requires the managed Genie voice to be ready and leaves external Genie available independently', async () => {
     let settings = { ...enabledSettings(), ...GENIE_MIKA_PRESET, inputEnabled: false };
     const ensure = vi.fn(async () => false);

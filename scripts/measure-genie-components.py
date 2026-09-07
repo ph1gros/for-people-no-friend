@@ -8,8 +8,8 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / '.release' / 'genie-components'
 OUTPUT = ROOT / '.release' / 'genie-archives'
-TIERS = ('genie-tts', 'genie-data', 'voice-genie-mika')
-VERSIONS = {'genie-tts': '1.0.4', 'genie-data': '1.0.0', 'voice-genie-mika': '1.0.0'}
+TIERS = ('genie-tts', 'genie-data', 'voice-genie-mika', 'genie-language-data', 'voice-genie-feibi', 'voice-genie-thirtyseven')
+VERSIONS = {tier: '1.1.2' if tier == 'genie-tts' else '1.0.0' for tier in TIERS}
 
 
 def main():

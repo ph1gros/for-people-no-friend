@@ -1,4 +1,10 @@
+import type { CharacterEmotion } from '../../core/character/character-reply';
 import type { CharacterPresentationState } from '../../core/presentation/character-presentation';
+import {
+  blendEmotionBias,
+  EMOTION_FADE_MS,
+  EMOTION_PARAMETER_IDS,
+} from './vtube-studio-emotion-parameters';
 
 export interface VTubeStudioInjectedParameter {
   id: string;
@@ -75,6 +81,10 @@ export class VTubeStudioIdleMotion {
   private drowsyNodAmplitude = DROWSY_NOD_MIN_AMPLITUDE;
   private eyeOpen = 0.8;
   private eyeOpenUpdatedAt: number;
+  /** The generic emotion channel — used for models with no expression file worth mapping. */
+  private emotion: CharacterEmotion = 'neutral';
+  private emotionFrom: CharacterEmotion = 'neutral';
+  private emotionChangedAt = 0;
 
   public constructor(
     now = Date.now(),
@@ -131,6 +141,11 @@ export class VTubeStudioIdleMotion {
     const eyeOpen = Math.max(0, this.eyeOpen + blink);
     const nodOffset = this.nodOffset(now, pointerProximity);
     const shakeOffset = this.shakeOffset(now);
+    const emotionRatio = this.emotionRatio(now);
+    const bias = blendEmotionBias(this.emotionFrom, this.emotion, emotionRatio);
+    // A finished fade back to neutral is "resting"; a fade still in progress is not, so the face
+    // relaxes smoothly instead of the parameters vanishing mid-transition.
+    const emotionIsResting = this.emotion === 'neutral' && emotionRatio >= 1;
     return [
       {
         id: 'FaceAngleX',
@@ -160,9 +175,39 @@ export class VTubeStudioIdleMotion {
         id: 'EyeRightY',
         value: this.mix(pose.eyeY * 0.04, trackedEyeY, pointerWeight),
       },
-      { id: 'EyeOpenLeft', value: eyeOpen },
-      { id: 'EyeOpenRight', value: eyeOpen },
+      { id: 'EyeOpenLeft', value: eyeOpen * bias.eyeOpenScaleLeft },
+      { id: 'EyeOpenRight', value: eyeOpen * bias.eyeOpenScaleRight },
+      // While the face is at rest these would all be zero, and writing a zero is not the same as
+      // writing nothing: an injected parameter overrides whatever else drives it in VTube Studio.
+      // Staying out of the frame entirely leaves the mouth and brows to the model's own tracking
+      // until there is actually an emotion to show.
+      ...(emotionIsResting
+        ? []
+        : EMOTION_PARAMETER_IDS.map((id) => ({ id, value: bias.absolute[id] ?? 0 }))),
     ];
+  }
+
+  /**
+   * Point the generic emotion channel at a new emotion. Returns false when nothing changed, so
+   * the caller can tell a real state change from a repeat of the same emotion.
+   */
+  public setEmotion(emotion: CharacterEmotion, now = Date.now()): boolean {
+    if (emotion === this.emotion) return false;
+    // Fade from wherever the previous fade had got to, not from its target, so rapid changes
+    // do not snap back to a face the model never actually reached.
+    this.emotionFrom = this.emotionRatio(now) >= 1 ? this.emotion : this.emotionFrom;
+    this.emotion = emotion;
+    this.emotionChangedAt = now;
+    return true;
+  }
+
+  public currentEmotion(): CharacterEmotion {
+    return this.emotion;
+  }
+
+  private emotionRatio(now: number): number {
+    if (this.emotionChangedAt === 0) return 1;
+    return Math.min(1, Math.max(0, (now - this.emotionChangedAt) / EMOTION_FADE_MS));
   }
 
   public triggerAction(action: string, now = Date.now()): boolean {

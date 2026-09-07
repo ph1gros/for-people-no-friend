@@ -8,6 +8,7 @@ config.local.*
 
 # Dependencies and builds
 node_modules/
+.pnpm-store/
 dist/
 dist-electron/
 out/
@@ -15,7 +16,9 @@ release/
 .release/
 coverage/
 .vite/
-.tmp-spout2/
+# 一次性排查留下的临时目录：.tmp-spout2、.tmp-live-glossary-check、
+# .tmp-yosuga-glossary-probe 及其变体，都不该进版本库。
+.tmp-*/
 native/vtube-studio-spout/bin/*.pdb
 native/vtube-studio-spout/bin/*Debug.exe
 native/vtube-studio-spout/bin/SpoutLibrary.dll
@@ -44,3 +47,7 @@ assets/models/local/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Local review screenshots and working handoff
+/Claude outputs/
+/HANDOFF_CLAUDE_GENIE_BREATH.md

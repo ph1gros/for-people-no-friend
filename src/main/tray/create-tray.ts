@@ -8,6 +8,7 @@ export interface TrayActions {
   hide(): void;
   toggleVisibility(): void;
   openResourceCenter?(): void;
+  openSetupWizard?(): void;
 }
 
 export const createDeskpetTray = (actions: TrayActions): Tray => {
@@ -34,6 +35,9 @@ export const createDeskpetTray = (actions: TrayActions): Tray => {
           ? [{ label: '资源中心', click: actions.openResourceCenter }]
           : []),
         { type: 'separator' },
+        ...(actions.openSetupWizard
+          ? [{ label: '重新运行设置向导', click: actions.openSetupWizard }]
+          : []),
         { label: '退出', click: () => app.quit() },
       ]),
     );

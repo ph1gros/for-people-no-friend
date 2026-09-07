@@ -97,6 +97,234 @@
       "upstreamPath": "CharacterModels/v2ProPlus/mika/tts_models/vits_fp32.onnx",
       "bytes": 1611210,
       "sha256": "2f918e08a1bfecc568de4cc5dc96135cb8baf37a07f4eb4ec9258a4854fcd3f3"
+    },
+    {
+      "path": "genie-language-data/ChineseG2P/opencpop-strict.txt",
+      "upstreamPath": "GenieData/G2P/ChineseG2P/opencpop-strict.txt",
+      "bytes": 4084,
+      "sha256": "d66bbb1380a8ebf17d7ace5bf4b459f3728a469eea2aaeae2aeb3969b88223ff"
+    },
+    {
+      "path": "genie-language-data/ChineseG2P/polyphonic.pickle",
+      "upstreamPath": "GenieData/G2P/ChineseG2P/polyphonic.pickle",
+      "bytes": 1322387,
+      "sha256": "f425246160a32c578557cd3151cd0bb97f5f44c3aaf65e718dd2c3213c04fb4b"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/checkpoint20.npz",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/checkpoint20.npz",
+      "bytes": 3342298,
+      "sha256": "b8af35e4596d8dd5836dfd3fe9b2ba4f97b9c311efe8879544cbcfcbd566d8c6"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/cmudict-fast.rep",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/cmudict-fast.rep",
+      "bytes": 3613898,
+      "sha256": "53bfef0f27d7dd74d1ba74563d1e076d3e0672ce3596cb2d6c0d52ac9ad01f6d"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/cmudict.rep",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/cmudict.rep",
+      "bytes": 3731285,
+      "sha256": "0e601d017d6e6f958443d41cd8922b4cd7598b3ba2056253a33f3e5a35f38494"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/engdict_cache.pickle",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/engdict_cache.pickle",
+      "bytes": 5965909,
+      "sha256": "9bff9393f4b192d873a11335efc8f124771087b6dc847d34fd240c2846889d2b"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/engdict-hot.rep",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/engdict-hot.rep",
+      "bytes": 75,
+      "sha256": "1c80418fe6fe5d537302ae67afd3612478997b35f2cf37cff52f959ed4334a71"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/namedict_cache.pickle",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/namedict_cache.pickle",
+      "bytes": 760663,
+      "sha256": "559552094c4a6e995213e3fa586330e078ef8cb3a7a95a3109e945111cd2bfc1"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/taggers/averaged_perceptron_tagger_eng/averaged_perceptron_tagger_eng.classes.json",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/taggers/averaged_perceptron_tagger_eng/averaged_perceptron_tagger_eng.classes.json",
+      "bytes": 285,
+      "sha256": "d152ffa69d45b8357276341a3d592c6c025911d52ec0d9068d4f382560dd48b6"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/taggers/averaged_perceptron_tagger_eng/averaged_perceptron_tagger_eng.tagdict.json",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/taggers/averaged_perceptron_tagger_eng/averaged_perceptron_tagger_eng.tagdict.json",
+      "bytes": 25788,
+      "sha256": "4c713731cb06727736962bc8cd94ad919217a040e76691059af99bc0c2c9c246"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/taggers/averaged_perceptron_tagger_eng/averaged_perceptron_tagger_eng.weights.json",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/taggers/averaged_perceptron_tagger_eng/averaged_perceptron_tagger_eng.weights.json",
+      "bytes": 5677744,
+      "sha256": "789e8e35f6fac656d9b7eccea29ba4e8a137cbb5b525dd31f39e4291a9e80832"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/wordsegment/bigrams.txt",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/wordsegment/bigrams.txt",
+      "bytes": 5566017,
+      "sha256": "3bd156ba9477842930c5609fc7113864e3c093a97880736fba522c7edb4ba799"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/wordsegment/unigrams.txt",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/wordsegment/unigrams.txt",
+      "bytes": 4952042,
+      "sha256": "fd27e15b83ee7a55d8e17731a397eb4d389cbe2afd1c26afcba8ee2634c0a6d5"
+    },
+    {
+      "path": "genie-language-data/EnglishG2P/wordsegment/words.txt",
+      "upstreamPath": "GenieData/G2P/EnglishG2P/wordsegment/words.txt",
+      "bytes": 1763461,
+      "sha256": "0e5079e9a76bf19f303b8fa070a37372d8e9bf5af7f36225d95da1c8df357e00"
+    },
+    {
+      "path": "voice-genie-feibi/prompt_wav.json",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/prompt_wav.json",
+      "bytes": 155,
+      "sha256": "0e8b7dd762d557995c60057ae0ff6e0dfb1f28c0ef10094f5101667a32a4c11a"
+    },
+    {
+      "path": "voice-genie-feibi/prompt_wav/zh_vo_Main_Linaxita_2_1_10_26.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/prompt_wav/zh_vo_Main_Linaxita_2_1_10_26.wav",
+      "bytes": 381540,
+      "sha256": "c7aa99a813b2dfe397cd8df486f6402f88bdcf2ad4fae830a9cc10408e121fe3"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/prompt_encoder_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/prompt_encoder_fp16.bin",
+      "bytes": 44262912,
+      "sha256": "f02368fe1ab5ab43893a37e3034fa40fa30a0b74d84f319fb6ea30bc07c58604"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/prompt_encoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/prompt_encoder_fp32.onnx",
+      "bytes": 44464,
+      "sha256": "c4a3d8c1e385a17aecb7bd9c5ede5707ba390f85c3eb49b388deeaaaf53d2748"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/t2s_encoder_fp32.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/t2s_encoder_fp32.bin",
+      "bytes": 11465732,
+      "sha256": "928625cb99c00f83e6d7f1bbc2973c86f3fb6e3027e8835995d25617a153ff62"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/t2s_encoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/t2s_encoder_fp32.onnx",
+      "bytes": 14568,
+      "sha256": "f6eb1acd47c8e6d36b777886981a49122e8e070a5eb9888d458fb188dc139f75"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/t2s_first_stage_decoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/t2s_first_stage_decoder_fp32.onnx",
+      "bytes": 416803,
+      "sha256": "868f395999508905128c5325c5db4f4b37b2e70e04d6e2719fec64cbb60ee7f9"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/t2s_shared_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/t2s_shared_fp16.bin",
+      "bytes": 153413634,
+      "sha256": "9692aabc4830f673de998bcfbe71fad253ee8cf821d8ada2b0e4ddde42ebd30f"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/t2s_stage_decoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/t2s_stage_decoder_fp32.onnx",
+      "bytes": 417625,
+      "sha256": "3f02881c517423deb610f86d5441bd9825937c5069f3887cacefa1e9dc403b0d"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/vits_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/vits_fp16.bin",
+      "bytes": 124345856,
+      "sha256": "ee040162fc7abe857b8f233e4ae72cfffd786993188a95957a3e406bd499f8f9"
+    },
+    {
+      "path": "voice-genie-feibi/tts_models/vits_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/feibi/tts_models/vits_fp32.onnx",
+      "bytes": 1611210,
+      "sha256": "2f918e08a1bfecc568de4cc5dc96135cb8baf37a07f4eb4ec9258a4854fcd3f3"
+    },
+    {
+      "path": "voice-genie-thirtyseven/prompt_wav.json",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/prompt_wav.json",
+      "bytes": 519,
+      "sha256": "928939dc7918a2361fec1fb0343a7de2bb5407858faa2b97de295e273fc23046"
+    },
+    {
+      "path": "voice-genie-thirtyseven/prompt_wav/En_play_hero3066_fightingvoc_19.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/prompt_wav/En_play_hero3066_fightingvoc_19.wav",
+      "bytes": 122458,
+      "sha256": "176319efe34a949f22515de578210ede18a6a681dda62c638ae614955409f77c"
+    },
+    {
+      "path": "voice-genie-thirtyseven/prompt_wav/En_play_hero3066_mainvoc_6.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/prompt_wav/En_play_hero3066_mainvoc_6.wav",
+      "bytes": 369518,
+      "sha256": "a75108b280d44d0cbabd51e6229bbae9ff524c02c5e4fb75e1435e5a2c9c9897"
+    },
+    {
+      "path": "voice-genie-thirtyseven/prompt_wav/En_play_hero3066_mainvoc_8.wav",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/prompt_wav/En_play_hero3066_mainvoc_8.wav",
+      "bytes": 468612,
+      "sha256": "b899a5487040151339f0d0f4dea2e3501d842cc9105788949413f0627c15e47b"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/prompt_encoder_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/prompt_encoder_fp16.bin",
+      "bytes": 44262912,
+      "sha256": "4ab4c8aa141b94fc8bcd88e16d38eb19f86031655cb0b08ba37048f39e331f6e"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/prompt_encoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/prompt_encoder_fp32.onnx",
+      "bytes": 44464,
+      "sha256": "c4a3d8c1e385a17aecb7bd9c5ede5707ba390f85c3eb49b388deeaaaf53d2748"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/t2s_encoder_fp32.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/t2s_encoder_fp32.bin",
+      "bytes": 11465732,
+      "sha256": "ed4523082b203664f679d03f03230ca1ae9ef2e15513f8ba8c22096e08bb8b86"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/t2s_encoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/t2s_encoder_fp32.onnx",
+      "bytes": 14568,
+      "sha256": "f6eb1acd47c8e6d36b777886981a49122e8e070a5eb9888d458fb188dc139f75"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/t2s_first_stage_decoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/t2s_first_stage_decoder_fp32.onnx",
+      "bytes": 416803,
+      "sha256": "868f395999508905128c5325c5db4f4b37b2e70e04d6e2719fec64cbb60ee7f9"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/t2s_shared_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/t2s_shared_fp16.bin",
+      "bytes": 153413634,
+      "sha256": "085ac789d4f6abee9f9a4b48364b0d12d33200997fdbe52d03387cde73b9eb2e"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/t2s_stage_decoder_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/t2s_stage_decoder_fp32.onnx",
+      "bytes": 417625,
+      "sha256": "3f02881c517423deb610f86d5441bd9825937c5069f3887cacefa1e9dc403b0d"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/vits_fp16.bin",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/vits_fp16.bin",
+      "bytes": 124345856,
+      "sha256": "e369c72f3752e74a16adf6394f2a058f00f4a90bc894f2930b1e9325f7cb9e48"
+    },
+    {
+      "path": "voice-genie-thirtyseven/tts_models/vits_fp32.onnx",
+      "upstreamPath": "CharacterModels/v2ProPlus/thirtyseven/tts_models/vits_fp32.onnx",
+      "bytes": 1611210,
+      "sha256": "2f918e08a1bfecc568de4cc5dc96135cb8baf37a07f4eb4ec9258a4854fcd3f3"
     }
   ]
 }

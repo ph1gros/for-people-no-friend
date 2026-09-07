@@ -27,24 +27,27 @@ describe('renderer content security policy', () => {
   });
 });
 
-describe('resource centre window content security policy', () => {
-  const policy = policyOf('src/renderer/resource-center.html');
+describe.each(['src/renderer/resource-center.html', 'src/renderer/setup/index.html'])(
+  '%s content security policy',
+  (file) => {
+    const policy = policyOf(file);
 
-  it('ships the same production-safe restrictions as the main window', () => {
-    expect(policy).not.toContain('ws://127.0.0.1:5173');
-    expect(policy).toContain("base-uri 'none'");
-    expect(policy).toContain("form-action 'none'");
-    expect(policy).toContain("object-src 'none'");
-    expect(policy).toContain("frame-src 'none'");
-    expect(policy).toContain("script-src 'self'");
-    expect(policy).not.toContain("'unsafe-inline'");
-    expect(policy).not.toContain("'unsafe-eval'");
-  });
+    it('ships the same production-safe restrictions as the main window', () => {
+      expect(policy).not.toContain('ws://127.0.0.1:5173');
+      expect(policy).toContain("base-uri 'none'");
+      expect(policy).toContain("form-action 'none'");
+      expect(policy).toContain("object-src 'none'");
+      expect(policy).toContain("frame-src 'none'");
+      expect(policy).toContain("script-src 'self'");
+      expect(policy).not.toContain("'unsafe-inline'");
+      expect(policy).not.toContain("'unsafe-eval'");
+    });
 
-  it('forbids network access, which this window never performs', () => {
-    // The view submits known IDs and actions over IPC; download URLs never reach the renderer,
-    // so nothing in this window should be able to open a connection.
-    expect(policy).toContain("connect-src 'none'");
-    expect(policy).not.toContain('deskpet-model:');
-  });
-});
+    it('forbids network access, which this window never performs', () => {
+      // The view submits known IDs and actions over IPC; download URLs never reach the renderer,
+      // so nothing in this window should be able to open a connection.
+      expect(policy).toContain("connect-src 'none'");
+      expect(policy).not.toContain('deskpet-model:');
+    });
+  },
+);

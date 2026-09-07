@@ -592,10 +592,13 @@ describe('VTube Studio service integration', () => {
       ok: true,
       mapping: { modelId: 'model-id-2', confirmed: undefined },
     });
+    // A model with no confirmed emotion mapping at all is the ATRI case: its "expressions" are
+    // costumes and props, so there is no file to bind and reporting a missing mapping forever
+    // would leave it unable to emote. Emotions fall through to VTube Studio's own input
+    // parameters instead, and say so, so the caller can tell an approximation from a real match.
     await expect(service.present({ emotion: 'happy' })).resolves.toEqual({
-      ok: false,
-      reason: 'mapping-missing',
-      message: '当前模型没有可用的“开心”表情映射。',
+      ok: true,
+      reason: 'presented-generic',
     });
     currentModelLoaded = false;
     await expect(service.inspect()).resolves.toEqual({

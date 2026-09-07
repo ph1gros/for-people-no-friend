@@ -2,6 +2,8 @@ import type { DeskpetApi } from '../../shared/ipc';
 import {
   BUNDLED_IREINA_SPEECH_PRESET,
   GENIE_MIKA_PRESET,
+  GENIE_VOICE_PRESETS,
+  findGenieVoicePreset,
   MAX_SPEECH_WAKE_WORD_LENGTH,
   SPEECH_PUSH_TO_TALK_KEYS,
   type SpeechInputMode,
@@ -59,6 +61,18 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
   speechBaseUrlInput.placeholder = '例如：http://127.0.0.1:8000/v1';
   const speechModelInput = el('input', { maxLength: 256, placeholder: '语音模型 ID' });
   const speechVoiceInput = el('input', { maxLength: 256, placeholder: '音色 / speaker ID' });
+  const genieVoiceSelect = el('select', { attrs: { 'aria-label': 'Genie 音色预设' } });
+  genieVoiceSelect.append(el('option', { value: 'external', textContent: '自定义本机服务' }));
+  for (const preset of GENIE_VOICE_PRESETS) {
+    genieVoiceSelect.append(
+      el('option', {
+        value: preset.voiceId,
+        textContent: `${preset.name} · ${preset.languageName}`,
+      }),
+    );
+  }
+  const genieVoiceField = createField('Genie 音色预设', genieVoiceSelect);
+  genieVoiceField.hidden = true;
   const speechLanguageSelect = document.createElement('select');
   for (const [value, label] of SPEECH_LANGUAGE_OPTIONS) {
     const option = el('option', { value: value, textContent: label });
@@ -205,6 +219,7 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
     speechHint,
     speechProviderRoadmap,
     createField('语音提供商', speechProviderSelect),
+    genieVoiceField,
     createField('语音服务地址', speechBaseUrlInput),
     speechVoiceIdentityPanel,
     speechLanguageField,
@@ -308,6 +323,7 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
   let bundledIreinaAvailable = false;
   const updateSpeechProviderFields = (applyDefaults = false): void => {
     const providerId = speechProviderSelect.value as SpeechSettings['providerId'];
+    genieVoiceField.hidden = providerId !== 'genie-tts';
     speechVoiceConfirmButton.hidden = providerId === 'disabled';
     speechVoiceFieldLabel.textContent = '音色 ID';
     speechVoiceIdentityHint.textContent =
@@ -329,7 +345,7 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
       speechApiKeyInput.placeholder = 'Genie-TTS 本机服务不使用密钥';
       speechVoiceInput.placeholder = '已在 Genie 中加载的 character_name';
       speechVoiceIdentityHint.textContent =
-        '内置音色：圣园未花（Mika），日语，出自《蔚蓝档案》。需安装 Genie-TTS 引擎、Genie 基础模型和该音色。也可填写自行启动的 Genie 服务和角色名；修改后点击“保存”。';
+        '圣园未花（日语）、菲比（中文）、37（英语）。需安装引擎、Genie 基础模型和所选音色；中英文另需发音词典。日语和英语会通过当前聊天模型转换中文回复，菲比直接朗读中文；修改后点击“保存”。';
       if (applyDefaults) {
         speechBaseUrlInput.value = GENIE_MIKA_PRESET.baseUrl;
         speechModelInput.value = GENIE_MIKA_PRESET.modelId;
@@ -338,6 +354,9 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
         speechFormatSelect.value = 'wav';
         speechSpeedInput.value = '1';
       }
+      const selected = findGenieVoicePreset(speechVoiceInput.value);
+      genieVoiceSelect.value =
+        selected?.baseUrl === speechBaseUrlInput.value ? selected.voiceId : 'external';
     } else {
       speechVoiceInput.placeholder = '音色 / speaker ID';
       if (providerId === 'disabled') speechApiKeyInput.placeholder = '语音已关闭';
@@ -357,6 +376,17 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
       }
     }
   };
+  lifetime.on(genieVoiceSelect, 'change', () => {
+    const preset = findGenieVoicePreset(genieVoiceSelect.value);
+    if (!preset) return;
+    speechBaseUrlInput.value = preset.baseUrl;
+    speechModelInput.value = preset.modelId;
+    speechVoiceInput.value = preset.voiceId;
+    displaySpeechLanguage(preset.language);
+    speechFormatSelect.value = preset.responseFormat;
+    speechSpeedInput.value = String(preset.speed);
+    updateSpeechProviderFields();
+  });
   lifetime.on(speechVoiceConfirmButton, 'click', () => {
     if (!speechModelInput.value.trim()) {
       speechStatus.textContent = '请填写语音模型 ID。';
@@ -514,6 +544,7 @@ export const mountSpeechSettings = (options: SpeechPanelOptions) => {
       speechBaseUrlInput,
       speechModelInput,
       speechVoiceInput,
+      genieVoiceSelect,
       speechFormatSelect,
       speechSpeedInput,
       speechInputEnabledInput,

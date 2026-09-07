@@ -20,6 +20,30 @@ export interface SpeechAssetIntegrity {
 export const SPEECH_ASSET_INTEGRITY: Readonly<
   Record<SpeechAssetTierId, Readonly<SpeechAssetIntegrity> | null>
 > = Object.freeze({
+  'genie-language-data': Object.freeze({
+    version: '1.0.0',
+    target: 'genie-language-data',
+    sha256: '9f3e5cd38ba6b51d2b6997a2ba05a15e9cba1a90397b809c704e5934a5d80d90',
+    compressedBytes: 13182009,
+    extractedBytes: 36727353,
+    maxEntries: 15,
+  }),
+  'voice-genie-feibi': Object.freeze({
+    version: '1.0.0',
+    target: 'voice-genie-feibi',
+    sha256: '740cf5cccb2ac35d5ac9ad1da001c4fa2f08581453179a53e25c9d5f8a53177e',
+    compressedBytes: 305343100,
+    extractedBytes: 336375916,
+    maxEntries: 12,
+  }),
+  'voice-genie-thirtyseven': Object.freeze({
+    version: '1.0.0',
+    target: 'voice-genie-thirtyseven',
+    sha256: '2055cd88dfd68cea4c169b69ee5409d0157ed4189ba192028a41d6d0475f7aa3',
+    compressedBytes: 305779395,
+    extractedBytes: 336955328,
+    maxEntries: 14,
+  }),
   'voice-runtime': Object.freeze({
     version: '1.0.0',
     target: 'voice-runtime',
@@ -53,12 +77,12 @@ export const SPEECH_ASSET_INTEGRITY: Readonly<
     maxEntries: 5,
   }),
   'genie-tts': Object.freeze({
-    version: '1.0.4',
+    version: '1.1.2',
     target: 'genie-tts',
-    sha256: 'b7fc2610ed34bc9b1ca7d6e739dc2524a821185b8889cd5b8405d1a710bad00f',
-    compressedBytes: 178215260,
-    extractedBytes: 559619995,
-    maxEntries: 13218,
+    sha256: '91877a3e0b22ee5f4c1923fe8224b171dbdee95216dfe07f17051fdacd680eb7',
+    compressedBytes: 202524099,
+    extractedBytes: 612300086,
+    maxEntries: 14075,
   }),
   'genie-data': Object.freeze({
     version: '1.0.0',

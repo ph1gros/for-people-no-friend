@@ -260,6 +260,26 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
   let vTubeStudioActionMappings: Record<string, string> = {};
   let vTubeStudioModelMappings: Record<string, VTubeStudioModelMapping> = {};
   let currentVTubeStudioMapping: VTubeStudioInspectResult['mapping'];
+  /**
+   * Says where each guess came from. A guess read off a name is the author telling us what the
+   * expression is; a guess read off the parameters is us inferring it, and deserves a closer look
+   * before it is confirmed.
+   */
+  const describeVTubeStudioSuggestionSources = (
+    mapping: NonNullable<VTubeStudioInspectResult['mapping']>,
+  ): string => {
+    const sources = [
+      ...Object.values(mapping.suggestions.sources?.emotionExpressions ?? {}),
+      ...Object.values(mapping.suggestions.sources?.actionHotkeys ?? {}),
+    ];
+    const byName = sources.filter((source) => source === 'name').length;
+    const byParameters = sources.filter((source) => source === 'parameters').length;
+    const parts = [
+      byName ? `${byName} 项按名称识别` : '',
+      byParameters ? `${byParameters} 项按参数推断（建议逐条核对）` : '',
+    ].filter(Boolean);
+    return `自动识别到 ${sources.length} 项候选（${parts.join('，')}），确认后才会交给 AI 使用。`;
+  };
   const renderVTubeStudioMappings = (): void => {
     const emotionEntries = Object.entries(vTubeStudioEmotionMappings);
     const actionEntries = Object.entries(vTubeStudioActionMappings);
@@ -276,7 +296,7 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
           actionEntries.length
             ? `已确认动作：${actionEntries.map(([action]) => action).join('、')}`
             : '点头、摇头会使用内置轻动作；也可绑定模型动画',
-          suggestionCount ? `自动识别到 ${suggestionCount} 项候选，确认后才会交给 AI 使用。` : '',
+          suggestionCount ? describeVTubeStudioSuggestionSources(currentVTubeStudioMapping) : '',
         ]
           .filter(Boolean)
           .join('；')

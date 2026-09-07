@@ -4,9 +4,14 @@ import path from 'node:path';
 import { createChildEnvironment, PYTHON_RUNTIME_ENV_NAMES } from '../security/child-environment';
 import { isSpeechAssetActivated } from './speech-asset-activation';
 import { validateInstalledSpeechAssetTarget } from './speech-asset-downloader';
-import { GENIE_MIKA_PRESET } from '../../shared/speech-ipc';
+import {
+  GENIE_VOICE_PRESETS,
+  findGenieVoicePreset,
+  type GenieVoiceId,
+} from '../../shared/speech-ipc';
+import type { SpeechAssetTierId } from '../../shared/speech-asset-ipc';
+import { SPEECH_ASSET_TARGETS } from './speech-asset-layout';
 
-const REQUIRED = ['genie-tts', 'genie-data', 'voice-genie-mika'] as const;
 export interface GenieRuntimeOptions {
   fetch?: typeof fetch;
   spawn?: typeof spawn;
@@ -15,8 +20,8 @@ export interface GenieRuntimeOptions {
   developmentAssetsRoot?: string;
 }
 
-/** Fixed executable, endpoint and voice. Renderer never chooses launch arguments or paths. */
-export class GenieSpeechRuntime {
+/** One lazily started process per fixed voice prevents concurrent requests switching each other's voice. */
+class ManagedGenieVoiceRuntime {
   private child?: ChildProcess;
   private starting?: Promise<boolean>;
   private disposed = false;
@@ -25,6 +30,7 @@ export class GenieSpeechRuntime {
   public constructor(
     private readonly assetsRoot: string,
     private readonly options: GenieRuntimeOptions = {},
+    private readonly preset: (typeof GENIE_VOICE_PRESETS)[number] = GENIE_VOICE_PRESETS[0],
   ) {}
 
   public headers(): Record<string, string> {
@@ -35,9 +41,14 @@ export class GenieSpeechRuntime {
     for (const root of [this.assetsRoot, this.options.developmentAssetsRoot]) {
       if (!root) continue;
       try {
-        for (const id of REQUIRED) {
+        const required: SpeechAssetTierId[] = ['genie-tts', 'genie-data', this.preset.assetId];
+        if (this.preset.voiceId !== 'mika') required.push('genie-language-data');
+        for (const id of required) {
           if (!(await isSpeechAssetActivated(root, id))) throw Error('Inactive');
-          await validateInstalledSpeechAssetTarget(path.join(root, id), id);
+          await validateInstalledSpeechAssetTarget(
+            path.join(root, SPEECH_ASSET_TARGETS[id]),
+            SPEECH_ASSET_TARGETS[id],
+          );
         }
         return root;
       } catch {
@@ -58,7 +69,7 @@ export class GenieSpeechRuntime {
 
   private async health(): Promise<string> {
     try {
-      const response = await (this.options.fetch ?? fetch)(GENIE_MIKA_PRESET.baseUrl + '/ready', {
+      const response = await (this.options.fetch ?? fetch)(this.preset.baseUrl + '/ready', {
         headers: this.headers(),
         redirect: 'error',
         signal: AbortSignal.timeout(800),
@@ -85,7 +96,7 @@ export class GenieSpeechRuntime {
       const body = Buffer.concat(chunks).toString('utf8');
       const status = JSON.parse(body) as Record<string, unknown>;
       return status.engine === 'genie-tts' &&
-        status.voice === 'mika' &&
+        status.voice === this.preset.voiceId &&
         typeof status.status === 'string'
         ? status.status
         : 'unavailable';
@@ -114,7 +125,7 @@ export class GenieSpeechRuntime {
         '--host',
         '127.0.0.1',
         '--port',
-        '9882',
+        String(this.preset.port),
         '--log-level',
         'critical',
         '--no-access-log',
@@ -131,7 +142,9 @@ export class GenieSpeechRuntime {
           HF_HUB_DISABLE_IMPLICIT_TOKEN: '1',
           HF_HUB_DISABLE_TELEMETRY: '1',
           GENIE_DATA_DIR: path.join(root, 'genie-data'),
-          FPNF_GENIE_VOICE_ROOT: path.join(root, 'voice-genie-mika'),
+          FPNF_GENIE_VOICE_ROOT: path.join(root, this.preset.assetId),
+          FPNF_GENIE_VOICE_ID: this.preset.voiceId,
+          FPNF_GENIE_LANGUAGE_ROOT: path.join(root, 'genie-language-data'),
           FPNF_GENIE_SESSION_TOKEN: this.token,
         }),
       },
@@ -162,5 +175,42 @@ export class GenieSpeechRuntime {
     this.disposed = true;
     this.child?.kill();
     this.child = undefined;
+  }
+}
+
+/** Only compiled presets may choose a managed executable, component directory or endpoint. */
+export class GenieSpeechRuntime {
+  private readonly voices = new Map<GenieVoiceId, ManagedGenieVoiceRuntime>();
+  private disposed = false;
+
+  public constructor(
+    private readonly assetsRoot: string,
+    private readonly options: GenieRuntimeOptions = {},
+  ) {}
+
+  private runtime(voiceId: string): ManagedGenieVoiceRuntime | undefined {
+    const preset = findGenieVoicePreset(voiceId);
+    if (!preset || this.disposed) return undefined;
+    let runtime = this.voices.get(preset.voiceId);
+    if (!runtime) {
+      runtime = new ManagedGenieVoiceRuntime(this.assetsRoot, this.options, preset);
+      this.voices.set(preset.voiceId, runtime);
+    }
+    return runtime;
+  }
+
+  public headers(voiceId = 'mika'): Record<string, string> {
+    return this.runtime(voiceId)?.headers() ?? {};
+  }
+  public async resolveRoot(voiceId = 'mika'): Promise<string | undefined> {
+    return this.runtime(voiceId)?.resolveRoot();
+  }
+  public async ensureRunning(voiceId = 'mika'): Promise<boolean> {
+    return this.runtime(voiceId)?.ensureRunning() ?? false;
+  }
+  public dispose(): void {
+    this.disposed = true;
+    for (const runtime of this.voices.values()) runtime.dispose();
+    this.voices.clear();
   }
 }

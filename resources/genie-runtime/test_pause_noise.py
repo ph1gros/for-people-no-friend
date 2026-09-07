@@ -4,6 +4,36 @@ import numpy as np
 from test_terminal import service
 
 class PauseNoiseTests(unittest.TestCase):
+    def test_feibi_weak_breath_after_a_word_is_not_kept_by_the_200ms_guard(self):
+        rate = 32000
+        t = np.arange(rate*3)/rate
+        x = np.zeros(rate*3)
+        x[3200:rate] = .35*np.sin(2*np.pi*220*t[3200:rate])
+        x[rate*2:rate*3] = .35*np.sin(2*np.pi*220*t[rate*2:rate*3])
+        # Low-frequency, nonperiodic mouth/breath noise 60-200 ms after speech.
+        rng = np.random.default_rng(12)
+        noise = np.convolve(rng.normal(size=4480), np.ones(12)/12, mode='same')*.004
+        x[33920:38400] = noise
+        pcm = (x*32767).astype('<i2')
+        out = np.frombuffer(service.suppress_pause_noise(pcm.tobytes(), tighten_tail=True), dtype='<i2')
+        np.testing.assert_array_equal(out[:rate], pcm[:rate])
+        np.testing.assert_array_equal(out[rate*2:], pcm[rate*2:])
+        self.assertLess(np.linalg.norm(out[35000:38000]), np.linalg.norm(pcm[35000:38000])*.15)
+
+    def test_tighter_tail_keeps_soft_voiced_releases_and_high_frequency_consonants(self):
+        rate = 32000
+        t = np.arange(rate*3)/rate
+        noise = np.random.default_rng(17).normal(size=len(t))
+        unvoiced = .001*(noise-np.convolve(noise, np.ones(8)/8, mode='same'))
+        for release in (.002*np.sin(2*np.pi*220*t), unvoiced):
+            x = np.zeros(rate*3)
+            x[:rate] = .35*np.sin(2*np.pi*220*t[:rate])
+            x[rate:rate+6000] = release[rate:rate+6000]
+            x[rate*2:] = .35*np.sin(2*np.pi*220*t[rate*2:])
+            pcm = (x*32767).astype('<i2')
+            out = np.frombuffer(service.suppress_pause_noise(pcm.tobytes(), tighten_tail=True), dtype='<i2')
+            np.testing.assert_array_equal(out[:rate+6000], pcm[:rate+6000])
+
     def test_attenuates_a_low_energy_burst_inside_a_long_pause(self):
         rate = 32000
         t = np.arange(rate * 3) / rate

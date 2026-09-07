@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -28,8 +30,9 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: 'src/renderer/index.html',
-        resources: 'src/renderer/resource-center.html',
+        main: fileURLToPath(new URL('src/renderer/index.html', import.meta.url)),
+        resources: fileURLToPath(new URL('src/renderer/resource-center.html', import.meta.url)),
+        setup: fileURLToPath(new URL('src/renderer/setup/index.html', import.meta.url)),
       },
     },
   },

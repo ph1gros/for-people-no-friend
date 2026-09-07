@@ -1,7 +1,5 @@
 # FPNF 交接报告 —— UI 重做轮次（Claude → GPT/Codex）
 
-> 接手后的修复及验收状态见 [UI Round 3 验证记录](docs/UI_ROUND3_VERIFICATION.md)。用户已另行授权发布 v1.8.1，交付信息见 [V1.8.1 交付记录](docs/V1_8_1_DELIVERY.md)。以下保留原始任务书，已完成项及发布授权以新记录为准。
-
 日期：2026-09-05
 仓库：`C:\ai_deskpet`
 本轮改动文件：`src/renderer/styles.css`、`tests/style-tokens.test.ts`、`scripts/verify-style-tokens.mjs`
@@ -199,7 +197,14 @@ pnpm dev
 **验收标准**——四个分支逐个看，每个都要截图：
 
 1. **live2d + 角色在左**：角色上方和左边应当直接是桌面，没有任何深色边框；
-   角色头顶不被切；聊天面板一侧的深色区域右边缘有圆角、有投影。
+   角色头顶不被切；聊天面板一侧的深色区域左边缘是一条带圆角的硬边。
+
+   **更正**：`styles.css:150` 的 `0 7px 20px var(--shadow-2)` 那条投影**基本看不见**——
+   同一个 `box-shadow` 里排在它前面的 `0 0 0 9999px var(--fill-1)` 会盖在它上面，
+   `--fill-1` 是 90% 不透明度，所以只透出 10%。实测两张渲染图的最大通道差是 **9/255**。
+   要么把它删掉（当死代码清理），要么改成 `inset` 投影或独立元素才能真正看见。
+   这是个**待定项，不要自己改**——先在真机上确认那条边够不够清楚。
+
 2. **live2d + 角色在右**（`data-character-pane='right'`）：完全镜像。
    **这个分支我完全没验证过，最可能出问题。**
 3. **静态图模式**（`data-character-display-mode` 不是 `live2d`）：

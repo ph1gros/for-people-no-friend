@@ -45,6 +45,9 @@ const TIER_LABELS: Readonly<Record<SpeechAssetTierId, string>> = {
   'genie-tts': 'Genie-TTS 引擎',
   'genie-data': 'Genie 基础模型',
   'voice-genie-mika': 'Mika 音色模型',
+  'genie-language-data': 'Genie 中英文发音词典',
+  'voice-genie-feibi': '菲比（Feibi）音色模型',
+  'voice-genie-thirtyseven': '37（ThirtySeven）音色模型',
 };
 
 export const speechAssetTierLabel = (id: SpeechAssetTierId): string => TIER_LABELS[id];

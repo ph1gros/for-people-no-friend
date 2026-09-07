@@ -520,6 +520,7 @@ export class VTubeStudioService {
       );
 
       let presented = false;
+      let presentedGenerically = false;
       let missingEmotionMapping = false;
       if (input.state) {
         this.presentationState = input.state;
@@ -547,6 +548,9 @@ export class VTubeStudioService {
             assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
           }
           this.activeExpressionFile = undefined;
+          this.startIdleMotion();
+          this.idleMotion?.setEmotion('neutral');
+          await this.sendIdleMotionFrame();
           presented = true;
         } else {
           const expressionState = await session.request('ExpressionStateRequest', {
@@ -570,6 +574,11 @@ export class VTubeStudioService {
             this.activeExpressionFile = undefined;
             presented = true;
           }
+          if (expression) {
+            // 表情文件已经把整张脸写死了，通用参数通道必须让位，否则两边同时推同一批参数。
+            this.startIdleMotion();
+            this.idleMotion?.setEmotion('neutral');
+          }
           if (expression?.active) {
             this.activeExpressionFile = nextFile;
             presented = true;
@@ -582,6 +591,22 @@ export class VTubeStudioService {
             assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
             this.activeExpressionFile = nextFile;
             presented = true;
+          }
+          // 兜底只在“这个模型一个已确认的情绪映射都没有”时启用。
+          // 大量模型的“表情”其实是换装和道具（ATRI 的 16 个里 15 个是衣服和道具），
+          // 对它们退回 VTube Studio 的标准输入参数是唯一能表达情绪的办法。
+          // 但如果用户已经为这个模型确认过映射，只是缺了某一种情绪，那是一个该被报出来、
+          // 让用户去补绑的缺口——这时候悄悄用通用参数糊过去，用户永远不会知道能绑得更准。
+          const modelHasNoConfirmedEmotions =
+            Object.keys(modelMapping?.emotionExpressions ?? {}).length === 0;
+          if (missingEmotionMapping && modelHasNoConfirmedEmotions) {
+            this.startIdleMotion();
+            if (this.idleMotion) {
+              this.idleMotion.setEmotion(input.emotion);
+              await this.sendIdleMotionFrame();
+              presentedGenerically = true;
+              presented = true;
+            }
           }
         }
       }
@@ -605,7 +630,9 @@ export class VTubeStudioService {
           }
         }
       }
-      if (!presented || (missingEmotionMapping && !input.state && !input.action)) {
+      const unmappedAndNotCovered =
+        missingEmotionMapping && !presentedGenerically && !input.state && !input.action;
+      if (!presented || unmappedAndNotCovered) {
         if (input.emotion && missingEmotionMapping) {
           return {
             ok: false,
@@ -619,7 +646,7 @@ export class VTubeStudioService {
           message: '当前模型没有可用的动作映射。',
         };
       }
-      return { ok: true, reason: 'presented' };
+      return { ok: true, reason: presentedGenerically ? 'presented-generic' : 'presented' };
     } catch {
       this.diagnostics?.('vtube-studio-connection-failed');
       this.disconnect();

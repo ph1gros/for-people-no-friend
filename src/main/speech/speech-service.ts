@@ -11,7 +11,8 @@ import {
 } from '../../adapters/speech/openai-compatible-asr';
 import {
   BUNDLED_IREINA_SPEECH_PRESET,
-  GENIE_MIKA_PRESET,
+  findGenieVoicePreset,
+  isManagedGenieEndpoint,
   DEFAULT_SPEECH_SETTINGS,
   SPEECH_AUDIO_FORMATS,
   type SpeechOperationResult,
@@ -122,7 +123,8 @@ export const isBundledLocalTranscription = (settings: SpeechSettings): boolean =
 
 export interface AdditionalSpeechAdapters {
   genieTts?: GenieTtsAdapter;
-  ensureGenieRuntime?: () => Promise<boolean>;
+  ensureGenieRuntime?: (voiceId: string) => Promise<boolean>;
+  translateToEnglish?: SpeechTextTranslator;
   fishAudio?: FishAudioSpeechAdapter;
 }
 
@@ -224,23 +226,28 @@ export class SpeechService {
             options.waitForRuntime !== false,
           );
     const managedGenieSelected =
-      settings.providerId === 'genie-tts' && settings.baseUrl === GENIE_MIKA_PRESET.baseUrl;
+      settings.providerId === 'genie-tts' && isManagedGenieEndpoint(settings.baseUrl);
+    const geniePreset = findGenieVoicePreset(settings.voiceId);
+    const genieRuntimeKey = `genie-tts:${settings.voiceId}`;
     const managedGenieConfigured =
-      settings.voiceId === GENIE_MIKA_PRESET.voiceId &&
-      settings.language === GENIE_MIKA_PRESET.language;
+      geniePreset?.baseUrl === settings.baseUrl &&
+      settings.language === geniePreset.language &&
+      settings.modelId === geniePreset.modelId;
     const managedGenieReady =
       !managedGenieSelected || !settings.enabled || !configured
         ? true
         : managedGenieConfigured &&
           (await this.checkRuntime(
-            'genie-tts',
-            () => this.additionalAdapters.ensureGenieRuntime?.() ?? Promise.resolve(false),
+            genieRuntimeKey,
+            () =>
+              this.additionalAdapters.ensureGenieRuntime?.(settings.voiceId) ??
+              Promise.resolve(false),
             options.waitForRuntime !== false,
           ));
     const preparing =
       settings.enabled &&
       ((!bundledLocalVoiceReady && Boolean(this.runtimeChecks.get('style-bert-vits2')?.pending)) ||
-        (!managedGenieReady && Boolean(this.runtimeChecks.get('genie-tts')?.pending)));
+        (!managedGenieReady && Boolean(this.runtimeChecks.get(genieRuntimeKey)?.pending)));
     let inputDataDestination: 'none' | 'this-device' | 'remote-service' = 'none';
     let inputEndpointValid = false;
     try {
@@ -290,7 +297,7 @@ export class SpeechService {
               : preparing
                 ? '本地语音正在后台预热；你可以先进行文字聊天。'
                 : managedGenieSelected && !managedGenieReady
-                  ? '圣园未花（日语）尚未就绪，请检查 Genie-TTS 引擎、Genie 基础模型和音色模型是否已安装，并使用日语设置。'
+                  ? `${geniePreset?.name ?? '所选 Genie 音色'}尚未就绪，请安装配套引擎、基础模型和音色，并使用对应语言与服务地址。`
                   : bundledLocalVoiceSelected && bundledLocalVoiceReady !== true
                     ? '本机 Style-Bert-VITS2 运行时未就绪；文字回复仍可正常使用。'
                     : dataDestination === 'this-device'
@@ -389,6 +396,22 @@ export class SpeechService {
           message: '语音输出尚未配置；文字回复仍可正常使用。',
         };
       }
+      if (settings.providerId === 'genie-tts' && isManagedGenieEndpoint(settings.baseUrl)) {
+        const preset = findGenieVoicePreset(settings.voiceId);
+        if (
+          !preset ||
+          preset.baseUrl !== settings.baseUrl ||
+          preset.language !== settings.language ||
+          preset.modelId !== settings.modelId
+        ) {
+          return {
+            ok: false,
+            requestId: input.requestId,
+            cancelled: false,
+            message: 'Genie 音色、语言和服务地址不匹配，请重新选择音色预设。',
+          };
+        }
+      }
       const selectedSecretId = speechSecretId(settings.providerId);
       const apiKey = selectedSecretId ? await this.secrets.get(selectedSecretId) : undefined;
       if (
@@ -408,10 +431,16 @@ export class SpeechService {
         };
       }
       const japaneseOutput = settings.language.toLowerCase().startsWith('ja');
+      const englishOutput =
+        settings.providerId === 'genie-tts' &&
+        isManagedGenieEndpoint(settings.baseUrl) &&
+        settings.language.toLowerCase().startsWith('en');
       const translatedText =
         japaneseOutput && containsHanCharacters(input.text) && japaneseKanaCount(input.text) < 2
           ? await this.translateToJapanese?.(input.text, controller.signal)
-          : input.text;
+          : englishOutput && containsHanCharacters(input.text)
+            ? await this.additionalAdapters.translateToEnglish?.(input.text, controller.signal)
+            : input.text;
       const spokenText = translatedText
         ? japaneseOutput
           ? normalizeJapaneseSpeechText(translatedText)
@@ -422,7 +451,7 @@ export class SpeechService {
           ok: false,
           requestId: input.requestId,
           cancelled: false,
-          message: '日语转换失败；已停止错误语音，文字回复仍会保留。',
+          message: '语音语言转换失败；文字回复仍会保留。',
         };
       }
       const result =

@@ -48,6 +48,25 @@ const setup = () => {
   return { panel, api, nodes, getStatus: () => status };
 };
 describe('speech settings panel', () => {
+  it('pairs each managed voice with its language and endpoint without enabling speech automatically', () => {
+    const { panel } = setup();
+    const e = panel.elements;
+    e.speechProviderSelect.value = 'genie-tts';
+    e.speechProviderSelect.dispatchEvent(new Event('change'));
+    for (const [id, language, port] of [
+      ['feibi', 'zh-CN', 9883],
+      ['thirtyseven', 'en-US', 9884],
+      ['mika', 'ja-JP', 9882],
+    ] as const) {
+      e.genieVoiceSelect.value = id;
+      e.genieVoiceSelect.dispatchEvent(new Event('change'));
+      expect(e.speechVoiceInput.value).toBe(id);
+      expect(e.readSpeechLanguage()).toBe(language);
+      expect(e.speechBaseUrlInput.value).toBe(`http://127.0.0.1:${port}`);
+      expect(e.speechEnabledInput.checked).toBe(false);
+    }
+    panel.dispose();
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
