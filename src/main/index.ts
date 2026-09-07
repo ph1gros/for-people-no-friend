@@ -8,12 +8,14 @@ import path from 'node:path';
 
 import {
   app,
+  dialog,
   globalShortcut,
   net,
   protocol,
   safeStorage,
   screen,
   shell,
+  type BrowserWindow,
   type Tray,
 } from 'electron';
 
@@ -26,6 +28,9 @@ import { NativeInputActivityMonitor } from './desktop/native-input-activity-moni
 import { WindowsMediaController } from './desktop/windows-media-controller';
 import { WorkGlossaryService } from './glossary/work-glossary-service';
 import { registerIpcHandlers } from './ipc/register-ipc-handlers';
+import { runFirstRunSetupIfNeeded } from './setup/first-run-setup';
+import { SetupServices } from './setup/setup-services';
+import { SetupResourceService } from './setup/setup-resource-service';
 import { ModelRuntime } from './llm/model-runtime';
 import { MemoryService } from './memory/memory-service';
 import { SecretStore } from './security/secret-store';
@@ -117,25 +122,80 @@ if (!hasSingleInstanceLock) {
   let characterDisplayConfiguration: CharacterDisplayConfigStore | undefined;
   let assistantTools: AssistantToolService | undefined;
   let desktopLayout: DesktopLayoutStore | undefined;
+  let setupResources: SetupResourceService | undefined;
+  let setupOpening = false;
+  let activeSetupWindow: BrowserWindow | undefined;
 
-  app.on('second-instance', () => windowManager?.show());
+  app.on('second-instance', () => {
+    if (activeSetupWindow) activeSetupWindow.show();
+    else windowManager?.show();
+  });
+
+  // Completing setup closes its window before asynchronous main-window initialization.
+  // Keep the process alive across that gap; setup cancellation and the tray quit explicitly.
+  app.on('window-all-closed', () => {});
+
+  /**
+   * Runs the first-run wizard when needed, on the same provider and character services the
+   * application uses afterwards. A wizard failure never blocks startup; only an explicit
+   * cancellation or a "do not launch" choice stops the application.
+   */
+  const startFirstRunSetup = async (
+    userDataPath: string,
+    models: ModelRuntime,
+    packages: CharacterPackageService,
+    live2DImports: Live2DModelImportService,
+    forceRerun = false,
+  ): Promise<boolean> => {
+    if (setupOpening) {
+      activeSetupWindow?.show();
+      return true;
+    }
+    setupOpening = true;
+    try {
+      const result = await runFirstRunSetupIfNeeded({
+        userDataPath,
+        appVersion: app.getVersion(),
+        forceRerun,
+        ...(setupResources ? { resources: setupResources } : {}),
+        onWindow: (window) => {
+          activeSetupWindow = window;
+        },
+        createServices: (getWindow) =>
+          new SetupServices({
+            models,
+            characterLibrary: packages,
+            live2DModelManifest: () => live2DImports.getActiveModelManifest(),
+            placeholderCharacterName: DEFAULT_CHARACTER_PROFILE.name,
+            characterImports: {
+              characterPackages: packages,
+              live2DModelImports: live2DImports,
+              showOpenDialog: (options) => {
+                const window: BrowserWindow | undefined = getWindow();
+                return window
+                  ? dialog.showOpenDialog(window, options)
+                  : dialog.showOpenDialog(options);
+              },
+            },
+          }),
+      });
+      return result.startApplication;
+    } catch {
+      console.warn('The first-run setup wizard could not run. Starting normally.');
+      return true;
+    } finally {
+      setupOpening = false;
+      activeSetupWindow = undefined;
+    }
+  };
 
   void app.whenReady().then(async () => {
-    windowManager = new WindowManager((expanded) =>
-      vTubeStudioSpoutOverlay?.setSettingsPanelExpanded(expanded),
-    );
-    vTubeStudioSpoutOverlay = new VTubeStudioSpoutOverlay(
-      () => windowManager?.getWindow(),
-      undefined,
-      (event) => vTubeStudioService?.setDisplayTransportDiagnostic(event),
-    );
     const userDataPath = app.getPath('userData');
     const diagnosticLog = new SafeDiagnosticLog(userDataPath);
     const recordDiagnostic: SafeDiagnosticSink = (event) => void diagnosticLog.record(event);
-    desktopLayout = new DesktopLayoutStore(userDataPath);
     const providerConfiguration = new ProviderConfigStore(userDataPath);
     const characterProfiles = new CharacterProfileStore(userDataPath, DEFAULT_CHARACTER_PROFILE);
-    characterDisplayConfiguration = new CharacterDisplayConfigStore(userDataPath);
+    const secrets = new SecretStore(userDataPath, safeStorage, recordDiagnostic);
     characterPackages = new CharacterPackageService(
       userDataPath,
       characterProfiles,
@@ -143,24 +203,6 @@ if (!hasSingleInstanceLock) {
       resolveBundledModelRoot(__dirname),
     );
     live2DModelImports = new Live2DModelImportService(userDataPath, characterProfiles);
-    protocol.handle('deskpet-model', async (request) => {
-      try {
-        const url = new URL(request.url);
-        if (url.hostname !== 'active' || request.method !== 'GET')
-          return new Response(null, { status: 404 });
-        const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
-        const assetPath =
-          (await live2DModelImports?.resolveActiveAsset(relativePath)) ??
-          (await characterPackages?.resolveActiveAsset(relativePath));
-        return assetPath
-          ? net.fetch(pathToFileURL(assetPath).toString())
-          : new Response(null, { status: 404 });
-      } catch {
-        return new Response(null, { status: 404 });
-      }
-    });
-    database = new DeskpetDatabase(userDataPath);
-    const secrets = new SecretStore(userDataPath, safeStorage, recordDiagnostic);
     modelRuntime = new ModelRuntime(secrets, providerConfiguration, diagnosticLog);
     bundledSpeechRuntime = new BundledSpeechRuntime(
       resolveBundledSpeechRuntimeSources({
@@ -206,7 +248,7 @@ if (!hasSingleInstanceLock) {
           const voiceRoot = await bundledSpeechRuntime?.resolveAvailableVoiceRoot();
           if (voiceRoot) {
             localSpeechAssets?.useInstalledVoice(voiceRoot);
-            await speechConfigStore.enableBundledVoiceIfUnconfigured();
+            if (!setupOpening) await speechConfigStore.enableBundledVoiceIfUnconfigured();
           }
         },
       },
@@ -219,6 +261,44 @@ if (!hasSingleInstanceLock) {
         allowLocalhostHttp: !app.isPackaged,
       },
     );
+    setupResources = new SetupResourceService(
+      resourceCenter,
+      speechAssetManager,
+      speechConfigStore,
+    );
+    if (
+      !(await startFirstRunSetup(userDataPath, modelRuntime, characterPackages, live2DModelImports))
+    ) {
+      app.quit();
+      return;
+    }
+    windowManager = new WindowManager((expanded) =>
+      vTubeStudioSpoutOverlay?.setSettingsPanelExpanded(expanded),
+    );
+    vTubeStudioSpoutOverlay = new VTubeStudioSpoutOverlay(
+      () => windowManager?.getWindow(),
+      undefined,
+      (event) => vTubeStudioService?.setDisplayTransportDiagnostic(event),
+    );
+    desktopLayout = new DesktopLayoutStore(userDataPath);
+    characterDisplayConfiguration = new CharacterDisplayConfigStore(userDataPath);
+    protocol.handle('deskpet-model', async (request) => {
+      try {
+        const url = new URL(request.url);
+        if (url.hostname !== 'active' || request.method !== 'GET')
+          return new Response(null, { status: 404 });
+        const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ''));
+        const assetPath =
+          (await live2DModelImports?.resolveActiveAsset(relativePath)) ??
+          (await characterPackages?.resolveActiveAsset(relativePath));
+        return assetPath
+          ? net.fetch(pathToFileURL(assetPath).toString())
+          : new Response(null, { status: 404 });
+      } catch {
+        return new Response(null, { status: 404 });
+      }
+    });
+    database = new DeskpetDatabase(userDataPath);
     speechService = new SpeechService(
       speechConfigStore,
       secrets,
@@ -365,6 +445,15 @@ if (!hasSingleInstanceLock) {
       show: () => windowManager?.show(),
       hide: () => windowManager?.hide(),
       toggleVisibility: () => windowManager?.toggleVisibility(),
+      openSetupWizard: () => {
+        void startFirstRunSetup(
+          userDataPath,
+          modelRuntime!,
+          characterPackages!,
+          live2DModelImports!,
+          true,
+        );
+      },
       openResourceCenter: () => {
         void resourceWindow.open().catch(() => recordDiagnostic('resource-window-open-failed'));
       },

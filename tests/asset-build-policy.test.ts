@@ -16,6 +16,14 @@ const listFiles = async (root: string, relative = ''): Promise<string[]> => {
 };
 
 describe('renderer asset build policy', () => {
+  it('builds the deskpet, resource centre and setup pages together', async () => {
+    for (const page of ['index.html', 'resource-center.html', 'setup/index.html']) {
+      const html = await readFile(path.resolve('dist/renderer', page), 'utf8');
+      expect(html).toContain('<!doctype html>');
+      expect(html).not.toContain('ws://127.0.0.1:5173');
+    }
+  });
+
   it('disables the broad assets public directory', async () => {
     const source = await readFile(path.resolve('vite.config.mts'), 'utf8');
     expect(source).toContain('publicDir: false');

@@ -235,6 +235,12 @@ Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。We
 - AIRI、my-neuro、SillyTavern：上下文生命周期、长期陪伴、角色卡和连续对话的组织方式。
 - Live2D Cubism Web Framework：模型、Motion、Expression 与资源生命周期边界。
 
+## 首次启动
+
+以下为基于 v1.8.1 的未发布功能，现有 Release 压缩包尚未包含。全新安装首次启动会显示应用内向导，可配置服务商、API Key 与模型并测试连接，也可明确选择稍后配置。密钥仅经既有本机加密存储保存，不会回显。推荐设置不下载资源；自定义设置可预览并确认导入角色包、导入 Live2D，选择本地朗读与手动语音输入。
+
+下载前展示组件、许可、下载量和安装体积；安装页复用资源中心，支持开始/重试、暂停、继续和跳过。计费或未知成本网络需明确同意，只有全部配套资源校验就绪后才启用语音；向导不会打开麦克风。首次向导中途退出后恢复到上次保存的步骤，即使已经保存部分配置也不会误判为老用户。升级用户直接进入主界面，可从托盘「重新运行设置向导」主动重跑；重跑退出不影响下次正常启动。详见[实现与验收边界](docs/SETUP_WIZARD_IMPLEMENTATION.md)。
+
 ## 当前开发状态
 
 M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1.5 完成可信记忆、角色资料与角色包、模型协作、Live2D 表现、快捷键、媒体控制和小组件。V1.6 已完成声音主干、三种中文输入、工作模式、显示方式重构、VTube Studio 官方 API 适配和便携角色套装。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
@@ -287,6 +293,8 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 - [V1.7 当前实施与安全边界](docs/V1_7_IMPLEMENTATION.md)
 - [v1.7.1 Release 说明](docs/V1_7_1_RELEASE_NOTES.md)
 - [V1.8 界面布局实施与验收边界](docs/V1_8_IMPLEMENTATION.md)
+- [首次运行向导实现](docs/SETUP_WIZARD_IMPLEMENTATION.md)
+- [首次运行向导扩展指南](docs/SETUP_WIZARD_EXTENSION_GUIDE.md)
 - [中期参考项目审查](docs/MIDTERM_REFERENCE_AUDIT.md)
 - [1.0 之后路线](docs/POST_V1_ROADMAP.md)
 - [Claude API 用户准备清单](docs/CLAUDE_PREPARATION.md)

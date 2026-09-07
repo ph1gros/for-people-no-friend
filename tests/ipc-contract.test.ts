@@ -114,7 +114,48 @@ describe('IPC whitelist', () => {
       'vtubeStudio:inspect',
       'vtubeStudio:previewExpression',
       'vtubeStudio:present',
+      'setup:getState',
+      'setup:getResources',
+      'setup:controlResources',
+      'setup:advance',
+      'setup:back',
+      'setup:cancel',
+      'setup:complete',
+      'setup:getProviderStatus',
+      'setup:applyProvider',
+      'setup:testProvider',
+      'setup:cancelProviderTest',
+      'setup:getCharacterStatus',
+      'setup:previewCharacterPackage',
+      'setup:confirmCharacterPackage',
+      'setup:importLive2DModel',
     ]);
+  });
+
+  it('keeps the setup wizard limited to navigation, configuration and import channels', () => {
+    const setupChannels = Object.values(IPC_CHANNELS).filter((channel) =>
+      channel.startsWith('setup:'),
+    );
+    expect(setupChannels).toEqual([
+      'setup:getState',
+      'setup:getResources',
+      'setup:controlResources',
+      'setup:advance',
+      'setup:back',
+      'setup:cancel',
+      'setup:complete',
+      'setup:getProviderStatus',
+      'setup:applyProvider',
+      'setup:testProvider',
+      'setup:cancelProviderTest',
+      'setup:getCharacterStatus',
+      'setup:previewCharacterPackage',
+      'setup:confirmCharacterPackage',
+      'setup:importLive2DModel',
+    ]);
+    // Setup never reads a stored secret back, and never downloads resources on its own.
+    expect(setupChannels).not.toContain('setup:getProviderSecret');
+    expect(setupChannels).not.toContain('setup:download');
   });
 
   it('rejects channels outside the whitelist', () => {

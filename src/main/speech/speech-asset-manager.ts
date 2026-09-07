@@ -138,9 +138,14 @@ export class SpeechAssetManager {
       .map((tier) => ({ ...tier }));
   }
 
-  public async control(input: SpeechAssetControlInput): Promise<SpeechAssetDownloadStatus> {
+  public async control(
+    input: SpeechAssetControlInput,
+    consent: { allowMetered?: boolean; signal?: AbortSignal } = {},
+  ): Promise<SpeechAssetDownloadStatus> {
+    consent.signal?.throwIfAborted();
     if (this.disposed) return this.getStatus();
     const manifest = await this.loadManifest();
+    consent.signal?.throwIfAborted();
     if (this.disposed) return this.getStatus();
     const tier = manifest?.tiers.find(({ id }) => id === input.tierId);
     if (!tier) {
@@ -173,6 +178,15 @@ export class SpeechAssetManager {
       const operationVersion = this.operationVersions.get(tier.id);
       await this.ensureWorkspaceCleanup();
       await this.refreshNetworkCost();
+      consent.signal?.throwIfAborted();
+      if (consent.allowMetered === false && this.metered !== false) {
+        this.states.set(tier.id, {
+          ...this.stateFor(tier),
+          state: 'paused',
+          message: '网络按流量计费或费用未知，请确认后继续。',
+        });
+        return this.getStatus();
+      }
       if (
         this.disposed ||
         this.active.has(tier.id) ||

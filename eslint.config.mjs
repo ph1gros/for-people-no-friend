@@ -13,6 +13,7 @@ export default tseslint.config(
       'dist/**',
       'dist-electron/**',
       'node_modules/**',
+      'out/**',
       'native/vtube-studio-spout/vendor/spout2/**',
       'release/**',
     ],

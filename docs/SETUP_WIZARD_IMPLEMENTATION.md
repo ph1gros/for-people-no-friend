@@ -1,0 +1,67 @@
+# 首次运行向导实现 / Setup Wizard Implementation
+
+基于 v1.8.1 的未发布功能，对应 FPNF_SETUP_WIZARD_PR_PLAN 的框架、配置接线、可选语音资源与步骤恢复。它是应用内引导，不是 Windows 安装器；不改变免安装分发方式，不包含打包或发布。
+
+## 用户流程
+
+推荐路径：欢迎 → 设置方式 → 服务商 → 确认 → 完成。推荐设置不下载资源，不更换已有角色或语音配置。
+
+自定义路径：欢迎 → 设置方式 → 服务商 → 角色 → 语音输出 → 语音输入 → 确认 → 资源安装（有选择时）→ 完成。
+
+- 服务商页复用 ProviderConfigStore、SecretStore 和 ModelRuntime；密钥输入从空开始，保存后清空，不回传已存密钥。可以明确选择稍后配置或不测试继续。连接测试期间锁定输入，退出页面会取消测试。
+- 角色页复用设置面板的 character-import-operations。角色包先预览名称、来源、许可，再确认导入；替换冲突必须明确确认。Live2D 通过系统对话框选择模型。
+- 语音输出可选不修改、Genie-TTS / Mika、Style-Bert-VITS2 / 伊蕾娜；语音输入可选本地 SenseVoiceSmall。只在全部配套资源 ready 后写入对应设置。输入采用手动录音模式，向导本身不访问麦克风。
+- 确认页展示配套组件、许可、尚需下载总量和安装体积。安装体积不是安装期间峰值磁盘占用。
+- 资源页支持开始/重试、暂停、继续和跳过；默认不允许计费或未知成本网络，必须勾选同意。跳过不启用所选语音，文字聊天仍可继续。
+- 完成页展示实际配置并提供是否立即启动选项；托盘提供「重新运行设置向导」。
+
+## 状态与恢复
+
+状态仍存于 userData/setup.v1.json，内部 schema 升级到 version 2，兼容原 version 1 完成标记。采用临时文件加原子重命名。
+
+进行中状态只保存固定步骤 ID、非敏感选项和 rerun 标记，不保存 API Key、任意路径或异常正文。每次导航成功后保存；写入失败则恢复原步骤。恢复到上次已保存的步骤，不恢复未提交的文本输入。
+
+首次运行判定顺序：
+
+1. 已完成 → 直接进主界面。
+2. 有未完成进度 → 恢复向导，即使服务商/角色页已经写过配置。
+3. 只有历史配置 → 采纳为 existing-installation，直接进主界面。
+4. 空配置 → 先写进行中状态，再打开向导。
+
+老用户主动重跑时保留原完成标记；中途退出不会让后续正常启动被向导拦截。下次主动重跑可恢复进度。取消首次向导会退出启动流程，但不会撤销之前已确认的配置或导入。
+
+setup-diagnostic.v1.json 仅保留最近一次失败步骤、固定错误码和时间；不写异常正文、密钥或路径。
+
+## Electron 与 IPC 边界
+
+向导拥有独立常规窗口、HTML、内存 session 与沙箱 preload。启用 contextIsolation、sandbox，禁用 Node、任意导航、弹窗、webview 和全部权限；生产 CSP 禁止直接网络访问。
+
+window.deskpetSetup 仅提供固定方法：状态、前进/后退、取消/完成、服务商状态/保存/测试/取消测试、角色状态/预览/确认/模型导入、资源状态/任务控制。所有 setup: handler 验证当前存活向导 main frame，并在 Main 再解析输入；桌宠和资源窗口没有这些通道的调用权限。
+
+SetupController 持有步骤与选项，禁止提前完成、在确认页之前下载、在最终页伪造新增语音选择；取消后拒绝迟到请求。生命周期 AbortSignal 传至服务层，防止异步对话框、配置及网络检测返回后继续写入。清理幂等，退出时取消连接测试并暂停所选资源下载。
+
+first-run-setup 负责检测、建窗、等待结果和注销 IPC。建窗失败时安全回退主应用。窗口交接期间 Electron 保持运行，避免最后一个向导窗口销毁时主界面尚未创建就退出。
+
+## 复用资源中心
+
+SetupResourceService 使用同一 ResourceCenter、SpeechAssetManager 和 SpeechConfigStore 实例，不另建下载器或写队列。RESOURCE_DEFINITIONS 的固定依赖组合通过集合去重，防止循环依赖。
+
+Main 从 SPEECH_ASSET_INTEGRITY 提供固定版本的体积和可用性；安装仍由既有后端完成 HTTPS 来源检查、完整性校验、磁盘检查、网络成本检测和断点续传。只有后端已验证的 ready 状态才允许启用。
+
+向导的计费同意经内部可选参数传给 SpeechAssetManager；既有资源窗口的操作语义不变。取消向导暂停资源；资源中心窗口本身关闭不暂停下载，两者语义不同。
+
+## 渲染层与扩展
+
+src/core/setup/setup-flow.ts 是唯一页面清单；pages.ts 放配置页，resource-pages.ts 放资源页，setup.ts 管外壳与串行操作。异步页面提供 dispose，资源轮询只有一个在途查询，离页即停止。
+
+外壳使用 rem、可滚动内容区、响应式步骤列表、可换行按钮和 focus-visible；状态使用 role=status，步骤使用 aria-current，切页聚焦标题，Esc 触发取消。详细扩展清单见[扩展指南](SETUP_WIZARD_EXTENSION_GUIDE.md)。
+
+## 验证边界
+
+pnpm verify 包含 lint、format、typecheck、三个 HTML/preload 构建、Vitest、沙箱 preload、Electron sherpa 与 SQLite backup 冒烟。
+
+pnpm smoke:setup-startup 使用隔离临时 userData 和假旧配置，禁用资源网络入口，真实运行 Electron：新装完成向导进入主界面、旧配置跳过向导，两条路径都能打开七项资源目录。该测试通过 IPC 驱动导航，不等于人工点击验收。
+
+单元测试覆盖 schema 迁移与损坏状态、恢复/重跑、导航/窗口竞态、伪造 sender、服务复用、依赖循环、计费同意、资源未就绪拒绝启用、取消后拒绝写入、连接测试锁定及角色包二次确认。
+
+未声称完成：100% / 125% / 150% Windows DPI、多屏迁移、真实读屏和纯键盘全流程的人工验收，以及真实服务商/模型下载/系统导入对话框端到端验证。测试不读取用户实际配置或使用真实凭据。
