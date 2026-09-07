@@ -31,6 +31,9 @@ import { registerIpcHandlers } from './ipc/register-ipc-handlers';
 import { runFirstRunSetupIfNeeded } from './setup/first-run-setup';
 import { SetupServices } from './setup/setup-services';
 import { SetupResourceService } from './setup/setup-resource-service';
+import { SetupVoicePreviewService } from './setup/setup-voice-preview';
+import { setupResourceIds } from '../shared/setup-resources';
+import { DEFAULT_SETUP_SELECTIONS } from '../core/setup/setup-flow';
 import { ModelRuntime } from './llm/model-runtime';
 import { MemoryService } from './memory/memory-service';
 import { SecretStore } from './security/secret-store';
@@ -123,6 +126,7 @@ if (!hasSingleInstanceLock) {
   let assistantTools: AssistantToolService | undefined;
   let desktopLayout: DesktopLayoutStore | undefined;
   let setupResources: SetupResourceService | undefined;
+  let setupVoicePreview: SetupVoicePreviewService | undefined;
   let setupOpening = false;
   let activeSetupWindow: BrowserWindow | undefined;
 
@@ -158,6 +162,7 @@ if (!hasSingleInstanceLock) {
         appVersion: app.getVersion(),
         forceRerun,
         ...(setupResources ? { resources: setupResources } : {}),
+        ...(setupVoicePreview ? { voicePreview: setupVoicePreview } : {}),
         onWindow: (window) => {
           activeSetupWindow = window;
         },
@@ -266,6 +271,31 @@ if (!hasSingleInstanceLock) {
       speechAssetManager,
       speechConfigStore,
     );
+    // The wizard gets its own adapter so a preview can never be affected by, or affect, the
+    // speech settings the user has not finished choosing yet.
+    const setupPreviewTts = new GenieTtsAdapter({
+      fetch: (input, init) => net.fetch(input instanceof URL ? input.toString() : input, init),
+      prepareLocal: async (request, signal) => {
+        const preset = findGenieVoicePreset(request.characterName);
+        if (!preset || request.baseUrl !== preset.baseUrl)
+          throw new Error('内置 Genie 音色与服务地址不匹配。');
+        signal.throwIfAborted();
+        return genieSpeechRuntime!.headers(preset.voiceId);
+      },
+    });
+    setupVoicePreview = new SetupVoicePreviewService({
+      ensureRunning: (voiceId) => genieSpeechRuntime!.ensureRunning(voiceId),
+      synthesize: (request, signal) => setupPreviewTts.synthesize(request, signal),
+      isInstalled: async (voice) => {
+        const ids = setupResourceIds({ ...DEFAULT_SETUP_SELECTIONS, voice });
+        const status = await resourceCenter?.getStatus();
+        return (
+          status !== undefined &&
+          ids.length > 0 &&
+          ids.every((id) => status.downloads.tiers.find((t) => t.id === id)?.state === 'ready')
+        );
+      },
+    });
     if (
       !(await startFirstRunSetup(userDataPath, modelRuntime, characterPackages, live2DModelImports))
     ) {
@@ -483,6 +513,8 @@ if (!hasSingleInstanceLock) {
     speechService = undefined;
     bundledSpeechRuntime?.dispose();
     genieSpeechRuntime?.dispose();
+    setupVoicePreview?.stop();
+    setupVoicePreview = undefined;
     genieSpeechRuntime = undefined;
     bundledSpeechRuntime = undefined;
     resourceCenter?.dispose();

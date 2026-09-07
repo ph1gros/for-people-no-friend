@@ -10,11 +10,13 @@ import {
   parseAdvanceSetupInput,
   parseApplySetupProviderInput,
   parseCompleteSetupInput,
+  parsePreviewSetupVoiceInput,
   type ApplySetupProviderInput,
   type SetupCharacterStatus,
   type SetupCompletionResult,
   type SetupProviderStatus,
   type SetupViewState,
+  type SetupVoicePreviewResult,
 } from '../../shared/setup-ipc';
 import {
   parseConfirmCharacterPackageImportInput,
@@ -52,6 +54,8 @@ export interface SetupIpcController {
     input: ConfirmCharacterPackageImportInput,
   ): Promise<CharacterPackageFileResult>;
   importLive2DModel(): Promise<Live2DModelImportResult>;
+  previewVoice(voice: SetupSelections['voice']): Promise<SetupVoicePreviewResult>;
+  stopVoicePreview(): void;
 }
 
 export const SETUP_IPC_CHANNELS = Object.freeze([
@@ -70,6 +74,8 @@ export const SETUP_IPC_CHANNELS = Object.freeze([
   IPC_CHANNELS.previewSetupCharacterPackage,
   IPC_CHANNELS.confirmSetupCharacterPackage,
   IPC_CHANNELS.importSetupLive2DModel,
+  IPC_CHANNELS.previewSetupVoice,
+  IPC_CHANNELS.stopSetupVoicePreview,
 ]);
 
 /**
@@ -154,6 +160,16 @@ export const registerSetupIpcHandlers = (controller: SetupIpcController): (() =>
   ipcMain.handle(IPC_CHANNELS.importSetupLive2DModel, (event) => {
     requireTrustedSender(event);
     return controller.importLive2DModel();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.previewSetupVoice, (event, input: unknown) => {
+    requireTrustedSender(event);
+    return controller.previewVoice(parsePreviewSetupVoiceInput(input).voice);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.stopSetupVoicePreview, (event) => {
+    requireTrustedSender(event);
+    controller.stopVoicePreview();
   });
 
   return () => {

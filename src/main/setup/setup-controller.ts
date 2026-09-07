@@ -11,6 +11,7 @@ import type {
   SetupProviderStatus,
   SetupViewState,
   SetupProgress,
+  SetupVoicePreviewResult,
 } from '../../shared/setup-ipc';
 import { SETUP_STATE_VERSION } from '../../shared/setup-ipc';
 import type {
@@ -27,6 +28,7 @@ import type { SetupStateStore } from '../storage/setup-state-store';
 
 import type { SetupServices } from './setup-services';
 import type { SetupResourceService } from './setup-resource-service';
+import type { SetupVoicePreviewService } from './setup-voice-preview';
 import {
   setupResourceIds,
   type SetupResourceControl,
@@ -59,6 +61,8 @@ export interface SetupControllerOptions<TWindow extends SetupWindowHandle> {
   now?: () => Date;
   progress?: SetupProgress;
   resources?: SetupResourceService;
+  /** Absent when no managed voice engine is available; preview then reports itself unsupported. */
+  voicePreview?: SetupVoicePreviewService;
 }
 
 /**
@@ -224,6 +228,21 @@ export class SetupController<TWindow extends SetupWindowHandle = SetupWindowHand
         this.flow.restore('finish');
       }
     });
+  }
+
+  /**
+   * Preview never throws for an ordinary failure and never navigates: it is a reassurance feature,
+   * and a user must be able to finish setup with a voice that refuses to play.
+   */
+  public async previewVoice(voice: SetupSelections['voice']): Promise<SetupVoicePreviewResult> {
+    this.requireActiveSession();
+    const service = this.options.voicePreview;
+    if (!service) return { ok: false, reason: 'unsupported', message: '这个音色暂不支持试听。' };
+    return service.preview(voice, this.lifetime.signal);
+  }
+
+  public stopVoicePreview(): void {
+    this.options.voicePreview?.stop();
   }
 
   private requireResources(): SetupResourceService {

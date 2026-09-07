@@ -8,9 +8,9 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-当前仓库是 **Live2D Version**，当前版本为 **[v1.8.2](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.2)**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+当前仓库是 **Live2D Version**，当前版本为 **[v1.8.3](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.3)**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
-**Windows x64 下载**：[v1.8.2 便携 ZIP](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.8.2/FPNF-v1.8.2-Windows-x64.zip)，**138.82 MiB**，主程序解压约 337.90 MiB。解压后运行 `For People No Friend.exe`；可选语音组件单独下载。首次运行有设置向导，已有配置直接进入主界面。
+**Windows x64 下载**：[v1.8.3 便携 ZIP](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.8.3/FPNF-v1.8.3-Windows-x64.zip)。解压后运行 `For People No Friend.exe`；可选语音组件单独下载。首次运行有设置向导，已有配置直接进入主界面。
 
 v1.8.0 新增独立资源中心，将本地语音拆为“引擎、基础模型、音色模型、语音识别”四类。主程序保持轻量，所需组件通过 [公开资源仓库](https://github.com/ph1gros/fpnf-resources) 按需安装；新增受管理的 Genie-TTS 与圣园未花日语音色，修复句尾终止标记、长停顿噪声及打断后无法继续合成的问题，语音后台预热不再阻挡主窗口。记忆、模型连接、语音、VTube／ViewerEX、角色五个面板已拆分并补齐生命周期验证。
 
@@ -129,6 +129,10 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 ## 版本记录
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
+
+### v1.8.3
+
+向导多音色选择、固定短句试听与取消修复，完整范围、验证及限制见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md)。后续开发进入 [V1.9](docs/V1_9_PLAN.md)，AstraTTS 的转换与流式连续性验证安排在该阶段。
 
 ### v1.8.2
 
@@ -252,21 +256,25 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 
 ## 首次启动
 
-v1.8.2 已包含首次运行向导。全新安装首次启动会显示应用内向导，可配置服务商、API Key 与模型并测试连接，也可明确选择稍后配置。密钥仅经既有本机加密存储保存，不会回显。推荐设置不下载资源；自定义设置可预览并确认导入角色包、导入 Live2D，选择本地朗读与手动语音输入。
+应用包含首次运行向导。全新安装首次启动会显示应用内向导，可配置服务商、API Key 与模型并测试连接，也可明确选择稍后配置。密钥仅经既有本机加密存储保存，不会回显。推荐设置不下载资源；自定义设置可预览并确认导入角色包、导入 Live2D，选择本地朗读与手动语音输入。
 
-下载前展示组件、许可、下载量和安装体积；安装页复用资源中心，支持开始/重试、暂停、继续和跳过。计费或未知成本网络需明确同意，只有全部配套资源校验就绪后才启用语音；向导不会打开麦克风。首次向导中途退出后恢复到上次保存的步骤，即使已经保存部分配置也不会误判为老用户。升级用户直接进入主界面，可从托盘「重新运行设置向导」主动重跑；重跑退出不影响下次正常启动。详见[实现与验收边界](docs/SETUP_WIZARD_IMPLEMENTATION.md)。
+语音输出可选 Mika、菲比、37 和伊蕾娜；前三种音色在配套组件校验就绪后可试听固定原语言短句。下载前展示组件、许可、下载量和安装体积；安装页复用资源中心，支持开始/重试、暂停、继续和跳过。计费或未知成本网络需明确同意，只有全部配套资源校验就绪后才启用语音；向导不会打开麦克风。首次向导中途退出后恢复到上次保存的步骤，即使已经保存部分配置也不会误判为老用户。升级用户直接进入主界面，可从托盘「重新运行设置向导」主动重跑；重跑退出不影响下次正常启动。详见[实现与验收边界](docs/SETUP_WIZARD_IMPLEMENTATION.md)。
 
 ## 当前开发状态
 
-M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1.5 完成可信记忆、角色资料与角色包、模型协作、Live2D 表现、快捷键、媒体控制和小组件。V1.6 已完成声音主干、三种中文输入、工作模式、显示方式重构、VTube Studio 官方 API 适配和便携角色套装。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
+M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1.5 完成可信记忆、角色资料与角色包、模型协作、Live2D 表现、快捷键、媒体控制和小组件。V1.6 完成声音主干、三种中文输入、工作模式、显示方式重构、VTube Studio 官方 API 适配和便携角色套装。V1.7 引入本机离线语音。V1.8 把语音拆成按需下载的组件并新增独立资源中心，v1.8.1 收紧子进程环境与资源窗口边界，v1.8.2 加入首次运行向导与三种 Genie 音色。
+
+当前发布结果见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md)，开发进入 [V1.9 计划](docs/V1_9_PLAN.md)。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[下载 v1.7.1 Windows x64 免安装包](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.7.1)，文件名为 `FPNF-v1.7.1-Windows-x64.zip`，约 **138.8 MiB**，解压后约 **337.7 MiB**。准确字节数及 SHA-256 见 Release 附件 `package-info.json` 和 `SHA256SUMS.txt`。将整个 `FPNF` 文件夹解压后运行 `For People No Friend.exe`，不要直接在压缩软件内启动。
+[下载 v1.8.3 Windows x64 免安装包](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.8.3/FPNF-v1.8.3-Windows-x64.zip)，文件名为 `FPNF-v1.8.3-Windows-x64.zip`。包体积与 SHA-256 见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md#验证与发布测量)，Release 另附 `SHA256SUMS.txt`。解压到普通可写目录后运行 `For People No Friend.exe`，不要直接在压缩软件内启动。
 
-首次运行可先配置聊天接口；角色与模型需要自行导入。本包包含 ASR 引擎，但不含 SenseVoice、BERT、TTS 模型、Python 环境、伊蕾娜音色或黑猫资源。离线语音不会仅靠这个 ZIP 就绪，也不会在后台自动补齐；可以连接已有的语音服务。VTube Studio 另从 [Steam](https://store.steampowered.com/app/1325860/VTube_Studio/) 安装。
+全新安装首次启动会进入设置向导，可配置聊天服务商并测试连接，也可以明确选择稍后配置；已有配置直接进入主界面。角色与 Live2D 模型需要自行导入。
 
-更新时建议解压到新目录，不要覆盖旧目录中的自备资源；本机用户数据保存在应用用户目录。当前提供便携包，未进行代码签名，不提供自动升级。[V1.7 历史 Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.7) 与 [更早版本](https://github.com/ph1gros/for-people-no-friend/releases) 保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
+主程序包含语音识别引擎本体，**不含**任何语音合成模型、发音词典、音色权重、Python 运行环境或角色模型。离线语音由资源中心按需下载十项组件构成，不会在后台自动补齐；也可以直接连接已有的在线语音服务。VTube Studio 另从 [Steam](https://store.steampowered.com/app/1325860/VTube_Studio/) 安装。
+
+更新时建议解压到新目录，不要覆盖旧目录中的自备资源；本机用户数据保存在应用用户目录。当前提供便携包，未进行代码签名，不提供自动升级。[历史版本](https://github.com/ph1gros/for-people-no-friend/releases) 全部保留；动态 WebP 的后续发布在 [GIF Version Releases](https://github.com/ph1gros/for-people-no-friend-gif/releases)。
 
 ## 示例模型与素材来源
 
@@ -327,7 +335,7 @@ V1.7 的精准语音称呼默认跟随当前激活角色的名称，也可单独
 - **WebP Version**：本地 LLM 优先，生成一张紧凑角色卡即可开始；上下文注入更短，但重要事情仍进入同一套可信长期记忆流程。
 - **Live2D Version**：大型 LLM 优先，沿着 `neuro-like` 的长期陪伴方向发展，同时升级短期上下文、可信长期记忆、持续情绪、关系连续性和 Live2D 表现联动；任一可选模块失败时仍须回到普通文字聊天和基础动作。
 
-不同缩放、拖动、长回复、启动表现与长时间桌面运行的真人目视发烟统一延期到 V1.3；V1.2 只声明已经通过的自动测试、构建与安全检查。
+缩放、拖动、多屏、长回复、启动表现与长时间桌面运行的真人目视验收，始终与自动测试分开声明：每个版本只把实际跑过的自动测试、构建与安全检查记为通过。当前仍待人工观察或试听的项目集中在 [V1.9 人工验收清单](docs/V1_9_VISUAL_ACCEPTANCE.md)。
 
 ## 安全约定
 

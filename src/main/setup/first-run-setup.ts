@@ -11,6 +11,7 @@ import { detectExistingInstallation, resolveSetupLaunchDecision } from './first-
 import { SetupController } from './setup-controller';
 import type { SetupServices } from './setup-services';
 import type { SetupResourceService } from './setup-resource-service';
+import type { SetupVoicePreviewService } from './setup-voice-preview';
 import { DEFAULT_SETUP_SELECTIONS } from '../../shared/setup-ipc';
 
 export interface FirstRunSetupDependencies {
@@ -28,6 +29,7 @@ export interface FirstRunSetupDependencies {
   confirmCancel?: (window: BrowserWindow) => Promise<boolean>;
   registerHandlers?: (controller: SetupIpcController) => () => void;
   resources?: SetupResourceService;
+  voicePreview?: SetupVoicePreviewService;
   forceRerun?: boolean;
   onWindow?: (window: BrowserWindow) => void;
 }
@@ -103,6 +105,7 @@ export const runFirstRunSetupIfNeeded = async (
     confirmCancel: dependencies.confirmCancel ?? confirmSetupCancellation,
     ...(services ? { services } : {}),
     ...(dependencies.resources ? { resources: dependencies.resources } : {}),
+    ...(dependencies.voicePreview ? { voicePreview: dependencies.voicePreview } : {}),
     progress,
     rerun: progress.rerun,
   });

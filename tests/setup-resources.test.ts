@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseSetupResourceControl, setupResourceIds } from '../src/shared/setup-resources';
+import {
+  parseSetupResourceControl,
+  setupResourceIds,
+  SETUP_VOICE_ASSETS,
+} from '../src/shared/setup-resources';
 import { RESOURCE_DEFINITIONS } from '../src/shared/resource-catalog';
-import { DEFAULT_SETUP_SELECTIONS, type SetupSelections } from '../src/core/setup/setup-flow';
+import {
+  DEFAULT_SETUP_SELECTIONS,
+  SETUP_VOICES,
+  type SetupSelections,
+} from '../src/core/setup/setup-flow';
 
 const withSelections = (patch: Partial<SetupSelections>): SetupSelections => ({
   ...DEFAULT_SETUP_SELECTIONS,
@@ -26,6 +34,31 @@ describe('setup resource selection', () => {
       'voice-ireina',
       'voice-runtime',
     ]);
+  });
+
+  it('pulls the pronunciation dictionary the Chinese and English voices depend on', () => {
+    // Mika needs neither; Feibi and 37 cannot be installed without it, and a wizard that offers
+    // them while quoting Mika's download size would understate the download by ~13 MiB.
+    expect(setupResourceIds(withSelections({ voice: 'genie' }))).not.toContain(
+      'genie-language-data',
+    );
+    for (const voice of ['genie-feibi', 'genie-thirtyseven'] as const) {
+      expect(setupResourceIds(withSelections({ voice })).sort()).toEqual(
+        ['genie-data', 'genie-language-data', 'genie-tts', SETUP_VOICE_ASSETS[voice]!].sort(),
+      );
+    }
+  });
+
+  it('gives every wizard voice other than none exactly one starting asset', () => {
+    for (const voice of SETUP_VOICES) {
+      const ids = setupResourceIds(withSelections({ voice }));
+      if (voice === 'none') expect(ids).toEqual([]);
+      else expect(ids.length).toBeGreaterThan(0);
+    }
+    // A voice added to the enum without an asset would silently install nothing.
+    expect(Object.keys(SETUP_VOICE_ASSETS).sort()).toEqual(
+      SETUP_VOICES.filter((voice) => voice !== 'none').sort(),
+    );
   });
 
   it('adds speech recognition independently of the voice choice', () => {
@@ -71,7 +104,11 @@ describe('setup resource control validation', () => {
     expect(() => parseSetupResourceControl({ action: 'start' })).toThrow();
     expect(() => parseSetupResourceControl({ action: 'start', allowMetered: 'yes' })).toThrow();
     expect(() =>
-      parseSetupResourceControl({ action: 'start', allowMetered: true, tierId: 'voice-runtime' }),
+      parseSetupResourceControl({
+        action: 'start',
+        allowMetered: true,
+        tierId: 'voice-runtime',
+      }),
     ).toThrow();
     expect(() => parseSetupResourceControl(undefined)).toThrow();
     expect(() => parseSetupResourceControl([{ action: 'start', allowMetered: true }])).toThrow();

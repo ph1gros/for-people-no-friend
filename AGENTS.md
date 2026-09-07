@@ -13,4 +13,8 @@ These rules apply to the entire repository and are mandatory for every coding ta
 9. Before handing off a code change, run the smallest relevant tests and, for milestone or cross-boundary changes, run `pnpm verify`.
 10. Do not commit, push, publish, package, rewrite history, or change repository visibility unless the user explicitly asks for that operation.
 
+11. Working documents addressed to a coding agent — task lists, handoff reports, takeover records, fix tickets — stay out of version control. They are written for an assistant, they go stale as soon as the work moves, and a reader landing on the repository cannot tell a closed ticket from an open one. Keep them locally and put any conclusion worth keeping into the matching document under `docs/`. A file that a user is meant to read, such as `docs/CLAUDE_PREPARATION.md`, is not one of these.
+12. When the released version changes, the README download section, the version stated at the top, and `package.json` must be updated in the same change. A download link that points at a superseded release is a defect, not stale prose.
+13. Do not restate a milestone's status in more than one place. Point at the delivery record under `docs/` instead of copying its conclusions into the README, so there is exactly one document to correct when the status changes.
+
 If a requested change conflicts with the security standard, stop and explain the conflict before implementing it.

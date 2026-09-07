@@ -129,10 +129,12 @@ describe('IPC whitelist', () => {
       'setup:previewCharacterPackage',
       'setup:confirmCharacterPackage',
       'setup:importLive2DModel',
+      'setup:previewVoice',
+      'setup:stopVoicePreview',
     ]);
   });
 
-  it('keeps the setup wizard limited to navigation, configuration and import channels', () => {
+  it('keeps the setup wizard limited to configuration, imports and fixed voice previews', () => {
     const setupChannels = Object.values(IPC_CHANNELS).filter((channel) =>
       channel.startsWith('setup:'),
     );
@@ -152,6 +154,8 @@ describe('IPC whitelist', () => {
       'setup:previewCharacterPackage',
       'setup:confirmCharacterPackage',
       'setup:importLive2DModel',
+      'setup:previewVoice',
+      'setup:stopVoicePreview',
     ]);
     // Setup never reads a stored secret back, and never downloads resources on its own.
     expect(setupChannels).not.toContain('setup:getProviderSecret');

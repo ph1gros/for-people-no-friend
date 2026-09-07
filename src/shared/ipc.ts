@@ -218,6 +218,8 @@ export const IPC_CHANNELS = {
   previewSetupCharacterPackage: 'setup:previewCharacterPackage',
   confirmSetupCharacterPackage: 'setup:confirmCharacterPackage',
   importSetupLive2DModel: 'setup:importLive2DModel',
+  previewSetupVoice: 'setup:previewVoice',
+  stopSetupVoicePreview: 'setup:stopVoicePreview',
 } as const;
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];

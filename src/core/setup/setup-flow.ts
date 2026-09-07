@@ -19,7 +19,18 @@ export type SetupMode = (typeof SETUP_MODES)[number];
 export const SETUP_CHARACTER_SOURCES = ['placeholder', 'package', 'live2d'] as const;
 
 export type SetupCharacterSource = (typeof SETUP_CHARACTER_SOURCES)[number];
-export const SETUP_VOICES = ['none', 'genie', 'ireina'] as const;
+/**
+ * `genie` keeps meaning Mika instead of becoming a family name. A half-finished wizard stores this
+ * value in setup state, so redefining it would make a restored session select a different voice.
+ * Each new voice takes its own value.
+ */
+export const SETUP_VOICES = [
+  'none',
+  'genie',
+  'genie-feibi',
+  'genie-thirtyseven',
+  'ireina',
+] as const;
 export type SetupVoice = (typeof SETUP_VOICES)[number];
 
 export interface SetupSelections {
@@ -64,7 +75,10 @@ export const createDefaultSetupSteps = (): SetupStepDefinition[] => [
   // The recommended path keeps the neutral placeholder character and skips this page.
   { id: 'character', isEnabled: (selections) => selections.mode === 'custom' },
   { id: 'voice', isEnabled: (selections) => selections.mode === 'custom' },
-  { id: 'speechInput', isEnabled: (selections) => selections.mode === 'custom' },
+  {
+    id: 'speechInput',
+    isEnabled: (selections) => selections.mode === 'custom',
+  },
   { id: 'review' },
   { id: 'resources', isEnabled: (s) => s.voice !== 'none' || s.speechInput },
   { id: 'finish' },

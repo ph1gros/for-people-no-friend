@@ -1,11 +1,12 @@
 import { BUNDLED_RESOURCE_CATALOG, RESOURCE_DEFINITIONS } from '../../shared/resource-catalog';
 import {
   setupResourceIds,
+  SETUP_VOICE_ASSETS,
   type SetupResourceStatus,
   type SetupResourceControl,
 } from '../../shared/setup-resources';
 import type { SetupSelections } from '../../core/setup/setup-flow';
-import { BUNDLED_IREINA_SPEECH_PRESET, GENIE_MIKA_PRESET } from '../../shared/speech-ipc';
+import { BUNDLED_IREINA_SPEECH_PRESET, GENIE_VOICE_PRESETS } from '../../shared/speech-ipc';
 import { SPEECH_ASSET_INTEGRITY } from '../speech/speech-asset-integrity';
 import type { ResourceCenter } from '../resources/resource-center';
 import type { SpeechAssetManager } from '../speech/speech-asset-manager';
@@ -56,7 +57,10 @@ export class SetupResourceService {
       if (tier?.state === 'ready') continue;
       if (!starting && tier?.state !== 'downloading') continue;
       await this.downloads.control(
-        { tierId: id, action: starting ? (input.action as 'start' | 'resume') : 'pause' },
+        {
+          tierId: id,
+          action: starting ? (input.action as 'start' | 'resume') : 'pause',
+        },
         { allowMetered: input.allowMetered, signal },
       );
     }
@@ -77,7 +81,12 @@ export class SetupResourceService {
     signal.throwIfAborted();
     const current = await this.settings.get();
     signal.throwIfAborted();
-    const preset = selections.voice === 'genie' ? GENIE_MIKA_PRESET : BUNDLED_IREINA_SPEECH_PRESET;
+    // Resolve through the managed voice table so each Genie voice gets its own port and language
+    // instead of every Genie option landing on Mika's preset.
+    const genie = GENIE_VOICE_PRESETS.find(
+      (candidate) => candidate.assetId === SETUP_VOICE_ASSETS[selections.voice],
+    );
+    const preset = genie ?? BUNDLED_IREINA_SPEECH_PRESET;
     await this.settings.set({
       ...current,
       ...(selections.voice !== 'none'

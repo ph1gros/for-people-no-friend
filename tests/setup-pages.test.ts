@@ -10,6 +10,8 @@ import {
   type SetupViewState,
 } from '../src/shared/setup-ipc';
 import { fakePanelDocument, PanelElement, panelNodes, panelText } from './helpers/panel-dom';
+import { createResourceProgressPage } from '../src/renderer/setup/resource-pages';
+import type { SetupVoicePreviewResult } from '../src/shared/setup-ipc';
 
 const contextFor = (api: Partial<DeskpetSetupApi>): SetupPageContext => ({
   api: api as DeskpetSetupApi,
@@ -32,6 +34,43 @@ const findButton = (host: PanelElement, label: string): PanelElement => {
 describe('setup page confirmations', () => {
   beforeEach(fakePanelDocument);
   afterEach(() => vi.unstubAllGlobals());
+
+  it('ignores an old preview reply after stopping and starting a new preview', async () => {
+    const pending: Array<(value: SetupVoicePreviewResult) => void> = [];
+    const play = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      'Audio',
+      class extends EventTarget {
+        play = play;
+        pause = vi.fn();
+      },
+    );
+    const context = contextFor({
+      getSetupResources: vi.fn().mockResolvedValue({
+        resources: [],
+        downloads: { tiers: [{ id: 'voice-genie-mika', state: 'ready' }] },
+      }),
+      previewSetupVoice: vi.fn(() => new Promise((resolve) => pending.push(resolve))),
+      stopSetupVoicePreview: vi.fn().mockResolvedValue(undefined),
+    });
+    context.getSelections = () => ({ ...DEFAULT_SETUP_SELECTIONS, voice: 'genie' });
+    const host = new PanelElement('div');
+    const page = createResourceProgressPage();
+    await page.render(host as unknown as HTMLElement, view, context);
+    try {
+      const button = findButton(host, '试听');
+      button.dispatchEvent(new Event('click'));
+      button.dispatchEvent(new Event('click'));
+      button.dispatchEvent(new Event('click'));
+      pending[0]({ ok: false, reason: 'cancelled' });
+      await Promise.resolve();
+      pending[1]({ ok: true, reason: 'played', audio: new Uint8Array([1]), text: 'new preview' });
+      await vi.waitFor(() => expect(play).toHaveBeenCalledTimes(1), { timeout: 200 });
+      expect(panelText(host)).toContain('new preview');
+    } finally {
+      page.dispose?.();
+    }
+  });
 
   it('runs Live2D imports inside the shared navigation lock', async () => {
     let finish!: (value: { ok: true; canceled: true }) => void;

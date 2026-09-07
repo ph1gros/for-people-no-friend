@@ -111,6 +111,28 @@ export interface SetupCharacterStatus {
   hasLive2DModel: boolean;
 }
 
+/**
+ * The wizard sends only which voice to preview. Text, endpoint and voice id are all resolved in
+ * Main from the fixed managed-voice table.
+ */
+export interface PreviewSetupVoiceInput {
+  voice: SetupVoice;
+}
+
+export type SetupVoicePreviewReason =
+  'played' | 'unsupported' | 'not-installed' | 'unavailable' | 'cancelled' | 'failed';
+
+export interface SetupVoicePreviewResult {
+  ok: boolean;
+  reason: SetupVoicePreviewReason;
+  /** Present only on success. Raw audio bytes; the wizard plays them and keeps nothing. */
+  audio?: Uint8Array;
+  mimeType?: string;
+  /** The fixed sentence that was spoken, so the wizard can show it next to the button. */
+  text?: string;
+  message?: string;
+}
+
 export interface DeskpetSetupApi {
   getSetupResources(): Promise<import('./setup-resources').SetupResourceStatus>;
   controlSetupResources(
@@ -131,9 +153,22 @@ export interface DeskpetSetupApi {
     input: ConfirmCharacterPackageImportInput,
   ): Promise<CharacterPackageFileResult>;
   importSetupLive2DModel(): Promise<Live2DModelImportResult>;
+  previewSetupVoice(input: PreviewSetupVoiceInput): Promise<SetupVoicePreviewResult>;
+  stopSetupVoicePreview(): Promise<void>;
 }
 
+const SETUP_VOICE_SET = new Set<string>(SETUP_VOICES);
 const SETUP_MODE_SET = new Set<string>(SETUP_MODES);
+
+export const parsePreviewSetupVoiceInput = (value: unknown): PreviewSetupVoiceInput => {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('试听请求无效。');
+  const record = value as Record<string, unknown>;
+  if (Object.keys(record).some((key) => key !== 'voice') || typeof record.voice !== 'string')
+    throw new Error('试听请求无效。');
+  if (!SETUP_VOICE_SET.has(record.voice)) throw new Error('试听请求无效。');
+  return { voice: record.voice as SetupVoice };
+};
 const SETUP_CHARACTER_SOURCE_SET = new Set<string>(SETUP_CHARACTER_SOURCES);
 const MAX_TIMESTAMP_LENGTH = 40;
 const MAX_BASE_URL_LENGTH = 2_048;

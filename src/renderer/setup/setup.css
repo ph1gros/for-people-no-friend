@@ -144,6 +144,18 @@ body {
   color: var(--setup-muted);
 }
 
+/* 会说不出话的组合要看得见，但不该长成报错——用户还没做错任何事。 */
+.wizard__warning {
+  margin: 0.6rem 0 0;
+  padding: 0.7rem 0.85rem;
+  line-height: 1.7;
+  color: var(--setup-text);
+  border: 1px solid rgb(255 196 120 / 42%);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: rgb(255 176 80 / 10%);
+}
+
 .wizard__group {
   margin: 0;
   padding: 0;

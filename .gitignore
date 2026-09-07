@@ -8,7 +8,6 @@ config.local.*
 
 # Dependencies and builds
 node_modules/
-.pnpm-store/
 dist/
 dist-electron/
 out/
@@ -24,6 +23,15 @@ native/vtube-studio-spout/bin/*Debug.exe
 native/vtube-studio-spout/bin/SpoutLibrary.dll
 native/vtube-studio-spout/bin/*.lib
 FPNF-v*.zip
+
+# 交给 AI 编码助手的内部工单与接手记录。收件人是助手不是用户，内容随进度作废，
+# 不属于仓库对外的一部分。保留在本地，不进版本库。
+# docs/CLAUDE_PREPARATION.md 是给用户看的，不在此列。
+IMPROVEMENT_TASKS*.md
+AGENT_HANDOFF.md
+HANDOFF_*.md
+SECURITY_FIX_*.md
+docs/*_TAKEOVER.md
 
 # Logs and runtime data
 *.log
@@ -47,7 +55,3 @@ assets/models/local/*
 .DS_Store
 Thumbs.db
 desktop.ini
-
-# Local review screenshots and working handoff
-/Claude outputs/
-/HANDOFF_CLAUDE_GENIE_BREATH.md

@@ -1,4 +1,4 @@
-import type { SetupSelections } from '../core/setup/setup-flow';
+import type { SetupSelections, SetupVoice } from '../core/setup/setup-flow';
 import { RESOURCE_DEFINITIONS } from './resource-catalog';
 import type { SpeechAssetDownloadStatus, SpeechAssetTierId } from './speech-asset-ipc';
 
@@ -30,8 +30,24 @@ export const parseSetupResourceControl = (value: unknown): SetupResourceControl 
   ) {
     throw new Error('资源操作无效。');
   }
-  return { action: v.action as SetupResourceControl['action'], allowMetered: v.allowMetered };
+  return {
+    action: v.action as SetupResourceControl['action'],
+    allowMetered: v.allowMetered,
+  };
 };
+
+/**
+ * The one asset each wizard voice starts from. Everything else it needs — engine, base model,
+ * pronunciation dictionary — is reached through the catalog's own dependency links, so a voice
+ * added here picks up its dependencies and its download size without a second edit.
+ */
+export const SETUP_VOICE_ASSETS: Readonly<Partial<Record<SetupVoice, SpeechAssetTierId>>> =
+  Object.freeze({
+    genie: 'voice-genie-mika',
+    'genie-feibi': 'voice-genie-feibi',
+    'genie-thirtyseven': 'voice-genie-thirtyseven',
+    ireina: 'voice-runtime',
+  });
 
 /** Fixed application-owned combinations; dependency links can contain cycles. */
 export const setupResourceIds = (s: SetupSelections): SpeechAssetTierId[] => {
@@ -41,8 +57,8 @@ export const setupResourceIds = (s: SetupSelections): SpeechAssetTierId[] => {
     ids.add(id);
     RESOURCE_DEFINITIONS[id].dependencies.forEach(visit);
   };
-  if (s.voice === 'genie') visit('voice-genie-mika');
-  if (s.voice === 'ireina') visit('voice-runtime');
+  const voiceAsset = SETUP_VOICE_ASSETS[s.voice];
+  if (voiceAsset) visit(voiceAsset);
   if (s.speechInput) visit('speech-input');
   return [...ids];
 };

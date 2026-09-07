@@ -9,6 +9,7 @@ import type {
   ApplySetupProviderInput,
   CompleteSetupInput,
   DeskpetSetupApi,
+  PreviewSetupVoiceInput,
 } from '../shared/setup-ipc';
 
 /**
@@ -64,6 +65,14 @@ const deskpetSetupApi: DeskpetSetupApi = Object.freeze({
   importSetupLive2DModel: () =>
     ipcRenderer.invoke(IPC_CHANNELS.importSetupLive2DModel) as ReturnType<
       DeskpetSetupApi['importSetupLive2DModel']
+    >,
+  previewSetupVoice: (input: PreviewSetupVoiceInput) =>
+    ipcRenderer.invoke(IPC_CHANNELS.previewSetupVoice, input) as ReturnType<
+      DeskpetSetupApi['previewSetupVoice']
+    >,
+  stopSetupVoicePreview: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.stopSetupVoicePreview) as ReturnType<
+      DeskpetSetupApi['stopSetupVoicePreview']
     >,
 });
 

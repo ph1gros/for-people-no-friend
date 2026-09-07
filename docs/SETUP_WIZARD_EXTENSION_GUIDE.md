@@ -1,6 +1,6 @@
 # 首次运行向导扩展指南 / Setup Wizard Extension Guide
 
-实现与验证边界见[首次运行向导实现](SETUP_WIZARD_IMPLEMENTATION.md)。基线为 v1.8.1；资源中心已落地，向导已接线，不再等待“1.81”。
+实现与验证边界见[首次运行向导实现](SETUP_WIZARD_IMPLEMENTATION.md)，交付结果见 [v1.8.3 交付记录](V1_8_3_DELIVERY.md)。资源中心当前提供十项组件。
 
 ## 1. 能力与版本缺口
 

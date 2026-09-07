@@ -179,6 +179,8 @@ describe('setup IPC handlers', () => {
       previewCharacterPackage: async () => ({ ok: true, canceled: true }),
       confirmCharacterPackage: async () => ({ ok: true, canceled: false }),
       importLive2DModel: async () => ({ ok: true, canceled: true }),
+      previewVoice: vi.fn(async () => ({ ok: false, reason: 'not-installed' })),
+      stopVoicePreview: vi.fn(),
     };
     dispose = registerSetupIpcHandlers(controller);
   });
@@ -195,6 +197,23 @@ describe('setup IPC handlers', () => {
 
   it('serves the current view state to the setup window', () => {
     expect(invoke(IPC_CHANNELS.getSetupState, trustedEvent)).toEqual(viewState);
+  });
+
+  it('accepts only fixed voice choices and a trusted sender for preview controls', async () => {
+    await expect(
+      invoke(IPC_CHANNELS.previewSetupVoice, trustedEvent, { voice: 'genie-feibi' }),
+    ).resolves.toEqual({ ok: false, reason: 'not-installed' });
+    expect(controller.previewVoice).toHaveBeenCalledWith('genie-feibi');
+    for (const input of [
+      { voice: 'unknown' },
+      { voice: 'genie', text: 'arbitrary text' },
+      { voice: 'genie', baseUrl: 'http://127.0.0.1:1234' },
+    ]) {
+      expect(() => invoke(IPC_CHANNELS.previewSetupVoice, trustedEvent, input)).toThrow();
+    }
+    expect(controller.previewVoice).toHaveBeenCalledTimes(1);
+    invoke(IPC_CHANNELS.stopSetupVoicePreview, trustedEvent);
+    expect(controller.stopVoicePreview).toHaveBeenCalledTimes(1);
   });
 
   it('re-validates navigation input in the main process', () => {

@@ -1,6 +1,60 @@
-import { setupResourceIds, type SetupResourceStatus } from '../../shared/setup-resources';
+import {
+  setupResourceIds,
+  SETUP_VOICE_ASSETS,
+  type SetupResourceStatus,
+} from '../../shared/setup-resources';
 import type { SetupVoice } from '../../core/setup/setup-flow';
-import type { SetupPage } from './pages';
+import type { SetupPage, SetupPageContext } from './pages';
+
+interface SetupVoiceChoice {
+  value: SetupVoice;
+  label: string;
+  /** What the user will actually hear. Said before anything is downloaded, not after. */
+  language: string;
+  /**
+   * True when the voice cannot speak a Chinese reply on its own: the chat model has to translate
+   * it first. Picking one of these without configuring a provider leaves a voice that stays
+   * silent on exactly the replies this app produces.
+   */
+  needsChatModel: boolean;
+  /** The language the chat model has to produce. Stated as data so editing copy cannot change it. */
+  translatedTo?: '日语' | '英语';
+}
+
+/** Presented in this order; `none` first so the wizard never pushes a download. */
+const VOICE_CHOICES: readonly SetupVoiceChoice[] = Object.freeze([
+  { value: 'none', label: '暂不配置', language: '', needsChatModel: false },
+  {
+    value: 'genie-feibi',
+    label: 'Genie · 菲比（Feibi）',
+    language: '中文朗读。回复是中文时直接读出，不经过聊天模型。',
+    needsChatModel: false,
+  },
+  {
+    value: 'genie',
+    label: 'Genie · 圣园未花（Mika）',
+    language: '日语朗读。中文回复先由当前聊天模型转成日语，再读出来。',
+    needsChatModel: true,
+    translatedTo: '日语',
+  },
+  {
+    value: 'genie-thirtyseven',
+    label: 'Genie · 37（ThirtySeven）',
+    language: '英语朗读。中文回复先由当前聊天模型转成英语，再读出来。',
+    needsChatModel: true,
+    translatedTo: '英语',
+  },
+  {
+    value: 'ireina',
+    label: '伊蕾娜（Style-Bert-VITS2）',
+    language: '日语朗读。中文回复先由当前聊天模型转成日语，再读出来。',
+    needsChatModel: true,
+    translatedTo: '日语',
+  },
+]);
+
+const voiceChoiceOf = (voice: SetupVoice): SetupVoiceChoice | undefined =>
+  VOICE_CHOICES.find((choice) => choice.value === voice);
 
 export const formatSetupBytes = (bytes: number): string =>
   `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
@@ -9,12 +63,7 @@ const paragraph = (text: string): HTMLParagraphElement => {
   el.textContent = text;
   return el;
 };
-const labelOf = (voice: SetupVoice): string =>
-  voice === 'genie'
-    ? 'Genie 日语语音（圣园未花）'
-    : voice === 'ireina'
-      ? '伊蕾娜日语语音'
-      : '暂不配置';
+const labelOf = (voice: SetupVoice): string => voiceChoiceOf(voice)?.label ?? '暂不配置';
 export { labelOf as setupVoiceLabel };
 
 export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage => ({
@@ -27,13 +76,20 @@ export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage
     const detail = document.createElement('div');
     detail.setAttribute('aria-live', 'polite');
     const status = await context.api.getSetupResources();
-    const choices = kind === 'voice' ? ['none', 'genie', 'ireina'] : ['off', 'on'];
+    // Only the voice page needs the provider; asking for it on the speech-input page would be a
+    // second round trip for a warning that page never shows.
+    const provider =
+      kind === 'voice'
+        ? await context.api.getSetupProviderStatus().catch(() => undefined)
+        : undefined;
+    const choices = kind === 'voice' ? VOICE_CHOICES.map((c) => c.value) : ['off', 'on'];
     const updateDetail = (): void => {
       const s = context.getSelections();
       const ids = setupResourceIds(
         kind === 'voice' ? { ...s, speechInput: false } : { ...s, voice: 'none' },
       );
       const selected = status.resources.filter((r) => ids.includes(r.id));
+      const choice = kind === 'voice' ? voiceChoiceOf(s.voice) : undefined;
       detail.replaceChildren(
         paragraph(
           ids.length
@@ -53,6 +109,19 @@ export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage
             ),
           );
         detail.append(details);
+      }
+      if (choice?.language) detail.append(paragraph(choice.language));
+      // A voice that needs translation and a wizard run with no provider configured produce a
+      // silent character, and the user would only find out after several hundred megabytes.
+      if (choice?.needsChatModel && provider && !provider.configuredProviders.length) {
+        const warning = paragraph(
+          `${choice.label}需要聊天模型把中文回复转成${choice.translatedTo ?? '其他语言'}。` +
+            '当前还没有配置聊天服务商，这样安装完成后中文回复不会被朗读。' +
+            '可以先返回上一步配置服务商，或改选菲比（中文直读）。',
+        );
+        warning.className = 'wizard__warning';
+        warning.setAttribute('role', 'status');
+        detail.append(warning);
       }
     };
     for (const value of choices) {
@@ -80,6 +149,10 @@ export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage
           : value === 'on'
             ? '启用本地识别（SenseVoice，手动录音）'
             : '暂不配置';
+      if (kind === 'voice') {
+        const language = voiceChoiceOf(value as SetupVoice)?.language;
+        if (language) text.append(document.createElement('br'), document.createTextNode(language));
+      }
       label.append(input, text);
       group.append(label);
     }
@@ -96,6 +169,102 @@ export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage
   },
 });
 
+/**
+ * Plays one fixed sentence in the voice that was just installed.
+ *
+ * Deliberately lives on the resources page rather than the choice page: on a first run nothing is
+ * installed yet when the voice is chosen, so a button there would be permanently disabled for
+ * exactly the people the wizard exists for. Here it appears the moment the download verifies.
+ */
+const createVoicePreview = (
+  context: SetupPageContext,
+): { element: HTMLElement; setReady(ready: boolean): void; stop(): void } => {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'wizard__inline-actions';
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'wizard__button';
+  button.textContent = '试听';
+  button.disabled = true;
+  const feedback = paragraph('');
+  feedback.setAttribute('role', 'status');
+  wrapper.append(button, feedback);
+
+  let audio: HTMLAudioElement | undefined;
+  let url: string | undefined;
+  let playing = false;
+  let requestId = 0;
+  const release = (): void => {
+    requestId += 1;
+    audio?.pause();
+    audio = undefined;
+    if (url) URL.revokeObjectURL(url);
+    url = undefined;
+    playing = false;
+    button.textContent = '试听';
+  };
+  const stop = (): void => {
+    release();
+    // Tell main to drop any synthesis still in flight; leaving the page must not leave a process
+    // rendering audio nobody will hear.
+    void context.api.stopSetupVoicePreview().catch(() => undefined);
+  };
+
+  button.addEventListener('click', () => {
+    if (playing) {
+      stop();
+      feedback.textContent = '';
+      return;
+    }
+    playing = true;
+    const activeRequest = ++requestId;
+    button.textContent = '停止';
+    feedback.textContent = '正在合成…';
+    void (async () => {
+      try {
+        const result = await context.api.previewSetupVoice({
+          voice: context.getSelections().voice,
+        });
+        if (activeRequest !== requestId) return;
+        if (!result.ok || !result.audio) {
+          release();
+          // A failed preview is never fatal: the user can still finish setup.
+          feedback.textContent =
+            result.reason === 'cancelled' ? '' : (result.message ?? '试听失败，可重试。');
+          return;
+        }
+        url = URL.createObjectURL(
+          new Blob([new Uint8Array(result.audio)], { type: result.mimeType ?? 'audio/wav' }),
+        );
+        audio = new Audio(url);
+        audio.addEventListener('ended', () => {
+          if (activeRequest === requestId) release();
+        });
+        audio.addEventListener('error', () => {
+          if (activeRequest !== requestId) return;
+          release();
+          feedback.textContent = '音频无法播放，可重试。';
+        });
+        feedback.textContent = result.text ?? '';
+        await audio.play();
+      } catch {
+        if (activeRequest !== requestId) return;
+        release();
+        feedback.textContent = '试听失败，可重试。';
+      }
+    })();
+  });
+
+  return {
+    element: wrapper,
+    setReady: (ready) => {
+      button.disabled = !ready;
+      if (!ready && playing) stop();
+    },
+    stop,
+  };
+};
+
 export const createResourceProgressPage = (): SetupPage => {
   let stop = (): void => {};
   return {
@@ -108,6 +277,12 @@ export const createResourceProgressPage = (): SetupPage => {
       stop = () => {
         active = false;
         if (timer) clearTimeout(timer);
+      };
+      const preview = createVoicePreview(context);
+      const previousStop = stop;
+      stop = () => {
+        previousStop();
+        preview.stop();
       };
       const rows = document.createElement('div');
       const feedback = paragraph('准备读取安装状态…');
@@ -125,6 +300,14 @@ export const createResourceProgressPage = (): SetupPage => {
           (id) => status.downloads.tiers.find((t) => t.id === id)?.state === 'ready',
         );
         context.setNextEnabled(ready);
+        // Only offer a preview once the chosen voice itself verified, not merely its dependencies.
+        const voiceAsset = SETUP_VOICE_ASSETS[context.getSelections().voice];
+        preview.setReady(
+          Boolean(
+            voiceAsset &&
+            status.downloads.tiers.find((t) => t.id === voiceAsset)?.state === 'ready',
+          ),
+        );
         const names = {
           pending: '待安装',
           downloading: '下载 / 校验中',
@@ -202,7 +385,7 @@ export const createResourceProgressPage = (): SetupPage => {
         actions.append(button);
       }
       context.setNextEnabled(false);
-      host.replaceChildren(feedback, rows, cost, actions);
+      host.replaceChildren(feedback, rows, cost, actions, preview.element);
       await poll();
     },
   };
