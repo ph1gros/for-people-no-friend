@@ -28,6 +28,14 @@ import { NativeInputActivityMonitor } from './desktop/native-input-activity-moni
 import { WindowsMediaController } from './desktop/windows-media-controller';
 import { WorkGlossaryService } from './glossary/work-glossary-service';
 import { registerIpcHandlers } from './ipc/register-ipc-handlers';
+import { registerSocialIpcHandlers } from './ipc/register-social-ipc-handlers';
+import { KookPresenceController } from './social/kook-presence-controller';
+import { OopzBridgeManager } from './social/oopz-bridge-manager';
+import { OopzPresenceController } from './social/oopz-presence-controller';
+import { QqPresenceController } from './social/qq-presence-controller';
+import { SocialConfigStore } from './social/social-config-store';
+import { SocialVoiceCodec } from './social/social-voice-codec';
+import { createSocialConversationPort } from './social/social-conversation-port';
 import { runFirstRunSetupIfNeeded } from './setup/first-run-setup';
 import { SetupServices } from './setup/setup-services';
 import { SetupResourceService } from './setup/setup-resource-service';
@@ -103,6 +111,10 @@ if (!hasSingleInstanceLock) {
   let windowManager: WindowManager | undefined;
   let modelRuntime: ModelRuntime | undefined;
   let conversationRuntime: ConversationRuntime | undefined;
+  let qqPresence: QqPresenceController | undefined;
+  let kookPresence: KookPresenceController | undefined;
+  let oopzPresence: OopzPresenceController | undefined;
+  let disposeSocialIpc: (() => void) | undefined;
   let memoryService: MemoryService | undefined;
   let characterResearch: CharacterResearchService | undefined;
   let database: DeskpetDatabase | undefined;
@@ -410,15 +422,63 @@ if (!hasSingleInstanceLock) {
         projectChecks: createProjectCheckRunner(),
       },
     );
+    const conversationHistory = new ConversationStore(database);
+    const characterKnowledge = new CharacterKnowledgeStore(database);
     conversationRuntime = new ConversationRuntime(
       modelRuntime,
       characterProfiles,
-      new ConversationStore(database),
+      conversationHistory,
       memoryService,
       workGlossary,
-      new CharacterKnowledgeStore(database),
+      characterKnowledge,
       assistantTools,
     );
+    const socialModels = modelRuntime;
+    // Captured so the optional voice stack does not depend on the outer nullable binding.
+    const socialSpeech = speechService;
+    const socialStore = new SocialConfigStore(userDataPath, secrets);
+    const createSocialPort = (
+      profile: Parameters<typeof createSocialConversationPort>[0]['profile'],
+      voice?: Parameters<typeof createSocialConversationPort>[0]['voice'],
+    ) =>
+      createSocialConversationPort({
+        profile,
+        models: socialModels,
+        profiles: characterProfiles,
+        history: conversationHistory,
+        memoryService,
+        glossary: workGlossary,
+        characterKnowledge,
+        ...(voice ? { voice } : {}),
+      });
+    qqPresence = new QqPresenceController({
+      store: socialStore,
+      getProfile: () => characterProfiles.get(),
+      getWindow: () => windowManager?.getWindow(),
+      voice: { codec: new SocialVoiceCodec(), speech: socialSpeech },
+      createPort: (profile, voice) => createSocialPort(profile, voice),
+    });
+    kookPresence = new KookPresenceController({
+      speech: socialSpeech,
+      store: socialStore,
+      getProfile: () => characterProfiles.get(),
+      getWindow: () => windowManager?.getWindow(),
+      createPort: (profile) => createSocialPort(profile),
+    });
+    oopzPresence = new OopzPresenceController({
+      store: socialStore,
+      bridge: new OopzBridgeManager({
+        secrets,
+        getActiveCharacterId: async () => (await characterProfiles.get()).id,
+        // No audited bridge runtime is wired yet, so the manager fails closed on start and the
+        // stored password is never decrypted. The settings page surfaces this as unavailable.
+      }),
+      getProfile: () => characterProfiles.get(),
+      getWindow: () => windowManager?.getWindow(),
+      createPort: (profile) => createSocialPort(profile),
+      isRuntimeAvailable: () => false,
+    });
+    disposeSocialIpc = registerSocialIpcHandlers(qqPresence, kookPresence, oopzPresence);
     desktopIntegrations = new DesktopIntegrationService(
       new DesktopIntegrationStore(userDataPath),
       globalShortcut,
@@ -442,6 +502,11 @@ if (!hasSingleInstanceLock) {
         : undefined,
     );
     registerIpcHandlers({
+      onCharacterChanging: () => {
+        qqPresence?.stop();
+        kookPresence?.stop();
+        oopzPresence?.stop();
+      },
       windows: windowManager,
       models: modelRuntime,
       conversations: conversationRuntime,
@@ -478,6 +543,9 @@ if (!hasSingleInstanceLock) {
       hide: () => windowManager?.hide(),
       toggleVisibility: () => windowManager?.toggleVisibility(),
       openSetupWizard: () => {
+        qqPresence?.stop();
+        kookPresence?.stop();
+        oopzPresence?.stop();
         void startFirstRunSetup(
           userDataPath,
           modelRuntime!,
@@ -495,6 +563,14 @@ if (!hasSingleInstanceLock) {
   });
 
   app.on('before-quit', () => {
+    disposeSocialIpc?.();
+    disposeSocialIpc = undefined;
+    qqPresence?.dispose();
+    qqPresence = undefined;
+    kookPresence?.dispose();
+    kookPresence = undefined;
+    void oopzPresence?.dispose().catch(() => undefined);
+    oopzPresence = undefined;
     resourceWindow.dispose();
     desktopIntegrations?.dispose();
     desktopIntegrations = undefined;

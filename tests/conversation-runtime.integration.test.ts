@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import type { ChatEvent, ChatRequest, ModelSelection } from '../src/core/llm/contracts';
 import {
@@ -26,6 +26,85 @@ import type { AssistantToolService } from '../src/main/assistant/assistant-tool-
 
 describe('conversation runtime integration', () => {
   let directory: string | undefined;
+
+  it.each([false, true])(
+    'reports the shared-namespace wait and preserves cancellation/history order (cancel=%s)',
+    async (cancel) => {
+      directory = await mkdtemp(path.join(os.tmpdir(), 'deskpet-conversation-test-'));
+      const database = new DeskpetDatabase(directory);
+      const history = new ConversationStore(database);
+      const profiles = new CharacterProfileStore(directory);
+      const profile = await profiles.get();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let calls = 0;
+      const models = {
+        getConversationConfiguration: async () => ({
+          selection: { providerId: 'openai-compatible', modelId: 'fake' },
+        }),
+        streamConversation: async function* (): AsyncIterable<ChatEvent> {
+          if (++calls === 1) await gate;
+          yield { type: 'text-delta', text: '{"text":"reply","emotion":"neutral"}' };
+          yield { type: 'finish', reason: 'stop' };
+        },
+      } as unknown as ModelRuntime;
+      const social = new ConversationRuntime(models, profiles, history);
+      const desktop = new ConversationRuntime(models, profiles, history);
+      const input = {
+        requestId: 'owner-dm',
+        message: 'QQ owner',
+        availableActions: [],
+        assistantMode: false,
+      };
+      const owner = social.runScoped(
+        input,
+        { profile, memoryNamespace: profile.memoryNamespace, signal: new AbortController().signal },
+        () => undefined,
+      );
+      const events: ConversationEvent[] = [];
+      try {
+        await vi.waitFor(() => expect(calls).toBe(1));
+        expect(
+          desktop.start({ ...input, requestId: 'desktop', message: 'desktop' }, (event) =>
+            events.push(event),
+          ),
+        ).toEqual({ ok: true });
+        await vi.waitFor(() =>
+          expect(events).toContainEqual({
+            requestId: 'desktop',
+            type: 'tool-status',
+            label: '正在等待上一轮对话结束…',
+          }),
+        );
+        expect(events.some((event) => event.type === 'started')).toBe(false);
+        expect(await history.list(100, profile.memoryNamespace)).toHaveLength(1);
+        if (cancel) {
+          expect(desktop.cancel('desktop')).toBe(true);
+          await vi.waitFor(() =>
+            expect(events.some((event) => event.type === 'cancelled')).toBe(true),
+          );
+        }
+        release();
+        await owner;
+        if (!cancel)
+          await vi.waitFor(() =>
+            expect(events.some((event) => event.type === 'completed')).toBe(true),
+          );
+        const saved = await history.list(100, profile.memoryNamespace);
+        expect(saved.map((message) => message.role)).toEqual(
+          cancel ? ['user', 'assistant'] : ['user', 'assistant', 'user', 'assistant'],
+        );
+        expect(calls).toBe(cancel ? 1 : 2);
+      } finally {
+        release();
+        desktop.cancelAll();
+        await owner;
+        database.close();
+      }
+    },
+  );
 
   afterEach(async () => {
     if (directory) {

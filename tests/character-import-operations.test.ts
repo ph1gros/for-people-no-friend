@@ -43,7 +43,9 @@ describe('shared character import operations', () => {
   });
 
   it('treats a cancelled dialog as a cancellation, not a failure', async () => {
+    const onCharacterChanging = vi.fn();
     const dependencies: CharacterImportDependencies = {
+      onCharacterChanging,
       characterPackages: { preview: vi.fn() } as never,
       live2DModelImports: { importModel: vi.fn() } as never,
       showOpenDialog: async () => ({ canceled: true, filePaths: [] }),
@@ -57,6 +59,8 @@ describe('shared character import operations', () => {
       ok: true,
       canceled: true,
     });
+    expect(onCharacterChanging).not.toHaveBeenCalled();
+    expect(dependencies.live2DModelImports!.importModel).not.toHaveBeenCalled();
   });
 
   it('rejects an oversized package before it reaches the parser', async () => {
@@ -112,9 +116,14 @@ describe('shared character import operations', () => {
   });
 
   it('returns the imported Live2D model summary', async () => {
+    const onCharacterChanging = vi.fn();
     const dependencies: CharacterImportDependencies = {
+      onCharacterChanging,
       live2DModelImports: {
-        importModel: async () => ({ modelName: '示例模型', assetCount: 4, importedBytes: 1024 }),
+        importModel: async () => {
+          expect(onCharacterChanging).toHaveBeenCalledOnce();
+          return { modelName: '示例模型', assetCount: 4, importedBytes: 1024 };
+        },
       } as never,
       showOpenDialog: async () => ({ canceled: false, filePaths: ['C:/models/a.model3.json'] }),
     };

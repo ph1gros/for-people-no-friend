@@ -26,6 +26,13 @@ import {
 } from '../shared/desktop-integration-ipc';
 import type { SetDesktopLayoutSettingsInput } from '../shared/desktop-layout-ipc';
 import { type DeskpetApi, IPC_CHANNELS } from '../shared/ipc';
+import {
+  SOCIAL_IPC_CHANNELS,
+  type DeskpetSocialApi,
+  type KookPresenceApi,
+  type OopzPresenceApi,
+  type QqPresenceApi,
+} from '../shared/social-ipc';
 import type {
   ConfirmMemoryCandidateInput,
   MergeMemoryCandidatesInput,
@@ -69,7 +76,83 @@ import type {
   ResolveAssistantToolApprovalInput,
 } from '../shared/assistant-tools-ipc';
 
+const social: DeskpetSocialApi = Object.freeze({
+  getQqPresence: () =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.getQqPresence) as ReturnType<
+      QqPresenceApi['getQqPresence']
+    >,
+  saveQqPresence: (input: Parameters<QqPresenceApi['saveQqPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.saveQqPresence, input) as ReturnType<
+      QqPresenceApi['saveQqPresence']
+    >,
+  connectQqPresence: (input: Parameters<QqPresenceApi['connectQqPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.connectQqPresence, input) as ReturnType<
+      QqPresenceApi['connectQqPresence']
+    >,
+  disconnectQqPresence: (input: Parameters<QqPresenceApi['disconnectQqPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.disconnectQqPresence, input) as ReturnType<
+      QqPresenceApi['disconnectQqPresence']
+    >,
+  deleteQqSecret: (input: Parameters<QqPresenceApi['deleteQqSecret']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.deleteQqSecret, input) as ReturnType<
+      QqPresenceApi['deleteQqSecret']
+    >,
+  getKookPresence: () =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.getKookPresence) as ReturnType<
+      KookPresenceApi['getKookPresence']
+    >,
+  saveKookPresence: (input: Parameters<KookPresenceApi['saveKookPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.saveKookPresence, input) as ReturnType<
+      KookPresenceApi['saveKookPresence']
+    >,
+  connectKookPresence: (input: Parameters<KookPresenceApi['connectKookPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.connectKookPresence, input) as ReturnType<
+      KookPresenceApi['connectKookPresence']
+    >,
+  disconnectKookPresence: (input: Parameters<KookPresenceApi['disconnectKookPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.disconnectKookPresence, input) as ReturnType<
+      KookPresenceApi['disconnectKookPresence']
+    >,
+  deleteKookSecret: (input: Parameters<KookPresenceApi['deleteKookSecret']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.deleteKookSecret, input) as ReturnType<
+      KookPresenceApi['deleteKookSecret']
+    >,
+  controlKookVoice: (input: Parameters<NonNullable<KookPresenceApi['controlKookVoice']>>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.controlKookVoice, input) as Promise<
+      Awaited<ReturnType<KookPresenceApi['getKookPresence']>>
+    >,
+  getOopzPresence: () =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.getOopzPresence) as ReturnType<
+      OopzPresenceApi['getOopzPresence']
+    >,
+  saveOopzPresence: (input: Parameters<OopzPresenceApi['saveOopzPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.saveOopzPresence, input) as ReturnType<
+      OopzPresenceApi['saveOopzPresence']
+    >,
+  startOopzBridge: (input: Parameters<OopzPresenceApi['startOopzBridge']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.startOopzBridge, input) as ReturnType<
+      OopzPresenceApi['startOopzBridge']
+    >,
+  stopOopzBridge: (input: Parameters<OopzPresenceApi['stopOopzBridge']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.stopOopzBridge, input) as ReturnType<
+      OopzPresenceApi['stopOopzBridge']
+    >,
+  connectOopzPresence: (input: Parameters<OopzPresenceApi['connectOopzPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.connectOopzPresence, input) as ReturnType<
+      OopzPresenceApi['connectOopzPresence']
+    >,
+  disconnectOopzPresence: (input: Parameters<OopzPresenceApi['disconnectOopzPresence']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.disconnectOopzPresence, input) as ReturnType<
+      OopzPresenceApi['disconnectOopzPresence']
+    >,
+  deleteOopzSecret: (input: Parameters<OopzPresenceApi['deleteOopzSecret']>[0]) =>
+    ipcRenderer.invoke(SOCIAL_IPC_CHANNELS.deleteOopzSecret, input) as ReturnType<
+      OopzPresenceApi['deleteOopzSecret']
+    >,
+});
+
 const deskpetApi: DeskpetApi = Object.freeze({
+  social,
   getAppVersion: () => ipcRenderer.invoke(IPC_CHANNELS.getAppVersion) as Promise<string>,
   openDiagnosticLog: () =>
     ipcRenderer.invoke(IPC_CHANNELS.openDiagnosticLog) as ReturnType<

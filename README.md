@@ -262,6 +262,8 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 
 ## 当前开发状态
 
+社交存在的设置入口、QQ / KOOK / Oopz 配置方式及隐私边界见[社交配置引导](docs/SETUP_WIZARD_SOCIAL_PRESENCE.md)；功能范围、验证结果与 maintainer 验收清单统一记录在[社交存在交付记录](docs/SOCIAL_PRESENCE_DELIVERY.md)。该引导是说明文档，不是新增首次运行向导页面。
+
 M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1.5 完成可信记忆、角色资料与角色包、模型协作、Live2D 表现、快捷键、媒体控制和小组件。V1.6 完成声音主干、三种中文输入、工作模式、显示方式重构、VTube Studio 官方 API 适配和便携角色套装。V1.7 引入本机离线语音。V1.8 把语音拆成按需下载的组件并新增独立资源中心，v1.8.1 收紧子进程环境与资源窗口边界，v1.8.2 加入首次运行向导与三种 Genie 音色。
 
 当前发布结果见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md)，开发进入 [V1.9 计划](docs/V1_9_PLAN.md)。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
