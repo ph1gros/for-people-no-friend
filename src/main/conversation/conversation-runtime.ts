@@ -11,6 +11,7 @@ import {
   formatCharacterKnowledgeContext,
   retrieveCharacterKnowledgeForPrompt,
   type CharacterKnowledgeBase,
+  type CharacterKnowledgeRecord,
 } from '../../core/character/character-knowledge';
 import type { CharacterProfile } from '../../core/conversation/character-profile';
 import { validateCharacterProfile } from '../../core/conversation/character-profile';
@@ -20,7 +21,7 @@ import {
   selectRecentMessages,
 } from '../../core/conversation/context-assembler';
 import { formatWorkGlossaryContext } from '../../core/conversation/work-glossary';
-import { ConfigurationError, toPublicLlmError } from '../../core/llm/errors';
+import { CancelledError, ConfigurationError, toPublicLlmError } from '../../core/llm/errors';
 import type {
   ConversationEvent,
   ConversationMessage,
@@ -42,6 +43,69 @@ import type { CharacterKnowledgeStore } from '../storage/character-knowledge-sto
 import type { ConversationStore } from '../storage/conversation-store';
 
 type ConversationEventSink = (event: ConversationEvent) => void;
+
+/** Main-only turn context. Never accepted from conversation IPC or persisted as a profile. */
+export interface ConversationRuntimeScope {
+  profile: CharacterProfile;
+  promptProfile?: CharacterProfile;
+  memoryNamespace: string;
+  signal: AbortSignal;
+  includeKnowledgeRecord?: (record: CharacterKnowledgeRecord) => boolean;
+  allowExplicitMemory?: boolean;
+}
+
+// Also serializes owner DMs with desktop turns, even across runtime/store instances.
+const namespaceTurns = new Map<string, Promise<void>>();
+
+const abortable = <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
+  return new Promise<T>((resolve, reject) => {
+    const abort = (): void => reject(new CancelledError());
+    if (signal.aborted) abort();
+    else signal.addEventListener('abort', abort, { once: true });
+    void operation.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+};
+
+const cancellableEvents = async function* <T>(
+  events: AsyncIterable<T>,
+  signal: AbortSignal,
+): AsyncIterable<T> {
+  const iterator = events[Symbol.asyncIterator]();
+  try {
+    while (true) {
+      const next = await abortable(iterator.next(), signal);
+      if (signal.aborted) throw new CancelledError();
+      if (next.done) return;
+      yield next.value;
+    }
+  } finally {
+    void iterator.return?.().catch(() => undefined);
+  }
+};
+
+const acquireNamespace = async (namespace: string, signal: AbortSignal): Promise<() => void> => {
+  const previous = namespaceTurns.get(namespace) ?? Promise.resolve();
+  let release = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const tail = previous.then(() => gate);
+  namespaceTurns.set(namespace, tail);
+  const unlock = (): void => {
+    release();
+    void tail.then(() => {
+      if (namespaceTurns.get(namespace) === tail) namespaceTurns.delete(namespace);
+    });
+  };
+  try {
+    await abortable(previous, signal);
+    if (signal.aborted) throw new CancelledError();
+    return unlock;
+  } catch (error) {
+    unlock();
+    throw error;
+  }
+};
 
 interface ActiveConversation {
   controller: AbortController;
@@ -252,6 +316,32 @@ export class ConversationRuntime {
     return true;
   }
 
+  /** Awaitable host entry; shares the desktop pipeline but cannot run assistant tools. */
+  public async runScoped(
+    input: StartConversationInput,
+    scope: ConversationRuntimeScope,
+    emit: ConversationEventSink,
+  ): Promise<void> {
+    if (this.active.size > 0)
+      throw new ConfigurationError('Another reply is already being generated.');
+    if (!/^[A-Za-z0-9_:/.-]{1,256}$/.test(scope.memoryNamespace)) {
+      throw new ConfigurationError('The conversation namespace is invalid.');
+    }
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, scope.signal]);
+    this.active.set(input.requestId, { controller });
+    try {
+      await this.run(
+        { ...input, assistantMode: false, availableActions: [], wakeFromDrowsy: false },
+        signal,
+        emit,
+        scope,
+      );
+    } finally {
+      this.active.delete(input.requestId);
+    }
+  }
+
   public resolveToolApproval(requestId: string, approvalId: string, approved: boolean): boolean {
     const pending = this.pendingToolApprovals.get(approvalId);
     if (!pending || pending.requestId !== requestId) return false;
@@ -286,18 +376,31 @@ export class ConversationRuntime {
     input: StartConversationInput,
     signal: AbortSignal,
     emit: ConversationEventSink,
+    scope?: ConversationRuntimeScope,
   ): Promise<void> {
     let selectionProviderId = 'disabled';
     const decoder = new CharacterReplyStreamDecoder();
     const graphemes = new GraphemeStreamBuffer();
+    let namespace: string | undefined;
+    let releaseNamespace: (() => void) | undefined;
+    const wait = <T>(operation: Promise<T>): Promise<T> =>
+      scope ? abortable(operation, signal) : operation;
     try {
-      const [profile, existingHistory, configuration] = await Promise.all([
-        this.profiles.get(),
-        this.profiles
-          .get()
-          .then((activeProfile) => this.history.list(100, activeProfile.memoryNamespace)),
-        this.models.getConversationConfiguration(),
-      ]);
+      if (signal.aborted) throw new CancelledError();
+      const profile = scope?.profile ?? (await this.profiles.get());
+      const promptProfile = scope?.promptProfile ?? profile;
+      namespace = scope?.memoryNamespace ?? profile.memoryNamespace;
+      if (namespaceTurns.has(namespace)) {
+        emit({ requestId: input.requestId, type: 'tool-status', label: '正在等待上一轮对话结束…' });
+      }
+      releaseNamespace = await acquireNamespace(namespace, signal);
+      const [existingHistory, configuration] = await wait(
+        Promise.all([
+          this.history.list(100, namespace),
+          this.models.getConversationConfiguration(),
+        ]),
+      );
+      if (signal.aborted) throw new CancelledError();
       const selection = configuration.selection;
       if (!selection) {
         throw new ConfigurationError('Choose a conversation provider and model first.');
@@ -311,7 +414,7 @@ export class ConversationRuntime {
         createdAt: Date.now(),
         status: 'complete',
       };
-      await this.history.append(userMessage, profile.memoryNamespace);
+      await this.history.append(userMessage, namespace);
       emit({ requestId: input.requestId, type: 'started', userMessage });
       const wakePrefix = input.wakeFromDrowsy ? `${DROWSY_WAKE_PREFIX}\n` : '';
 
@@ -319,14 +422,16 @@ export class ConversationRuntime {
       let memoryFallback = false;
       if (this.memories) {
         try {
-          const explicitResult = this.memories.handleExplicitIntent(
-            profile.memoryNamespace,
-            userMessage,
-          );
+          const explicitResult =
+            scope?.allowExplicitMemory === false
+              ? { remembered: false, forgotten: 0 }
+              : this.memories.handleExplicitIntent(namespace, userMessage);
           memoryContext = [
             formatExplicitMemoryResult(explicitResult),
             formatMemoryContext(
-              await this.memories.getConversationContext(profile.memoryNamespace, input.message),
+              await wait(
+                Promise.resolve(this.memories.getConversationContext(namespace, input.message)),
+              ),
             ),
           ]
             .filter(Boolean)
@@ -336,6 +441,7 @@ export class ConversationRuntime {
           memoryFallback = true;
         }
       }
+      if (signal.aborted) throw new CancelledError();
       const context = selectRecentMessages([
         ...existingHistory
           .filter((message) => message.status === 'complete')
@@ -346,38 +452,47 @@ export class ConversationRuntime {
         .filter((message) => message.status === 'complete')
         .slice(-4)
         .map(({ role, content }) => ({ role, content }));
-      const turn = (this.conversationTurns.get(profile.memoryNamespace) ?? 0) + 1;
-      this.conversationTurns.set(profile.memoryNamespace, turn);
-      const recentUses =
-        this.recentlyUsedRoleplayExamples.get(profile.memoryNamespace) ?? new Map();
+      if (scope && !this.conversationTurns.has(namespace) && this.conversationTurns.size >= 128) {
+        const oldest = this.conversationTurns.keys().next().value;
+        if (oldest !== undefined) {
+          this.conversationTurns.delete(oldest);
+          this.recentlyUsedRoleplayExamples.delete(oldest);
+        }
+      }
+      const turn = (this.conversationTurns.get(namespace) ?? 0) + 1;
+      this.conversationTurns.set(namespace, turn);
+      const recentUses = this.recentlyUsedRoleplayExamples.get(namespace) ?? new Map();
       const excludedKeys = new Set(
         [...recentUses].filter(([, usedAt]) => turn - usedAt <= 2).map(([key]) => key),
       );
-      const selectedRoleplay = profile.lore
-        ? selectContextualRoleplayExamples(profile.lore, {
+      const selectedRoleplay = promptProfile.lore
+        ? selectContextualRoleplayExamples(promptProfile.lore, {
             query: input.message,
             recentMessages: recentCompanionRecords.map(({ content }) => content),
             excludedKeys,
           })
         : [];
       for (const selected of selectedRoleplay) recentUses.set(selected.key, turn);
-      this.recentlyUsedRoleplayExamples.set(profile.memoryNamespace, recentUses);
-      const [workGlossaryContext, characterKnowledgeContext] = await Promise.all([
-        this.glossary
-          ? this.glossary
-              .findMatches(
-                profile.lore?.sourceWork ?? '',
-                input.message,
-                existingHistory
-                  .filter((message) => message.status === 'complete')
-                  .slice(-4)
-                  .map((message) => message.content),
-              )
-              .then(formatWorkGlossaryContext)
-              .catch(() => '')
-          : '',
-        this.buildCharacterKnowledgeContext(profile, input.message),
-      ]);
+      this.recentlyUsedRoleplayExamples.set(namespace, recentUses);
+      const [workGlossaryContext, characterKnowledgeContext] = await wait(
+        Promise.all([
+          this.glossary
+            ? this.glossary
+                .findMatches(
+                  profile.lore?.sourceWork ?? '',
+                  input.message,
+                  existingHistory
+                    .filter((message) => message.status === 'complete')
+                    .slice(-4)
+                    .map((message) => message.content),
+                )
+                .then(formatWorkGlossaryContext)
+                .catch(() => '')
+            : '',
+          this.buildCharacterKnowledgeContext(profile, input.message, scope),
+        ]),
+      );
+      if (signal.aborted) throw new CancelledError();
       emit({
         requestId: input.requestId,
         type: 'context-debug',
@@ -437,7 +552,7 @@ export class ConversationRuntime {
       let inputTokens = 0;
       let outputTokens = 0;
       const systemPrompt = buildConversationSystemPrompt(
-        profile,
+        promptProfile,
         input.availableActions,
         memoryContext,
         input.message,
@@ -479,7 +594,7 @@ export class ConversationRuntime {
         outputTokens = task.outputTokens;
         remainingText = reply.text;
       } else {
-        for await (const event of this.models.streamConversation(
+        const events = this.models.streamConversation(
           {
             systemPrompt,
             messages: context,
@@ -488,7 +603,8 @@ export class ConversationRuntime {
           },
           selection,
           signal,
-        )) {
+        );
+        for await (const event of scope ? cancellableEvents(events, signal) : events) {
           if (event.type === 'text-delta') {
             const visible = decoder.push(event.text);
             if (visible) {
@@ -506,6 +622,7 @@ export class ConversationRuntime {
         reply = decoded.reply;
         remainingText = decoded.remainingText;
       }
+      if (signal.aborted) throw new CancelledError();
       const resolvedEmotion = resolveCompanionReplyEmotion(reply.emotion, recentCompanionRecords);
       const finalText = `${remainingText ? graphemes.push(remainingText) : ''}${graphemes.finish()}`;
       if (finalText) {
@@ -524,9 +641,10 @@ export class ConversationRuntime {
         inputTokens,
         outputTokens,
       };
-      await this.history.append(assistantMessage, profile.memoryNamespace);
+      await this.history.append(assistantMessage, namespace);
+      if (signal.aborted) throw new CancelledError();
       emit({ requestId: input.requestId, type: 'completed', assistantMessage });
-      this.memories?.scheduleMaintenance(profile.memoryNamespace, selection, [
+      this.memories?.scheduleMaintenance(namespace, selection, [
         ...existingHistory,
         userMessage,
         assistantMessage,
@@ -541,7 +659,7 @@ export class ConversationRuntime {
         const partialText =
           `${input.wakeFromDrowsy ? `${DROWSY_WAKE_PREFIX}\n` : ''}${decoder.visibleText}`.trim();
         let assistantMessage: ConversationMessage | undefined;
-        if (partialText) {
+        if (partialText && namespace && !scope) {
           assistantMessage = {
             id: `${input.requestId}-assistant`,
             role: 'assistant',
@@ -551,10 +669,7 @@ export class ConversationRuntime {
             emotion: 'neutral',
             providerId: selectionProviderId,
           };
-          const profile = await this.profiles.get();
-          await this.history
-            .append(assistantMessage, profile.memoryNamespace)
-            .catch(() => undefined);
+          await this.history.append(assistantMessage, namespace).catch(() => undefined);
         }
         emit({
           requestId: input.requestId,
@@ -564,6 +679,8 @@ export class ConversationRuntime {
       } else {
         emit({ requestId: input.requestId, type: 'error', error: publicError });
       }
+    } finally {
+      releaseNamespace?.();
     }
   }
 
@@ -600,6 +717,7 @@ export class ConversationRuntime {
   private async buildCharacterKnowledgeContext(
     profile: CharacterProfile,
     query: string,
+    scope?: ConversationRuntimeScope,
   ): Promise<string> {
     let base: CharacterKnowledgeBase | undefined;
     if (this.characterKnowledge) {
@@ -616,9 +734,10 @@ export class ConversationRuntime {
         base = undefined;
       }
     }
-    if (!base && profile.lore) {
+    const fallbackProfile = scope?.promptProfile ?? profile;
+    if (!base && fallbackProfile.lore) {
       try {
-        base = adaptLegacyCharacterLore(profile.memoryNamespace, profile.lore);
+        base = adaptLegacyCharacterLore(profile.memoryNamespace, fallbackProfile.lore);
       } catch {
         return '';
       }
@@ -628,7 +747,9 @@ export class ConversationRuntime {
       return formatCharacterKnowledgeContext(
         await retrieveCharacterKnowledgeForPrompt(
           { characterNamespace: profile.memoryNamespace, query },
-          base.records,
+          scope?.includeKnowledgeRecord
+            ? base.records.filter(scope.includeKnowledgeRecord)
+            : base.records,
         ),
       );
     } catch {

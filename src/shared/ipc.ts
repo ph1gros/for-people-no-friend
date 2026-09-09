@@ -73,6 +73,7 @@ import type {
 } from './speech-ipc';
 import type { SpeechAssetControlInput, SpeechAssetDownloadStatus } from './speech-asset-ipc';
 import type { ResourceCenterStatus } from './resource-catalog';
+import type { DeskpetSocialApi } from './social-ipc';
 import type {
   WorkGlossaryInput,
   WorkGlossaryStatus,
@@ -228,6 +229,7 @@ export const isAllowedIpcChannel = (channel: string): channel is IpcChannel =>
   Object.values(IPC_CHANNELS).includes(channel as IpcChannel);
 
 export interface DeskpetApi {
+  social?: DeskpetSocialApi;
   getAppVersion(): Promise<string>;
   openDiagnosticLog(): Promise<LocalAssetOperationResult>;
   getGlobalTrackingPoint(): Promise<{ x: number; y: number } | undefined>;

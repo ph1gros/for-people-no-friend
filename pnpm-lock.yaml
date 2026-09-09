@@ -11,15 +11,24 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.120.0
         version: 0.120.0
+      '@tencent-connect/qqbot-nodejs':
+        specifier: 1.0.4
+        version: 1.0.4(silk-wasm@3.7.1)
       fflate:
         specifier: 0.8.3
         version: 0.8.3
+      opusscript:
+        specifier: 0.1.1
+        version: 0.1.1
       pixi.js:
         specifier: 8.13.1
         version: 8.13.1
       sherpa-onnx-node:
         specifier: 1.13.7
         version: 1.13.7
+      silk-wasm:
+        specifier: 3.7.1
+        version: 3.7.1
       uiohook-napi:
         specifier: 1.5.5
         version: 1.5.5
@@ -412,6 +421,18 @@ packages:
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
+
+  '@tencent-connect/qqbot-nodejs@1.0.4':
+    resolution: {integrity: sha512-gU5HySLplczZXMUjM7NtiUACY7YfX9YlI/R9PKzCLMgLmHvwsX9L2sitsrYPMentGUr9b8NLfSaSTsndF77NBA==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      mpg123-decoder: ^1.0.3
+      silk-wasm: ^3.7.1
+    peerDependenciesMeta:
+      mpg123-decoder:
+        optional: true
+      silk-wasm:
+        optional: true
 
   '@types/cacheable-request@6.0.3':
     resolution: {integrity: sha512-IQ3EbTzGxIigb1I3qPZc1rWJnH0BmSKv5QYTalEwweFvyBDLSAe24zP0le/hyi7ecGfZVlIVAg4BZqb8WBwKqw==}
@@ -1529,6 +1550,9 @@ packages:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
 
+  opusscript@0.1.1:
+    resolution: {integrity: sha512-mL0fZZOUnXdZ78woRXp18lApwpp0lF5tozJOD1Wut0dgrA9WuQTgSels/CSmFleaAZrJi/nci5KOVtbuxeWoQA==}
+
   p-cancelable@2.1.1:
     resolution: {integrity: sha512-BZOr3nRQHOntUjTrH8+Lh54smKHoHyur8We1V8DSMVrl5A2malOOwuJRnKRDjSnkoeBh4at6BwEnb5I7Jl31wg==}
     engines: {node: '>=8'}
@@ -1782,6 +1806,10 @@ packages:
 
   signal-exit@3.0.7:
     resolution: {integrity: sha512-wnD2ZE+l+SPC/uoS0vXeE9L1+0wuaMqKlfz9AMUo38JsyLSBWSFcHR1Rri62LZc12vLr1gb3jl7iwQhgwpAbGQ==}
+
+  silk-wasm@3.7.1:
+    resolution: {integrity: sha512-mXPwLRtZxrYV3TZx41jMAeKc80wvmyrcXIcs8HctFxK15Ahz2OJQENYhNgEPeCEOdI6Mbx1NxQsqxzwc3DKerw==}
+    engines: {node: '>=16.11.0'}
 
   simple-update-notifier@2.0.0:
     resolution: {integrity: sha512-a2B9Y0KlNXl9u/vsW6sTIu9vGEpfKu2wRV6l1H3XEas/0gUIzGzBoP/IouTcUQbm9JWZLH3COxyn03TYlFax6w==}
@@ -2441,6 +2469,15 @@ snapshots:
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
+
+  '@tencent-connect/qqbot-nodejs@1.0.4(silk-wasm@3.7.1)':
+    dependencies:
+      ws: 8.21.3
+    optionalDependencies:
+      silk-wasm: 3.7.1
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   '@types/cacheable-request@6.0.3':
     dependencies:
@@ -3685,6 +3722,8 @@ snapshots:
       type-check: 0.4.0
       word-wrap: 1.2.5
 
+  opusscript@0.1.1: {}
+
   p-cancelable@2.1.1: {}
 
   p-limit@3.1.0:
@@ -3934,6 +3973,8 @@ snapshots:
   siginfo@2.0.0: {}
 
   signal-exit@3.0.7: {}
+
+  silk-wasm@3.7.1: {}
 
   simple-update-notifier@2.0.0:
     dependencies:

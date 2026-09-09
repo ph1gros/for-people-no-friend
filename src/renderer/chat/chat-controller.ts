@@ -3,6 +3,9 @@ import { mountVTubeSettings } from './settings-vtube';
 import { mountSpeechSettings } from './settings-speech';
 import { createButtonFeedback } from './panel-feedback';
 import { mountProviderSettings } from './settings-provider';
+import { mountKookSettings } from './settings-kook';
+import { mountOopzSettings } from './settings-oopz';
+import { mountSocialSettings } from './settings-social';
 import type { CharacterPresentationPort } from '../../core/presentation/character-presentation';
 import {
   DEFAULT_CHARACTER_PROFILE,
@@ -387,6 +390,12 @@ export const initializeChat = async ({
   const scaleLabel = el('span', { textContent: '桌宠大小' });
   scaleField.append(scaleLabel, scaleControl);
 
+  const socialPanel = mountSocialSettings({ api: api?.social });
+  const kookPanel = mountKookSettings({ api: api?.social });
+  const oopzPanel = mountOopzSettings({ api: api?.social });
+  // One "social presence" page listing every platform, as the presence model describes.
+  const socialSettingsSection = el('div');
+  socialSettingsSection.append(socialPanel.section, kookPanel.section, oopzPanel.section);
   const providerPanel = mountProviderSettings({
     api,
     save: (status) => saveSettings(status, false),
@@ -957,6 +966,7 @@ export const initializeChat = async ({
   const settingsContent = el('div', { className: 'settings-content' });
   type SettingsPage =
     | 'model'
+    | 'social'
     | 'assistant'
     | 'speech'
     | 'resources'
@@ -968,6 +978,7 @@ export const initializeChat = async ({
   const settingsPages = [
     ['model', '模型与窗口', modelSettingsSection],
     ['assistant', '工作模式', assistantSettingsSection],
+    ['social', '社交存在', socialSettingsSection],
     ['speech', '语音和语音输入', speechSettingsSection],
     ['resources', '资源中心', resourceSettingsSection],
     ['character', '角色', characterSettingsSection],
@@ -980,6 +991,9 @@ export const initializeChat = async ({
   let selectedSettingsPage: SettingsPage = 'model';
   const showSettingsPage = (page: SettingsPage): void => {
     selectedSettingsPage = page;
+    socialPanel.setActive(page === 'social' && !settingsPanel.hidden);
+    kookPanel.setActive(page === 'social' && !settingsPanel.hidden);
+    oopzPanel.setActive(page === 'social' && !settingsPanel.hidden);
     for (const [candidate, , section] of settingsPages) {
       const selected = candidate === page;
       section.hidden = !selected;
@@ -1597,6 +1611,9 @@ export const initializeChat = async ({
   };
 
   const updateIdentity = (): void => {
+    void socialPanel.refresh();
+    void kookPanel.refresh();
+    void oopzPanel.refresh();
     const name = characterDisplayName();
     replyAuthor.textContent = name;
     modelCapabilityStatus.textContent =
@@ -1657,6 +1674,9 @@ export const initializeChat = async ({
 
   const refreshActiveCharacter = async (): Promise<void> => {
     if (!api) return;
+    socialPanel.resetForCharacterChange();
+    kookPanel.resetForCharacterChange();
+    oopzPanel.resetForCharacterChange();
     resetCharacterSessionView();
     openingLineContext = 'character-refresh';
     messages = await api.getConversationHistory();
@@ -1709,6 +1729,9 @@ export const initializeChat = async ({
     debugPanel.hidden = true;
     widgetsPanel.hidden = true;
     settingsPanel.hidden = true;
+    socialPanel.setActive(false);
+    kookPanel.setActive(false);
+    oopzPanel.setActive(false);
     if (wasSettingsOpen && panelExpanded) setPanelExpanded(true, 'chat');
   };
 
@@ -2641,6 +2664,9 @@ export const initializeChat = async ({
     closeDrawers();
     settingsPanel.hidden = !willOpen;
     setPanelExpanded(true, willOpen ? 'settings' : 'chat');
+    socialPanel.setActive(willOpen && selectedSettingsPage === 'social');
+    kookPanel.setActive(willOpen && selectedSettingsPage === 'social');
+    oopzPanel.setActive(willOpen && selectedSettingsPage === 'social');
     if (willOpen) {
       settingsPanel.scrollTop = 0;
       void loadWindowScale();
@@ -2901,6 +2927,9 @@ export const initializeChat = async ({
       () => composerPanel.dispose(),
       () => memoryPanel.dispose(),
       () => providerPanel.dispose(),
+      () => socialPanel.dispose(),
+      () => kookPanel.dispose(),
+      () => oopzPanel.dispose(),
       () => characterPanel.dispose(),
       () => speechPanel.dispose(),
       () => vtubePanel.dispose(),

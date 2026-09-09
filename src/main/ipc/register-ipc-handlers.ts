@@ -131,6 +131,7 @@ export interface IpcWindowController {
 }
 
 export interface IpcHandlerDependencies {
+  onCharacterChanging?: () => void;
   windows: IpcWindowController;
   models: ModelRuntime;
   conversations: ConversationRuntime;
@@ -247,6 +248,7 @@ const showOpenDialog = (
 };
 
 export const registerIpcHandlers = ({
+  onCharacterChanging,
   windows,
   models,
   conversations,
@@ -415,9 +417,9 @@ export const registerIpcHandlers = ({
     return profiles.get();
   });
   handle(IPC_CHANNELS.setCharacterProfile, (event, input: unknown) => {
-    return runModelOperation(() =>
-      conversations.setCharacterProfile(parseCharacterProfileInput(input)),
-    );
+    const profile = parseCharacterProfileInput(input);
+    onCharacterChanging?.();
+    return runModelOperation(() => conversations.setCharacterProfile(profile));
   });
   handle(IPC_CHANNELS.getConversationHistory, async (event) => {
     return conversations.listHistory();
@@ -522,6 +524,7 @@ export const registerIpcHandlers = ({
   handle(IPC_CHANNELS.createLocalCharacter, (event, input: unknown) => {
     return runModelOperation(async () => {
       const { name } = parseCreateLocalCharacterInput(input);
+      onCharacterChanging?.();
       const suffix = randomUUID().replaceAll('-', '').slice(0, 16);
       conversations.cancelOpeningLine();
       await profiles.add({
@@ -548,10 +551,9 @@ export const registerIpcHandlers = ({
   handle(
     IPC_CHANNELS.confirmCharacterPackageImport,
     async (event, input: unknown): Promise<CharacterPackageFileResult> => {
-      return confirmCharacterPackageImport(
-        characterImports(),
-        parseConfirmCharacterPackageImportInput(input),
-      );
+      const parsed = parseConfirmCharacterPackageImportInput(input);
+      onCharacterChanging?.();
+      return confirmCharacterPackageImport(characterImports(), parsed);
     },
   );
   handle(
@@ -584,17 +586,21 @@ export const registerIpcHandlers = ({
     },
   );
   handle(IPC_CHANNELS.activateCharacter, (event, input: unknown) => {
+    const parsed = parseCharacterIdInput(input);
+    onCharacterChanging?.();
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
       conversations.cancelOpeningLine();
-      await characterPackages.activate(parseCharacterIdInput(input).characterId);
+      await characterPackages.activate(parsed.characterId);
     }, '角色切换失败。');
   });
   handle(IPC_CHANNELS.removeCharacter, (event, input: unknown) => {
+    const parsed = parseCharacterIdInput(input);
+    onCharacterChanging?.();
     return runModelOperation(async () => {
       if (!characterPackages) throw new Error();
       conversations.cancelOpeningLine();
-      await characterPackages.remove(parseCharacterIdInput(input).characterId);
+      await characterPackages.remove(parsed.characterId);
     }, '角色删除失败。');
   });
   handle(IPC_CHANNELS.getActiveCharacterModelManifest, async (event) => {
@@ -604,7 +610,7 @@ export const registerIpcHandlers = ({
     );
   });
   handle(IPC_CHANNELS.importLive2DModel, async (event) => {
-    return importLive2DModelFile(characterImports());
+    return importLive2DModelFile({ ...characterImports(), onCharacterChanging });
   });
   handle(IPC_CHANNELS.exportActiveLive2DModel, async (event) => {
     if (!live2DModelImports) {

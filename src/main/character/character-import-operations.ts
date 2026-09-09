@@ -18,6 +18,7 @@ import type { CharacterPackageService } from './character-package-service';
  */
 export interface CharacterImportDependencies {
   isActive?: () => boolean;
+  onCharacterChanging?: () => void;
   characterPackages?: CharacterPackageService;
   live2DModelImports?: Live2DModelImportService;
   showOpenDialog: (options: OpenDialogOptions) => Promise<OpenDialogReturnValue>;
@@ -90,6 +91,7 @@ export const importLive2DModelFile = async (
     return { ok: true, canceled: true };
   }
   try {
+    dependencies.onCharacterChanging?.();
     const imported = await live2DModelImports.importModel(selection.filePaths[0]);
     return { ok: true, canceled: false, ...imported };
   } catch (error) {
