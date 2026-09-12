@@ -1,4 +1,5 @@
 import type { CharacterEmotion } from '../../core/character/character-reply';
+import type { EmotionChannels } from '../../core/character/emotion-channels';
 import type {
   CharacterPresentationPort,
   CharacterPresentationState,
@@ -86,9 +87,14 @@ export class AutonomousActivityPresentation implements CharacterPresentationPort
     return this.base.setState(state);
   }
 
-  public async respond(emotion: CharacterEmotion, requestedAction?: string): Promise<void> {
+  public async respond(
+    emotion: CharacterEmotion,
+    requestedAction?: string,
+    channels?: EmotionChannels,
+  ): Promise<void> {
     this.defer();
-    await this.base.respond(emotion, requestedAction);
+    if (channels) await this.base.respond(emotion, requestedAction, channels);
+    else await this.base.respond(emotion, requestedAction);
   }
 
   public updateSpeechLevel(level: number): void {

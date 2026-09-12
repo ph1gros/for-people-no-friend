@@ -45,7 +45,7 @@ describe('conversation runtime integration', () => {
         yield { type: 'text-delta', text: '{"text":"流式' };
         yield {
           type: 'text-delta',
-          text: '回复","emotion":"happy","action":"wave"}',
+          text: '回复","emotion":"happy","action":"wave","emotionChannels":{"joy":0.6,"surprise":0.2}}',
         };
         yield { type: 'usage', inputTokens: 12, outputTokens: 8 };
         yield { type: 'finish', reason: 'stop' };
@@ -121,6 +121,10 @@ describe('conversation runtime integration', () => {
       expect(result).toEqual({ ok: true });
     });
     await completed;
+
+    expect(events.find((event) => event.type === 'completed')).toMatchObject({
+      assistantMessage: { emotionChannels: { joy: 0.6, surprise: 0.2, love: 0 } },
+    });
 
     expect(
       events

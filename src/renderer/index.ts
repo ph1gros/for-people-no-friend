@@ -73,6 +73,8 @@ const startCharacter = async (): Promise<boolean> => {
 };
 
 const applyDisplayMode = async (mode: CharacterDisplayMode): Promise<void> => {
+  viewerExPresentation?.dispose();
+  vTubeStudioPresentation?.dispose();
   displayMode = mode;
   app.dataset.characterDisplayMode = mode;
   if (mode !== 'live2d') {
@@ -112,6 +114,8 @@ window.addEventListener(
   'beforeunload',
   () => {
     disposeChat?.();
+    viewerExPresentation?.dispose();
+    vTubeStudioPresentation?.dispose();
     character?.dispose();
   },
   { once: true },

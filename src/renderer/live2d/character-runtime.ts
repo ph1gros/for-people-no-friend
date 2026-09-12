@@ -6,7 +6,8 @@ import {
   type Live2DModelCapabilityReport,
 } from './model-capabilities';
 import { loadLocalModelManifest, ModelManifestError, resolveLocalModelUrl } from './model-manifest';
-import { createLive2DRenderer, loadCubismCore } from './pixi-driver';
+import { createLive2DRenderer } from './pixi-driver';
+import { CubismCoreError, loadCubismCore } from './cubism-core-loader';
 
 export interface LoadedCharacter {
   name: string;
@@ -36,11 +37,17 @@ export const waitForVisibleCharacterFrame = async (
 };
 
 const describeLoadError = (error: unknown): { title: string; detail: string } => {
+  if (error instanceof CubismCoreError) {
+    return {
+      title: 'Live2D 运行时不可用',
+      detail: `${error.message} 已导入的模型会保留。请使用包含可用 Live2D 运行时的应用构建；也可以在设置中切换到 VTube Studio 或 ViewerEX。`,
+    };
+  }
   if (error instanceof ModelManifestError) {
     const detail =
       error.kind === 'missing'
-        ? '请按 assets/models/README.md 放置官方测试模型、Cubism Core 和 model.json，然后重试。'
-        : '请检查 assets/models/local/model.json 以及其中引用的本地文件。';
+        ? '请在“设置 → 模型显示方式 → 纯 Live2D”中导入模型，或在“角色”中导入包含模型的角色包，然后重试。'
+        : '请在“设置 → 模型显示方式 → 纯 Live2D”中重新导入完整模型，或重新导入当前角色的模型包，然后重试。';
     return { title: error.message, detail };
   }
 
@@ -88,7 +95,7 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
     );
   }
   const capabilityReport = inspectLive2DModelCapabilities(manifest, await modelResponse.json());
-  await loadCubismCore(manifest.coreUrl ?? resolveLocalModelUrl(manifest.core, manifest.assetRoot));
+  await loadCubismCore();
   const renderer = await createLive2DRenderer(
     host,
     resolveLocalModelUrl(manifest.model, manifest.assetRoot),
@@ -137,7 +144,20 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
     renderer.canvas.addEventListener('pointermove', trackLocalPointer);
     renderer.canvas.addEventListener('pointerleave', resetLocalPointer);
   }
-  const availableActions = Object.keys(manifest.controls.actions);
+  const beginInteraction = (): void => renderer.driver.setGestureInteraction(true);
+  const endInteraction = (): void => renderer.driver.setGestureInteraction(false);
+  const cancelInteraction = (): void => {
+    beginInteraction();
+    endInteraction();
+  };
+  document.addEventListener('pointerdown', beginInteraction, true);
+  document.addEventListener('pointerup', endInteraction, true);
+  document.addEventListener('pointercancel', endInteraction, true);
+  window.addEventListener('blur', cancelInteraction);
+  window.addEventListener('focus', endInteraction);
+  const availableActions = [
+    ...new Set([...Object.keys(manifest.controls.actions), ...renderer.driver.supportedGestures]),
+  ];
   const autonomousPresentation = new AutonomousActivityPresentation(
     controller,
     availableActions,
@@ -152,6 +172,11 @@ export const loadCharacter = async (host: HTMLElement): Promise<LoadedCharacter>
     dispose: () => {
       isDisposed = true;
       autonomousPresentation.destroy();
+      document.removeEventListener('pointerdown', beginInteraction, true);
+      document.removeEventListener('pointerup', endInteraction, true);
+      document.removeEventListener('pointercancel', endInteraction, true);
+      window.removeEventListener('blur', cancelInteraction);
+      window.removeEventListener('focus', endInteraction);
       if (trackingTimer !== undefined) {
         window.clearInterval(trackingTimer);
       }

@@ -1,4 +1,5 @@
 import type { CharacterEmotion } from '../core/character/character-reply';
+import type { EmotionChannels } from '../core/character/emotion-channels';
 import { CHARACTER_EMOTIONS } from '../core/character/character-reply';
 import type { CharacterProfile } from '../core/conversation/character-profile';
 import { validateCharacterProfile } from '../core/conversation/character-profile';
@@ -8,6 +9,8 @@ import { parseProviderId } from './model-ipc';
 export type ConversationMessageStatus = 'complete' | 'cancelled';
 
 export interface ConversationMessage {
+  /** Transient expression metadata for the completed turn; not stored as relationship memory. */
+  emotionChannels?: EmotionChannels;
   id: string;
   role: 'user' | 'assistant';
   content: string;

@@ -28,7 +28,7 @@ describe('Windows portable package configuration', () => {
   it('keeps application dependencies inside ASAR and excludes development-only path trees', () => {
     const manifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as PackageManifest;
 
-    expect(manifest.version).toBe('1.8.3');
+    expect(manifest.version).toBe('1.9.0');
     expect(manifest.productName).toBe('For People No Friend');
     expect(manifest.build?.appId).toBe('com.ph1gros.forpeoplenofriend');
     expect(manifest.build?.asar).toEqual({ smartUnpack: false });
@@ -51,6 +51,7 @@ describe('Windows portable package configuration', () => {
       expect.arrayContaining(['build/icon.png', '!**/*.map', '!**/*.d.ts', '!**/*.ts']),
     );
     expect(manifest.build?.files).not.toContain('assets/**/*');
+    expect(manifest.build?.files).toContain('!dist/renderer/runtime/cubism/**/*');
     expect(manifest.build?.files).not.toEqual(
       expect.arrayContaining([expect.stringMatching(/^!dist\/renderer\/models\//u)]),
     );
@@ -77,6 +78,18 @@ describe('Windows portable package configuration', () => {
         expect.objectContaining({ from: expect.stringContaining('PRIVATE_ASSET_NOTICE') }),
       ]),
     );
+  });
+
+  it('points current README downloads at the application version', () => {
+    const manifest = JSON.parse(readFileSync(resolve('package.json'), 'utf8')) as PackageManifest;
+    const readme = readFileSync(resolve('README.md'), 'utf8');
+    const version = `v${String(manifest.version)}`;
+    expect(readme).toContain(`当前版本为 **[${version}]`);
+    const downloads = readme.slice(readme.indexOf('## 下载'), readme.indexOf('## 示例模型'));
+    expect(downloads).toContain(`/releases/download/${version}/FPNF-${version}-Windows-x64.zip`);
+    for (const match of downloads.matchAll(/releases\/download\/(v[^/]+)\//gu)) {
+      expect(match[1]).toBe(version);
+    }
   });
 
   it('removes only the two unused WebGPU compiler DLLs after a Windows package build', async () => {

@@ -146,8 +146,8 @@ describe('settings renderer regression wiring', () => {
     expect(source).toContain('const createWidgetCatalogCard = (');
     expect(source).toContain('for (const definition of desktopWidgetRegistry.list())');
     expect(source).toContain('widgetsCatalog.append(card.card);');
-    expect(source).toContain(
-      'widgetsContent.append(widgetsCatalog, inputWidget, mediaWidget, widgetsStatus);',
+    expect(source).toMatch(
+      /widgetsContent\.append\(\s*widgetsCatalog,\s*installClockButton,\s*clockDownloadNotice,\s*inputWidget,\s*mediaWidget,\s*widgetsStatus,?\s*\);/u,
     );
     expect(source).toContain("const showWidgetView = (view: 'catalog' | DesktopWidgetId)");
     expect(source).toContain(

@@ -1,4 +1,5 @@
 import type { CharacterEmotion } from '../../core/character/character-reply';
+import type { EmotionChannels } from '../../core/character/emotion-channels';
 
 /**
  * Express an emotion without any per-model mapping at all.
@@ -90,7 +91,15 @@ export const blendEmotionBias = (
 ): EmotionParameterBias => {
   const start = BIAS[from] ?? NEUTRAL;
   const end = BIAS[to] ?? NEUTRAL;
-  const clamped = Math.min(1, Math.max(0, ratio));
+  return blendParameterBias(start, end, ratio);
+};
+
+export const blendParameterBias = (
+  start: EmotionParameterBias,
+  end: EmotionParameterBias,
+  ratio: number,
+): EmotionParameterBias => {
+  const clamped = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : 0;
   const absolute: Record<string, number> = {};
   for (const id of EMOTION_PARAMETER_IDS) {
     absolute[id] = lerp(start.absolute[id] ?? 0, end.absolute[id] ?? 0, clamped);
@@ -104,3 +113,51 @@ export const blendEmotionBias = (
 
 export const emotionBias = (emotion: CharacterEmotion): EmotionParameterBias =>
   BIAS[emotion] ?? NEUTRAL;
+
+/** Artistic starting presets, not psychological measurements; verify against each model. */
+export const emotionChannelsBias = (channels: EmotionChannels): EmotionParameterBias => {
+  const presets = {
+    joy: BIAS.happy,
+    sadness: BIAS.sad,
+    anger: BIAS.angry,
+    surprise: BIAS.surprised,
+    fear: {
+      absolute: { MouthSmile: -0.35, Brows: 0.55, MouthOpen: 0.2, CheekPuff: 0 },
+      eyeOpenScaleLeft: 1.15,
+      eyeOpenScaleRight: 1.15,
+    },
+    disgust: {
+      absolute: { MouthSmile: -0.65, Brows: -0.35, MouthOpen: 0, CheekPuff: 0 },
+      eyeOpenScaleLeft: 0.65,
+      eyeOpenScaleRight: 0.65,
+    },
+    guilt: {
+      absolute: { MouthSmile: -0.2, Brows: -0.3, MouthOpen: 0, CheekPuff: 0 },
+      eyeOpenScaleLeft: 0.8,
+      eyeOpenScaleRight: 0.8,
+    },
+  };
+  const entries = Object.entries(presets) as Array<[keyof typeof presets, EmotionParameterBias]>;
+  const total = entries.reduce((sum, [key]) => sum + channels[key], 0);
+  // Relationship channels only soften an already active face. They cannot create blush, a wink,
+  // a smile, or an attachment score on their own. No time/chat-count updates happen here.
+  const softening = 1 - 0.08 * channels.trust - 0.08 * channels.love - 0.04 * channels.longing;
+  const denominator = Math.max(1, total);
+  let result: EmotionParameterBias = {
+    absolute: { ...NEUTRAL.absolute },
+    eyeOpenScaleLeft: 1,
+    eyeOpenScaleRight: 1,
+  };
+  const absolute = { ...result.absolute };
+  let left = 1;
+  let right = 1;
+  for (const [key, preset] of entries) {
+    const weight = (channels[key] * softening) / denominator;
+    for (const id of EMOTION_PARAMETER_IDS)
+      absolute[id] = (absolute[id] ?? 0) + (preset.absolute[id] ?? 0) * weight;
+    left += (preset.eyeOpenScaleLeft - 1) * weight;
+    right += (preset.eyeOpenScaleRight - 1) * weight;
+  }
+  result = { absolute, eyeOpenScaleLeft: left, eyeOpenScaleRight: right };
+  return result;
+};

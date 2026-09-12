@@ -8,11 +8,11 @@
 
 给暂时不想把社交当主线任务的人准备的 Windows AI 角色陪伴项目：角色待在桌面上，能聊天、做表情，也会把长期记忆留在本机。
 
-当前仓库是 **Live2D Version**，当前版本为 **[v1.8.3](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.8.3)**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
+当前仓库是 **Live2D Version**，当前版本为 **[v1.9.0](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.9.0)**。基础包以空白软件状态启动，只提供中性的“桌宠”占位资料，不内置小猫、凯尔希或其他角色身份，也不内置 Live2D/VTube Studio 模型和伊蕾娜音色权重。用户可以另行导入 `.fpnf-character.zip` 身份卡、Live2D 模型，或连接 Steam VTube Studio；动态 WebP 版本已迁至独立的 [GIF Version 仓库](https://github.com/ph1gros/for-people-no-friend-gif)。
 
-**Windows x64 下载**：[v1.8.3 便携 ZIP](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.8.3/FPNF-v1.8.3-Windows-x64.zip)。解压后运行 `For People No Friend.exe`；可选语音组件单独下载。首次运行有设置向导，已有配置直接进入主界面。
+**Windows x64 下载**：[v1.9.0 便携 ZIP](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.9.0/FPNF-v1.9.0-Windows-x64.zip)。解压后运行 `For People No Friend.exe`；可选语音组件单独下载。首次运行有设置向导，已有配置直接进入主界面。
 
-v1.8.0 新增独立资源中心，将本地语音拆为“引擎、基础模型、音色模型、语音识别”四类。主程序保持轻量，所需组件通过 [公开资源仓库](https://github.com/ph1gros/fpnf-resources) 按需安装；新增受管理的 Genie-TTS 与圣园未花日语音色，修复句尾终止标记、长停顿噪声及打断后无法继续合成的问题，语音后台预热不再阻挡主窗口。记忆、模型连接、语音、VTube／ViewerEX、角色五个面板已拆分并补齐生命周期验证。
+V1.9 的发布大纲、实现范围、验证结果、相关 commit 审查与未完成项集中在 [V1.9 交付记录](docs/V1_9_DELIVERY.md)。纯 Live2D 的 Cubism Core 不包含在标准下载包中；可连接 VTube Studio／Live2DViewerEX，或按 [本地运行时说明](docs/LIVE2D_LOCAL_RUNTIME.md) 使用具备合适运行时的本地构建。
 
 Live2D Version 侧重长期陪伴、可信记忆、情绪与关系连续性。WebP Version 侧重本地小模型和快速角色扮演，同时也会记住重要的事情。两个版本都支持生成角色。
 
@@ -66,7 +66,7 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 - 作品名留空时从精确角色资料页识别并在确认候选后自动回填
 - 再次启动同一人格且已有对话时，由当前模型用最近几轮和相关已确认记忆生成一句简短关联开场；新人格、切换人格或无历史时使用角色卡默认开场
 - 仅在桌宠窗口被选中时生效的可配置显示/隐藏与停止生成快捷键
-- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；听歌条开启后固定保留，读取并控制 Windows 当前媒体会话，包括网易云音乐、QQ 音乐、酷狗音乐、Apple Music、Spotify 及其他正确发布系统媒体会话的播放器，并提供上一首、播放/暂停、下一首；输入展示按用户白名单显示按键（默认 WASD），可用多种分隔符继续添加常用键盘按键，并可显示鼠标三键和移动方向。现有组件使用[仓库内类型化注册器](docs/V1_5_WIDGET_EXTENSION_GUIDE.md)，便于开发者或编码 AI 安全增加新组件，不在客户端加载外部插件
+- “小组件”入口以独立卡片管理听歌控制与本机输入展示；卡片状态可以按默认配置一键启停，额外设置单独进入。已启用组件按开启先后紧密排列；听歌条开启后固定保留，读取并控制 Windows 当前媒体会话，包括网易云音乐、QQ 音乐、酷狗音乐、Apple Music、Spotify 及其他正确发布系统媒体会话的播放器，并提供上一首、播放/暂停、下一首；输入展示按用户白名单显示按键（默认 WASD），可用多种分隔符继续添加常用键盘按键，并可显示鼠标三键和移动方向。组件使用固定注册器和声明式包；开发者可参考[小组件作者指南](docs/WIDGET_AUTHORING_GUIDE.md)提交纯 JSON 与静态资源，经过审阅和内置信任记录校验后分发，安装默认关闭，不执行第三方代码
 
 ## 当前不包含
 
@@ -100,6 +100,7 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 - V1.7.1：轻量基础包与离线语音准备工作
 - V1.8.0：独立资源中心、七项可选组件、Genie 未花、五个面板拆分及故障恢复收尾
 - V1.8.2：首次运行向导、十项可选资源、Genie 三种音色与气声改善、VTube 表情建议
+- V1.9：[版本范围与后续路线](docs/V1_9_PLAN.md)
 - 后续：更多渲染路线、只读视觉与受控 Agent 能力
 
 ## 开发参考
@@ -130,9 +131,13 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 
 今后每个正式版本都在 README 与 Release 说明中记录“完成了什么、使用了什么、参考了什么”；参考表示学习产品思路或交互方式，不等于复制对方代码。
 
+### v1.9.0
+
+完成内容、使用与参考的技术、验证、commit 与后续缺项见 [V1.9 交付记录](docs/V1_9_DELIVERY.md)。
+
 ### v1.8.3
 
-向导多音色选择、固定短句试听与取消修复，完整范围、验证及限制见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md)。后续开发进入 [V1.9](docs/V1_9_PLAN.md)，AstraTTS 的转换与流式连续性验证安排在该阶段。
+向导多音色选择、固定短句试听与取消修复，完整范围、验证及限制见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md)。当时启动的 V1.9 范围保留于[版本计划](docs/V1_9_PLAN.md)。
 
 ### v1.8.2
 
@@ -258,17 +263,17 @@ v1.8.2 新增音色：**菲比（Feibi）／中文／《鸣潮》**、**37（Thi
 
 应用包含首次运行向导。全新安装首次启动会显示应用内向导，可配置服务商、API Key 与模型并测试连接，也可明确选择稍后配置。密钥仅经既有本机加密存储保存，不会回显。推荐设置不下载资源；自定义设置可预览并确认导入角色包、导入 Live2D，选择本地朗读与手动语音输入。
 
-语音输出可选 Mika、菲比、37 和伊蕾娜；前三种音色在配套组件校验就绪后可试听固定原语言短句。下载前展示组件、许可、下载量和安装体积；安装页复用资源中心，支持开始/重试、暂停、继续和跳过。计费或未知成本网络需明确同意，只有全部配套资源校验就绪后才启用语音；向导不会打开麦克风。首次向导中途退出后恢复到上次保存的步骤，即使已经保存部分配置也不会误判为老用户。升级用户直接进入主界面，可从托盘「重新运行设置向导」主动重跑；重跑退出不影响下次正常启动。详见[实现与验收边界](docs/SETUP_WIZARD_IMPLEMENTATION.md)。
+语音输出可选 Mika、菲比、37 和伊蕾娜；四种音色均可在下载前播放随程序附带的短音频；前三种 Genie 音色还可在配套组件校验就绪后现场合成试听。下载前展示组件、许可、下载量和安装体积；安装页复用资源中心，支持开始/重试、暂停、继续和跳过。计费或未知成本网络需明确同意，只有全部配套资源校验就绪后才启用语音；向导不会打开麦克风。首次向导中途退出后恢复到上次保存的步骤，即使已经保存部分配置也不会误判为老用户。升级用户直接进入主界面，可从托盘「重新运行设置向导」主动重跑；重跑退出不影响下次正常启动。详见[实现与验收边界](docs/SETUP_WIZARD_IMPLEMENTATION.md)。
 
 ## 当前开发状态
 
 M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1.5 完成可信记忆、角色资料与角色包、模型协作、Live2D 表现、快捷键、媒体控制和小组件。V1.6 完成声音主干、三种中文输入、工作模式、显示方式重构、VTube Studio 官方 API 适配和便携角色套装。V1.7 引入本机离线语音。V1.8 把语音拆成按需下载的组件并新增独立资源中心，v1.8.1 收紧子进程环境与资源窗口边界，v1.8.2 加入首次运行向导与三种 Genie 音色。
 
-当前发布结果见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md)，开发进入 [V1.9 计划](docs/V1_9_PLAN.md)。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
+当前发布结果见 [V1.9 交付记录](docs/V1_9_DELIVERY.md)，后续设想见 [图片到 Live2D 研究路线](docs/V1_9_IMAGE_LIVE2D_ROADMAP.md)。动态 WebP 后续在独立 GIF Version 仓库发展。当前提供免安装 Windows 压缩包，暂不提供安装器、代码签名和自动升级。
 
 ## 下载
 
-[下载 v1.8.3 Windows x64 免安装包](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.8.3/FPNF-v1.8.3-Windows-x64.zip)，文件名为 `FPNF-v1.8.3-Windows-x64.zip`。包体积与 SHA-256 见 [v1.8.3 交付记录](docs/V1_8_3_DELIVERY.md#验证与发布测量)，Release 另附 `SHA256SUMS.txt`。解压到普通可写目录后运行 `For People No Friend.exe`，不要直接在压缩软件内启动。
+[下载 v1.9.0 Windows x64 免安装包](https://github.com/ph1gros/for-people-no-friend/releases/download/v1.9.0/FPNF-v1.9.0-Windows-x64.zip)，文件名为 `FPNF-v1.9.0-Windows-x64.zip`。包体积与 SHA-256 见 [V1.9 交付记录](docs/V1_9_DELIVERY.md#验证与发布测量)，Release 另附 `SHA256SUMS.txt`。解压到普通可写目录后运行 `For People No Friend.exe`，不要直接在压缩软件内启动。
 
 全新安装首次启动会进入设置向导，可配置聊天服务商并测试连接，也可以明确选择稍后配置；已有配置直接进入主界面。角色与 Live2D 模型需要自行导入。
 
@@ -284,6 +289,10 @@ M0～M5.2 已完成并组成 For People No Friend 1.0.0 功能基线。V1.1～V1
 
 ## 文档
 
+- [V1.9 交付大纲、提交与缺项](docs/V1_9_DELIVERY.md)
+- [V1.9 commit 审查与问题统计](docs/V1_9_COMMIT_REVIEW.md)
+- [图片 → Live2D → 自动映射路线](docs/V1_9_IMAGE_LIVE2D_ROADMAP.md)
+- [通用动作与创意工坊](docs/V1_9_MOTION_WORKSHOP.md)
 - [安全编码规范](docs/SECURITY_CODING_STANDARD.md)
 - [第一版产品与开发计划](docs/PRODUCT_PLAN_V1.md)
 - [详细技术计划书](docs/TECHNICAL_PLAN_V1.md)

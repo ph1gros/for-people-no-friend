@@ -169,6 +169,7 @@ export const buildConversationSystemPrompt = (
       '只输出一个 JSON 对象，不要使用 Markdown 代码块，也不要在 JSON 前后添加文字。',
       'JSON 格式：{"text":"给用户看的自然回复","emotion":"neutral|happy|sad|angry|surprised|shy|playful","action":null}',
       'text 是完整回复；emotion 只选一个最贴近回复语气的值。',
+      '可选 emotionChannels 对象用于当前角色这句回复的表达强度：joy、sadness、anger、fear、disgust、surprise、trust、love、longing、guilt，每项为 0 到 1，未提供的项视为 0，可同时有多个非零值。不确定时省略对象，平静可填空对象。它描述角色此刻的表达，不是用户的情绪，也不是持久关系评分。trust、love、longing 默认 0，只有角色设定与当前对话有明确依据时才提供；不得因聊天次数、用户离开或单次夸奖自动增加爱或降低信任。不要把引用、否定或第三人称叙述误当成角色当前感受。仍需提供 emotion 供旧显示端使用。',
       actionInstruction,
     ]
       .filter((line): line is string => line !== undefined)

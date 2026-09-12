@@ -7,6 +7,29 @@ import {
 import { DEFAULT_VIEWEREX_SETTINGS } from '../src/shared/viewerex-ipc';
 
 describe('ViewerEX ExAPI protocol adapter', () => {
+  it('selects one reply motion over state motion and clears only an owned expression', () => {
+    const settings = {
+      ...DEFAULT_VIEWEREX_SETTINGS,
+      emotionMotions: { happy: ['tap:smile', 'tap:nod'] },
+      stateMotions: { talking: 'talk' },
+      actionMotions: { wave: 'tap:wave' },
+    };
+    expect(
+      buildViewerExPresentationMessages(
+        settings,
+        { state: 'talking', emotion: 'happy', action: 'wave' },
+        () => 1,
+      ),
+    ).toEqual([{ msg: 13200, msgId: 1, data: { id: 0, type: 0, mtn: 'tap:wave' } }]);
+    expect(
+      buildViewerExPresentationMessages(settings, { emotion: 'neutral' }, () => 1, {
+        ownsExpression: true,
+      }),
+    ).toEqual([{ msg: 13302, msgId: 1, data: 0 }]);
+    expect(buildViewerExPresentationMessages(settings, { emotion: 'neutral' }, () => 1)).toEqual(
+      [],
+    );
+  });
   it('renders model text as bounded plain text instead of Unity rich text', () => {
     const source = `<b>你好</b>\u0000${'界'.repeat(1_200)}`;
     const sanitized = sanitizeViewerExBubbleText(source);

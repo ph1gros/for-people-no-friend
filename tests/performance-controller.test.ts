@@ -8,6 +8,33 @@ import type {
   TrackingPoint,
 } from '../src/renderer/live2d/contracts';
 import { Live2DPerformanceController } from '../src/renderer/live2d/performance-controller';
+import { parseEmotionChannels } from '../src/core/character/emotion-channels';
+import { AutonomousActivityPresentation } from '../src/renderer/live2d/autonomous-activity';
+
+it('carries mixed channels through autonomous presentation and clears them after idle', async () => {
+  vi.useFakeTimers();
+  try {
+    const driver = new FakeDriver();
+    const setEmotionChannels = vi.fn(() => true);
+    const controller = new Live2DPerformanceController(
+      Object.assign(driver, { setEmotionChannels }),
+      controls,
+    );
+    const presentation = new AutonomousActivityPresentation(controller, [], async () => false);
+    const mixed = parseEmotionChannels({ fear: 0.7, guilt: 0.2 });
+    await presentation.respond('neutral', undefined, mixed);
+    expect(setEmotionChannels).toHaveBeenLastCalledWith(mixed);
+    await presentation.setState('idle');
+    await vi.advanceTimersByTimeAsync(8000);
+    expect(setEmotionChannels).toHaveBeenLastCalledWith(undefined);
+    await presentation.respond('happy', undefined, parseEmotionChannels({ joy: 1 }));
+    expect(driver.calls.at(-1)).toBe('emotion:smile');
+    controller.destroy();
+    presentation.destroy();
+  } finally {
+    vi.useRealTimers();
+  }
+});
 
 const controls: Live2DControlMap = {
   states: {
@@ -64,6 +91,31 @@ const nextTurn = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+it('uses bounded gestures only when no authored mapping exists and stops on state changes', async () => {
+  const driver = Object.assign(new FakeDriver(), {
+    playGesture: vi.fn(async () => true),
+    setGestureState: vi.fn(),
+  });
+  const controller = new Live2DPerformanceController(driver, { ...controls, actions: {} });
+  await expect(controller.action.enqueue('nod')).resolves.toBe(true);
+  expect(driver.playGesture).toHaveBeenCalledWith('nod');
+  await expect(controller.action.enqueue('arbitrary-model-id')).resolves.toBe(false);
+  await controller.setState('talking');
+  expect(driver.setGestureState).toHaveBeenCalledWith('talking');
+  controller.destroy();
+});
+
+it('keeps authored nod motions ahead of the generic gesture', async () => {
+  const driver = Object.assign(new FakeDriver(), { playGesture: vi.fn(async () => true) });
+  const controller = new Live2DPerformanceController(driver, controls);
+  const pending = controller.action.enqueue('nod');
+  expect(driver.calls).toContain('action:Nod');
+  expect(driver.playGesture).not.toHaveBeenCalled();
+  driver.actionResolvers.shift()?.(true);
+  await expect(pending).resolves.toBe(true);
+  controller.destroy();
+});
 
 describe('Live2D performance channels', () => {
   it('drives character behavior through a renderer-neutral presentation port', async () => {

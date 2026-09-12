@@ -13,6 +13,7 @@ import type {
   SpeechAssetTierStatus,
   SpeechAssetTierId,
 } from '../../shared/speech-asset-ipc';
+import { createVoiceSample, stopVoiceSample } from '../speech/voice-sample';
 
 export interface ResourceCenterDeps {
   getStatus(): Promise<ResourceCenterStatus>;
@@ -117,6 +118,7 @@ export const mountResourceCenter = (
     categoryButtons.set(id, button);
     categories.append(button);
     on(button, 'click', () => {
+      stopVoiceSample();
       category = id;
       render();
     });
@@ -187,6 +189,16 @@ export const mountResourceCenter = (
       progress,
       actions,
     );
+    if (definition.runtime)
+      compatibility.append(make('dt', '', '运行方式'), make('dd', '', definition.runtime));
+    if (definition.sampleText) {
+      const sample = make('div', 'resource-center__sample');
+      sample.append(
+        make('p', 'settings-hint', `试听台词：${definition.sampleText}`),
+        createVoiceSample(entry.id, doc),
+      );
+      card.append(sample);
+    }
     list.append(card);
     cards.set(entry.id, {
       root: card,
@@ -357,6 +369,7 @@ export const mountResourceCenter = (
     dispose: () => {
       if (disposed) return;
       disposed = true;
+      stopVoiceSample();
       clear(timer);
       for (const remove of listeners) remove();
       root.replaceChildren();

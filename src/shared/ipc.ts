@@ -174,6 +174,7 @@ export const IPC_CHANNELS = {
   getDesktopIntegrationStatus: 'desktop:getIntegrationStatus',
   setDesktopIntegrationSettings: 'desktop:setIntegrationSettings',
   setDesktopWidgetEnabled: 'desktop:setWidgetEnabled',
+  installClockWidget: 'desktop:installClockWidget',
   sendMediaCommand: 'desktop:sendMediaCommand',
   desktopInputActivity: 'desktop:inputActivity',
   getSpeechStatus: 'speech:getStatus',
@@ -193,10 +194,12 @@ export const IPC_CHANNELS = {
   openSpeechTrainingSources: 'speechAssets:openTrainingSources',
   launchSpeechTrainer: 'speechAssets:launchTrainer',
   getViewerExStatus: 'viewerex:getStatus',
+  openViewerExWorkshop: 'viewerex:openWorkshop',
   setViewerExSettings: 'viewerex:setSettings',
   presentInViewerEx: 'viewerex:present',
   getVTubeStudioStatus: 'vtubeStudio:getStatus',
   launchVTubeStudio: 'vtubeStudio:launchSteam',
+  openVTubeStudioWorkshop: 'vtubeStudio:openWorkshop',
   installBundledVTubeStudioModel: 'vtubeStudio:installBundledModel',
   setVTubeStudioSettings: 'vtubeStudio:setSettings',
   authorizeVTubeStudio: 'vtubeStudio:authorize',
@@ -299,6 +302,7 @@ export interface DeskpetApi {
   getDesktopIntegrationStatus(): Promise<DesktopIntegrationStatus>;
   setDesktopIntegrationSettings(input: SetDesktopIntegrationSettingsInput): Promise<void>;
   setDesktopWidgetEnabled(input: SetDesktopWidgetEnabledInput): Promise<void>;
+  installClockWidget(): Promise<void>;
   sendMediaCommand(input: MediaCommandInput): Promise<boolean>;
   onDesktopInputActivity(listener: (event: DesktopInputActivityEvent) => void): () => void;
   getSpeechStatus(): Promise<SpeechStatus>;
@@ -318,10 +322,12 @@ export interface DeskpetApi {
   openSpeechTrainingSources(): Promise<LocalAssetOperationResult>;
   launchSpeechTrainer(): Promise<LocalAssetOperationResult>;
   getViewerExStatus(): Promise<ViewerExStatus>;
+  openViewerExWorkshop(): Promise<ViewerExOperationResult>;
   setViewerExSettings(input: SetViewerExSettingsInput): Promise<ViewerExOperationResult>;
   presentInViewerEx(input: ViewerExPresentationInput): Promise<boolean>;
   getVTubeStudioStatus(): Promise<VTubeStudioStatus>;
   launchVTubeStudio(): Promise<VTubeStudioOperationResult>;
+  openVTubeStudioWorkshop(): Promise<VTubeStudioOperationResult>;
   installBundledVTubeStudioModel(): Promise<VTubeStudioOperationResult>;
   setVTubeStudioSettings(input: SetVTubeStudioSettingsInput): Promise<VTubeStudioOperationResult>;
   authorizeVTubeStudio(): Promise<VTubeStudioAuthorizationResult>;

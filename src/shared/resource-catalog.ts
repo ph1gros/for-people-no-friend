@@ -21,6 +21,8 @@ export const RESOURCE_DEFINITIONS: Record<
     dependencies: readonly SpeechAssetTierId[];
     installTier: SpeechAssetTierId | null;
     usageRestriction?: string;
+    runtime?: string;
+    sampleText?: string;
   }
 > = {
   'voice-runtime': {
@@ -45,6 +47,8 @@ export const RESOURCE_DEFINITIONS: Record<
     installTier: 'genie-data',
   },
   'voice-genie-mika': {
+    runtime: '本机运行 · Genie-TTS · ONNX Runtime · CPU',
+    sampleText: 'こんにちは、今日はどんな一日でしたか。',
     category: 'voice',
     compatibility: 'Genie-TTS（V2ProPlus）',
     language: '日语',
@@ -60,6 +64,8 @@ export const RESOURCE_DEFINITIONS: Record<
     installTier: 'genie-language-data',
   },
   'voice-genie-feibi': {
+    runtime: '本机运行 · Genie-TTS · ONNX Runtime · CPU',
+    sampleText: '你好，今天过得怎么样？',
     category: 'voice',
     compatibility: 'Genie-TTS（V2ProPlus）',
     language: '中文',
@@ -68,6 +74,8 @@ export const RESOURCE_DEFINITIONS: Record<
     usageRestriction: '上游示例音色；角色及声音相关权利归原权利人，使用须遵守随附说明。',
   },
   'voice-genie-thirtyseven': {
+    runtime: '本机运行 · Genie-TTS · ONNX Runtime · CPU',
+    sampleText: 'Hello, how was your day today?',
     category: 'voice',
     compatibility: 'Genie-TTS（V2ProPlus）',
     language: '英语',
@@ -83,6 +91,8 @@ export const RESOURCE_DEFINITIONS: Record<
     installTier: 'bert-japanese',
   },
   'voice-ireina': {
+    runtime: '本机运行 · Style-Bert-VITS2 · ONNX Runtime · 优先 DirectML 显卡加速，失败时回退 CPU',
+    sampleText: 'こんにちは、今日はどんな一日でしたか。',
     category: 'voice',
     compatibility: 'Style-Bert-VITS2',
     language: '日语',

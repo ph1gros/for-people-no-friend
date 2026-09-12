@@ -32,6 +32,8 @@ interface VTubePanelOptions {
         | 'setVTubeStudioSettings'
         | 'authorizeVTubeStudio'
         | 'launchVTubeStudio'
+        | 'openVTubeStudioWorkshop'
+        | 'openViewerExWorkshop'
         | 'installBundledVTubeStudioModel'
         | 'presentInVTubeStudio'
         | 'previewVTubeStudioExpression'
@@ -67,6 +69,12 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
   viewerExBubbleInput.type = 'checkbox';
   viewerExBubbleInput.setAttribute('aria-label', '在 ViewerEX 显示回复气泡');
   const viewerExTestButton = createButton('发送本机测试气泡', 'secondary-button');
+  const viewerExWorkshopButton = createButton('浏览 Live2DViewerEX 创意工坊', 'secondary-button');
+  const viewerExWorkshopHint = el('small', {
+    className: 'settings-hint',
+    textContent:
+      '在 ViewerEX 下载后，双击控制面板里的模型加载；模型 #1 对应序号 0。选中模型的“自定义”可核对表情与事件，再填写作者提供或预览确认的编号和动作。仅有工坊编号不会自动导入。订阅许可不等于可转存、解包或再分发许可。',
+  });
   const viewerExStateMotionsInput = document.createElement('textarea');
   viewerExStateMotionsInput.rows = 3;
   viewerExStateMotionsInput.placeholder = 'thinking=idle:think\ntalking=talk';
@@ -74,7 +82,26 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
   viewerExEmotionExpressionsInput.rows = 4;
   viewerExEmotionExpressionsInput.placeholder = 'happy=0\nsad=1';
   const viewerExActionMotionsInput = el('textarea', { rows: 4, placeholder: 'wave=tap:wave_1' });
-  const viewerExMappingTestButton = createButton('测试 talking / happy 映射', 'secondary-button');
+  const viewerExEmotionMotionsInput = el('textarea', {
+    rows: 3,
+    placeholder: 'happy=tap:smile | tap:nod\nsad=tap:look_down',
+  });
+  const viewerExPreviewEmotion = document.createElement('select');
+  for (const [value, label] of Object.entries({
+    happy: '开心',
+    sad: '难过',
+    angry: '生气',
+    surprised: '惊讶',
+    shy: '害羞',
+    playful: '俏皮',
+    neutral: '平静／恢复',
+  })) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = label;
+    viewerExPreviewEmotion.append(option);
+  }
+  const viewerExMappingTestButton = createButton('预览所选情绪', 'secondary-button');
   const viewerExStatus = el('p', { className: 'settings-status', attrs: { role: 'status' } });
   const viewerExHint = el('small', { className: 'settings-hint' });
   viewerExHint.textContent =
@@ -82,6 +109,8 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
   viewerExSettingsPanel.append(
     viewerExSettingsHeading,
     viewerExHint,
+    viewerExWorkshopButton,
+    viewerExWorkshopHint,
     createField('ExAPI 端口', viewerExPortInput),
     createField('模型序号（从 0 开始）', viewerExModelIndexInput),
     createField('Steam 创意工坊编号（仅作标识）', viewerExWorkshopItemInput),
@@ -89,7 +118,9 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
     viewerExTestButton,
     createField('状态动作映射', viewerExStateMotionsInput),
     createField('情绪表情编号映射', viewerExEmotionExpressionsInput),
+    createField('情绪动作候选（用 | 分隔，每种最多 8 个）', viewerExEmotionMotionsInput),
     createField('角色动作映射', viewerExActionMotionsInput),
+    createField('预览情绪', viewerExPreviewEmotion),
     viewerExMappingTestButton,
     viewerExStatus,
   );
@@ -103,6 +134,7 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
     ...parseViewerExMappingDraft({
       stateMotions: viewerExStateMotionsInput.value,
       emotionExpressions: viewerExEmotionExpressionsInput.value,
+      emotionMotions: viewerExEmotionMotionsInput.value,
       actionMotions: viewerExActionMotionsInput.value,
     }),
     enabled: viewerExEnabledInput.checked,
@@ -137,6 +169,12 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
   vTubeStudioMouseTrackingHint.textContent =
     '鼠标移动时由眼睛和头部平滑跟随；静止后逐渐恢复随机待机。';
   const vTubeStudioLaunchButton = createButton('启动 VTube Studio', 'secondary-button');
+  const vTubeStudioWorkshopButton = createButton('浏览 VTube Studio 创意工坊', 'secondary-button');
+  const vTubeStudioWorkshopHint = el('small', {
+    className: 'settings-hint',
+    textContent:
+      '打开官方网页浏览模型。在 VTube Studio 主菜单的 Steam 图标内下载并加载模型，然后回这里点击“连接 VTube Studio”读取模型与表情。工坊资源留在 VTS 中，按作者许可使用；只有另行获准使用的明文 .model3.json 才可通过纯 Live2D 页面导入。',
+  });
   const vTubeStudioInstallModelButton = createButton('安装模型', 'secondary-button');
   const vTubeStudioConnectButton = createButton('连接 VTube Studio', 'secondary-button');
   const vTubeStudioExpressionTestButton = createButton('测试惊讶表情', 'secondary-button');
@@ -238,6 +276,8 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
     vTubeStudioMouseTrackingHeading,
     vTubeStudioMouseTrackingHint,
     vTubeStudioLaunchButton,
+    vTubeStudioWorkshopButton,
+    vTubeStudioWorkshopHint,
     vTubeStudioInstallModelButton,
     vTubeStudioConnectButton,
     vTubeStudioExpressionTestButton,
@@ -322,12 +362,21 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
       stateMotions: { ...status.settings.stateMotions },
       emotionExpressions: { ...status.settings.emotionExpressions },
       actionMotions: { ...status.settings.actionMotions },
+      emotionMotions: { ...status.settings.emotionMotions },
     };
     viewerExStateMotionsInput.value = formatViewerExMappingDraft(viewerExMappings.stateMotions);
     viewerExEmotionExpressionsInput.value = formatViewerExMappingDraft(
       viewerExMappings.emotionExpressions,
     );
     viewerExActionMotionsInput.value = formatViewerExMappingDraft(viewerExMappings.actionMotions);
+    viewerExEmotionMotionsInput.value = formatViewerExMappingDraft(
+      Object.fromEntries(
+        Object.entries(viewerExMappings.emotionMotions ?? {}).map(([emotion, motions]) => [
+          emotion,
+          motions?.join(' | '),
+        ]),
+      ),
+    );
     viewerExStatus.textContent = status.detail;
   };
 
@@ -511,15 +560,12 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
           viewerExStatus.textContent = saved.message ?? 'ViewerEX 设置无法保存。';
           return;
         }
-        const firstAction = Object.keys(settings.actionMotions)[0];
         const sent = await api.presentInViewerEx({
-          state: 'talking',
-          emotion: 'happy',
-          ...(firstAction ? { action: firstAction } : {}),
+          emotion: viewerExPreviewEmotion.value as CharacterEmotion,
         });
         if (lifetime.disposed) return;
         viewerExStatus.textContent = sent
-          ? '已发送 talking、happy 和首个角色动作映射。'
+          ? '所选情绪已发送；重复预览会轮换动作候选。可选择“平静／恢复”结束预览。'
           : '没有可发送的映射，或 ViewerEX 未连接。';
       } catch (error) {
         viewerExStatus.textContent =
@@ -603,6 +649,40 @@ export const mountVTubeSettings = (options: VTubePanelOptions) => {
     })().catch(() => {
       if (!lifetime.disposed) vTubeStudioStatus.textContent = '操作失败，请检查本机服务后重试。';
     });
+  });
+  lifetime.on(viewerExWorkshopButton, 'click', () => {
+    void (async () => {
+      if (lifetime.disposed || !api) return;
+      viewerExWorkshopButton.disabled = true;
+      try {
+        const result = await api.openViewerExWorkshop();
+        if (!lifetime.disposed)
+          viewerExStatus.textContent =
+            result.message ?? (result.ok ? '已请求打开官方创意工坊。' : '创意工坊无法打开。');
+      } catch {
+        if (!lifetime.disposed)
+          viewerExStatus.textContent = '创意工坊无法打开，请在 ViewerEX 控制面板中浏览。';
+      } finally {
+        if (!lifetime.disposed) viewerExWorkshopButton.disabled = false;
+      }
+    })();
+  });
+  lifetime.on(vTubeStudioWorkshopButton, 'click', () => {
+    void (async () => {
+      if (lifetime.disposed || !api) return;
+      vTubeStudioWorkshopButton.disabled = true;
+      try {
+        const result = await api.openVTubeStudioWorkshop();
+        if (!lifetime.disposed)
+          vTubeStudioStatus.textContent =
+            result.message ?? (result.ok ? '已请求打开官方创意工坊。' : '创意工坊无法打开。');
+      } catch {
+        if (!lifetime.disposed)
+          vTubeStudioStatus.textContent = '创意工坊无法打开，请在 VTube Studio 中使用 Steam 菜单。';
+      } finally {
+        if (!lifetime.disposed) vTubeStudioWorkshopButton.disabled = false;
+      }
+    })();
   });
   lifetime.on(vTubeStudioInstallModelButton, 'click', () => {
     void (async () => {

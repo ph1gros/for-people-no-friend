@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ViewerExService, type ViewerExSocket } from '../src/main/viewerex/viewerex-service';
 import type { ViewerExConfigStore } from '../src/main/storage/viewerex-config-store';
@@ -27,6 +27,57 @@ class FakeSocket implements ViewerExSocket {
 }
 
 describe('ViewerEX service', () => {
+  it('settles a pending connection immediately on shutdown', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = new FakeSocket();
+      const service = new ViewerExService(
+        {
+          get: async () => ({ ...DEFAULT_VIEWEREX_SETTINGS, enabled: true }),
+        } as ViewerExConfigStore,
+        () => socket,
+      );
+      let settled = false;
+      const pending = service.present({ text: 'test' }).then((result) => {
+        settled = true;
+        return result;
+      });
+      await Promise.resolve();
+      service.dispose();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(settled).toBe(true);
+      await expect(pending).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('rotates emotion gestures and releases the owned expression on an unmapped emotion', async () => {
+    const settings = {
+      ...DEFAULT_VIEWEREX_SETTINGS,
+      enabled: true,
+      emotionExpressions: { happy: 4 },
+      emotionMotions: { happy: ['tap:smile', 'tap:nod'] },
+    };
+    const socket = new FakeSocket();
+    const service = new ViewerExService(
+      { get: async () => settings, set: async () => undefined } as unknown as ViewerExConfigStore,
+      () => socket,
+    );
+    const first = service.present({ emotion: 'happy' });
+    await Promise.resolve();
+    socket.open();
+    await first;
+    await service.present({ emotion: 'happy' });
+    await service.present({ emotion: 'sad' });
+    await service.present({ emotion: 'neutral' });
+    const messages = socket.sent.map((value) => JSON.parse(value));
+    expect(
+      messages.filter((message) => message.msg === 13200).map((message) => message.data.mtn),
+    ).toEqual(['tap:smile', 'tap:nod']);
+    expect(messages.filter((message) => message.msg === 13302)).toHaveLength(1);
+    service.dispose();
+  });
   it('does not create a socket while the adapter is disabled', async () => {
     let socketCount = 0;
     const service = new ViewerExService(

@@ -11,6 +11,8 @@ const setup = () => {
     setVTubeStudioSettings: vi.fn(async () => ({ ok: true })),
     authorizeVTubeStudio: vi.fn(),
     launchVTubeStudio: vi.fn(),
+    openVTubeStudioWorkshop: vi.fn(async () => ({ ok: true })),
+    openViewerExWorkshop: vi.fn(async () => ({ ok: true })),
     installBundledVTubeStudioModel: vi.fn(),
     presentInVTubeStudio: vi.fn(async () => ({ ok: true })),
     previewVTubeStudioExpression: vi.fn(),
@@ -30,6 +32,23 @@ const setup = () => {
   return { api, panel, button: (text: string) => nodes.find((n) => n.textContent === text)! };
 };
 describe('external character display settings', () => {
+  it('opens ViewerEX workshop without changing display settings or sending model commands', async () => {
+    const { api, button, panel } = setup();
+    button('浏览 Live2DViewerEX 创意工坊').dispatchEvent(new Event('click'));
+    await Promise.resolve();
+    expect(api.openViewerExWorkshop).toHaveBeenCalledWith();
+    expect(api.setViewerExSettings).not.toHaveBeenCalled();
+    expect(api.presentInViewerEx).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+  it('opens the official workshop without changing models or settings', async () => {
+    const { api, button } = setup();
+    button('浏览 VTube Studio 创意工坊').dispatchEvent(new Event('click'));
+    await Promise.resolve();
+    expect(api.openVTubeStudioWorkshop).toHaveBeenCalledWith();
+    expect(api.setVTubeStudioSettings).not.toHaveBeenCalled();
+    expect(api.installBundledVTubeStudioModel).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();

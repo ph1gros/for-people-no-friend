@@ -319,6 +319,7 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.getDesktopIntegrationStatus) as ReturnType<
       DeskpetApi['getDesktopIntegrationStatus']
     >,
+  installClockWidget: () => ipcRenderer.invoke(IPC_CHANNELS.installClockWidget) as Promise<void>,
   setDesktopIntegrationSettings: (input: SetDesktopIntegrationSettingsInput) =>
     ipcRenderer.invoke(IPC_CHANNELS.setDesktopIntegrationSettings, input) as ReturnType<
       DeskpetApi['setDesktopIntegrationSettings']
@@ -393,6 +394,10 @@ const deskpetApi: DeskpetApi = Object.freeze({
     ipcRenderer.invoke(IPC_CHANNELS.launchSpeechTrainer) as ReturnType<
       DeskpetApi['launchSpeechTrainer']
     >,
+  openViewerExWorkshop: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.openViewerExWorkshop) as ReturnType<
+      DeskpetApi['openViewerExWorkshop']
+    >,
   getViewerExStatus: () =>
     ipcRenderer.invoke(IPC_CHANNELS.getViewerExStatus) as ReturnType<
       DeskpetApi['getViewerExStatus']
@@ -412,6 +417,10 @@ const deskpetApi: DeskpetApi = Object.freeze({
   launchVTubeStudio: () =>
     ipcRenderer.invoke(IPC_CHANNELS.launchVTubeStudio) as ReturnType<
       DeskpetApi['launchVTubeStudio']
+    >,
+  openVTubeStudioWorkshop: () =>
+    ipcRenderer.invoke(IPC_CHANNELS.openVTubeStudioWorkshop) as ReturnType<
+      DeskpetApi['openVTubeStudioWorkshop']
     >,
   installBundledVTubeStudioModel: () =>
     ipcRenderer.invoke(IPC_CHANNELS.installBundledVTubeStudioModel) as ReturnType<

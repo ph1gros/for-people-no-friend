@@ -1,4 +1,5 @@
 import type { CharacterEmotion } from '../character/character-reply';
+import type { EmotionChannels } from '../character/emotion-channels';
 
 export type CharacterPresentationState = 'idle' | 'thinking' | 'talking';
 
@@ -11,7 +12,11 @@ export type CharacterPresentationState = 'idle' | 'thinking' | 'talking';
  */
 export interface CharacterPresentationPort {
   setState(state: CharacterPresentationState): Promise<boolean>;
-  respond(emotion: CharacterEmotion, requestedAction?: string): Promise<void>;
+  respond(
+    emotion: CharacterEmotion,
+    requestedAction?: string,
+    emotionChannels?: EmotionChannels,
+  ): Promise<void>;
   updateSpeechLevel(level: number): void;
   resetSpeech(): void;
 }
@@ -25,8 +30,18 @@ export class CompositeCharacterPresentation implements CharacterPresentationPort
     return results.some((result) => result.status === 'fulfilled' && result.value);
   }
 
-  public async respond(emotion: CharacterEmotion, requestedAction?: string): Promise<void> {
-    await Promise.allSettled(this.ports.map((port) => port.respond(emotion, requestedAction)));
+  public async respond(
+    emotion: CharacterEmotion,
+    requestedAction?: string,
+    emotionChannels?: EmotionChannels,
+  ): Promise<void> {
+    await Promise.allSettled(
+      this.ports.map((port) =>
+        emotionChannels
+          ? port.respond(emotion, requestedAction, emotionChannels)
+          : port.respond(emotion, requestedAction),
+      ),
+    );
   }
 
   public updateSpeechLevel(level: number): void {

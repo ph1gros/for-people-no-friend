@@ -1,10 +1,10 @@
 import type { CharacterPresentationPort } from '../../core/presentation/character-presentation';
+import type { EmotionChannels } from '../../core/character/emotion-channels';
 import type {
   CharacterEmotion,
   CharacterState,
   Live2DControlMap,
   Live2DDriver,
-  MotionReference,
   TrackingPoint,
 } from './contracts';
 
@@ -37,7 +37,7 @@ export class StateChannel {
 }
 
 interface QueuedAction {
-  motion: MotionReference;
+  perform: () => Promise<boolean>;
   resolve: (played: boolean) => void;
 }
 
@@ -57,6 +57,7 @@ export class ActionChannel {
   private readonly queue: QueuedAction[] = [];
   private readonly lastQueuedAt = new Map<string, number>();
   private active = false;
+  private destroyed = false;
   private restoreState: () => Promise<boolean> = async () => false;
 
   public constructor(
@@ -75,8 +76,14 @@ export class ActionChannel {
   }
 
   public enqueue(action: string): Promise<boolean> {
+    if (this.destroyed) return Promise.resolve(false);
     const motion = this.motions[action];
-    if (!motion) {
+    const perform = motion
+      ? () => this.driver.playAction(motion)
+      : (action === 'nod' || action === 'shake') && this.driver.playGesture
+        ? () => this.driver.playGesture!(action)
+        : undefined;
+    if (!perform) {
       return Promise.resolve(false);
     }
     const queuedAt = this.now();
@@ -87,12 +94,17 @@ export class ActionChannel {
     this.lastQueuedAt.set(action, queuedAt);
 
     return new Promise<boolean>((resolve) => {
-      this.queue.push({ motion, resolve });
+      this.queue.push({ perform, resolve });
       void this.drain();
     });
   }
 
-  private playWithTimeout(motion: MotionReference): Promise<boolean> {
+  public destroy(): void {
+    this.destroyed = true;
+    for (const pending of this.queue.splice(0)) pending.resolve(false);
+  }
+
+  private playWithTimeout(perform: () => Promise<boolean>): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       let settled = false;
       const finish = (played: boolean): void => {
@@ -102,7 +114,7 @@ export class ActionChannel {
         resolve(played);
       };
       const timeout = globalThis.setTimeout(() => finish(false), this.timing.actionTimeoutMs);
-      void this.driver.playAction(motion).then(
+      void perform().then(
         (played) => finish(played),
         () => finish(false),
       );
@@ -125,7 +137,7 @@ export class ActionChannel {
       while (next) {
         let played = false;
         try {
-          played = await this.playWithTimeout(next.motion);
+          played = await this.playWithTimeout(next.perform);
         } catch {
           played = false;
         } finally {
@@ -136,7 +148,7 @@ export class ActionChannel {
     } finally {
       this.active = false;
       await this.waitForRecovery();
-      await this.restoreState();
+      if (!this.destroyed) await this.restoreState();
     }
   }
 }
@@ -235,6 +247,11 @@ export class Live2DPerformanceController implements CharacterPresentationPort {
   public readonly tracking: TrackingChannel;
   public readonly lipSync: LipSyncChannel;
   private readonly emotionActions: Live2DControlMap['emotionActions'];
+  private readonly expressions: Live2DControlMap['emotions'];
+  private channelExpressionActive = false;
+  private expressionResetTimer: ReturnType<typeof setTimeout> | undefined;
+  private destroyed = false;
+  private responseRevision = 0;
 
   public constructor(
     private readonly driver: Live2DDriver,
@@ -247,6 +264,7 @@ export class Live2DPerformanceController implements CharacterPresentationPort {
     this.action.bindStateRestore(() => this.state.restore());
     this.emotion = new EmotionChannel(driver, controls.emotions);
     this.emotionActions = controls.emotionActions;
+    this.expressions = controls.emotions;
     this.tracking = new TrackingChannel(driver);
     this.lipSync = new LipSyncChannel(
       driver,
@@ -255,14 +273,57 @@ export class Live2DPerformanceController implements CharacterPresentationPort {
     );
   }
 
-  public async respond(emotion: CharacterEmotion, requestedAction?: string): Promise<void> {
-    await this.emotion.set(emotion);
+  public async respond(
+    emotion: CharacterEmotion,
+    requestedAction?: string,
+    channels?: EmotionChannels,
+  ): Promise<void> {
+    if (this.destroyed) return;
+    const revision = ++this.responseRevision;
+    this.cancelExpressionReset();
+    const basic = { happy: 'joy', sad: 'sadness', angry: 'anger', surprised: 'surprise' } as const;
+    const matching = Object.hasOwn(basic, emotion)
+      ? basic[emotion as keyof typeof basic]
+      : undefined;
+    const active = channels
+      ? ['joy', 'sadness', 'anger', 'fear', 'disgust', 'surprise', 'guilt'].filter(
+          (key) => channels[key as keyof EmotionChannels] > 0,
+        )
+      : [];
+    const mapped =
+      matching && active.length === 1 && active[0] === matching && this.expressions[emotion];
+    this.channelExpressionActive = false;
+    if (channels && !mapped && this.driver.setEmotionChannels) {
+      await this.driver.setExpression(undefined);
+      if (this.destroyed || revision !== this.responseRevision) return;
+      this.channelExpressionActive = this.driver.setEmotionChannels(channels);
+      if (!this.channelExpressionActive) await this.emotion.set(emotion);
+    } else {
+      this.driver.setEmotionChannels?.(undefined);
+      await this.emotion.set(emotion);
+    }
+    if (this.destroyed || revision !== this.responseRevision) return;
     const action = requestedAction ?? this.emotionActions?.[emotion];
     if (action) void this.action.enqueue(action);
   }
 
   public setState(state: CharacterState): Promise<boolean> {
+    if (this.destroyed) return Promise.resolve(false);
+    this.driver.setGestureState?.(state);
+    this.cancelExpressionReset();
+    if (state === 'idle' && this.channelExpressionActive) {
+      this.expressionResetTimer = setTimeout(() => {
+        this.expressionResetTimer = undefined;
+        this.channelExpressionActive = false;
+        this.driver.setEmotionChannels?.(undefined);
+      }, 8000);
+    }
     return this.state.set(state);
+  }
+
+  private cancelExpressionReset(): void {
+    if (this.expressionResetTimer !== undefined) clearTimeout(this.expressionResetTimer);
+    this.expressionResetTimer = undefined;
   }
 
   public updateSpeechLevel(level: number): void {
@@ -278,7 +339,11 @@ export class Live2DPerformanceController implements CharacterPresentationPort {
   }
 
   public destroy(): void {
+    this.destroyed = true;
+    this.responseRevision += 1;
+    this.cancelExpressionReset();
     this.lipSync.reset();
+    this.action.destroy();
     this.driver.destroy();
   }
 }

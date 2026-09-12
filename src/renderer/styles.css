@@ -219,6 +219,7 @@ body {
 }
 
 .character-host {
+  position: relative;
   width: min(100%, calc(100vh * 9 / 13));
   height: 100%;
   overflow: hidden;
@@ -405,6 +406,37 @@ body {
     border-color 70ms ease,
     background 70ms ease,
     transform 70ms ease;
+}
+
+.declarative-widget {
+  box-sizing: border-box;
+  max-width: 100%;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--fill-1);
+  color: var(--text-1);
+  pointer-events: none;
+  overflow-wrap: anywhere;
+  flex: 0 0 auto;
+}
+
+.declarative-widget[hidden] {
+  display: none;
+}
+
+.declarative-widget__value {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.declarative-widget__label,
+.declarative-widget__icons {
+  font-size: 12px;
+}
+
+.declarative-widget progress {
+  max-width: 100%;
 }
 
 .media-overlay {
@@ -1008,6 +1040,19 @@ select {
 }
 .resource-center__card[hidden] {
   display: none;
+}
+.resource-center__sample {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.resource-center__sample > .settings-hint {
+  margin: 0 0 8px;
+}
+.resource-center__sample details {
+  margin-top: 8px;
+}
+.resource-center__sample details p {
+  white-space: pre-wrap;
 }
 .resource-center__heading {
   display: flex;

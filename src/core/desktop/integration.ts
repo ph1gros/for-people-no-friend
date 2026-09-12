@@ -126,7 +126,9 @@ export interface ExtensionCapabilityManifest {
   version: 1;
   id: string;
   kind: 'provider' | 'character-source' | 'performance-map' | 'media' | 'shortcut' | 'widget';
-  permissions: Array<'network' | 'media-control' | 'global-shortcut' | 'input-activity'>;
+  permissions: Array<
+    'network' | 'media-control' | 'global-shortcut' | 'input-activity' | 'clock' | 'system-load'
+  >;
   timeoutMs: number;
 }
 
@@ -138,7 +140,14 @@ export const validateExtensionCapabilityManifest = (
   }
   const record = value as Record<string, unknown>;
   const kinds = ['provider', 'character-source', 'performance-map', 'media', 'shortcut', 'widget'];
-  const permissions = ['network', 'media-control', 'global-shortcut', 'input-activity'];
+  const permissions = [
+    'network',
+    'media-control',
+    'global-shortcut',
+    'input-activity',
+    'clock',
+    'system-load',
+  ];
   if (
     record.version !== 1 ||
     typeof record.id !== 'string' ||

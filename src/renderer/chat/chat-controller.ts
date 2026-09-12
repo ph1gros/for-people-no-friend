@@ -61,8 +61,15 @@ import {
   WakeWordCommandSession,
 } from '../speech/wake-word-command';
 import { WindowScaleSync } from '../settings/window-scale-sync';
-import { desktopWidgetRegistry, type DesktopWidgetDefinition } from '../widgets/widget-registry';
+import {
+  desktopWidgetRegistry,
+  resolveWidgetCardState,
+  type DesktopWidgetDefinition,
+} from '../widgets/widget-registry';
 import { calculateDesktopWidgetReserve } from '../widgets/widget-layout';
+import { renderWidgetSnapshot } from '../widgets/widget-row-renderer';
+import { stopVoiceSample } from '../speech/voice-sample';
+import { parseWidgetManifest } from '../../shared/widget-contract';
 import { IdleCompanionScheduler, selectKittenDrowsyLine } from './idle-companion';
 import { mountComposerPanel } from './composer';
 import { el, createButton, createField } from './elements';
@@ -687,6 +694,9 @@ export const initializeChat = async ({
   const widgetsContent = el('div', { className: 'widgets-panel__content' });
   const widgetsCatalog = el('div', { className: 'widget-catalog' });
   let widgetOrder: DesktopWidgetId[] = [];
+  let declarativeEnabled = new Set<string>();
+  const declarativeDefinitions = new Map<string, DesktopWidgetDefinition>();
+  const declarativeOverlays = new Map<string, HTMLElement>();
   const createWidgetCatalogCard = (
     definition: DesktopWidgetDefinition,
   ): {
@@ -733,9 +743,37 @@ export const initializeChat = async ({
   mediaWidgetHeader.append(backFromMediaWidgetButton, mediaWidgetTitle, mediaControlInput);
   mediaWidget.append(mediaWidgetHeader, mediaWidgetHint, mediaActions);
   const widgetsStatus = document.createElement('p');
+  const installClockButton = createButton('安装时钟（490 B）', 'secondary-button');
+  const clockDownloadNotice = el('small', {
+    textContent: '仅显示本机时间、日期和时区；点击后联网下载，计费网络会消耗少量流量。',
+  });
+  installClockButton.addEventListener('click', () => {
+    if (!api || installClockButton.disabled) return;
+    installClockButton.disabled = true;
+    widgetsStatus.textContent = '正在安装时钟…';
+    void api
+      .installClockWidget()
+      .then(async () => {
+        displayDesktopIntegrationStatus(await api.getDesktopIntegrationStatus());
+        widgetsStatus.textContent = '时钟已安装，可在卡片中启用。';
+      })
+      .catch(() => {
+        widgetsStatus.textContent = '时钟安装失败，请检查网络后重试。';
+      })
+      .finally(() => {
+        installClockButton.disabled = false;
+      });
+  });
   widgetsStatus.className = 'settings-status widgets-panel__status';
   widgetsStatus.textContent = '输入显示和听歌控制默认关闭。';
-  widgetsContent.append(widgetsCatalog, inputWidget, mediaWidget, widgetsStatus);
+  widgetsContent.append(
+    widgetsCatalog,
+    installClockButton,
+    clockDownloadNotice,
+    inputWidget,
+    mediaWidget,
+    widgetsStatus,
+  );
   widgetsPanel.append(widgetsHeader, widgetsContent);
   const showWidgetView = (view: 'catalog' | DesktopWidgetId): void => {
     widgetsCatalog.hidden = view !== 'catalog';
@@ -979,6 +1017,7 @@ export const initializeChat = async ({
   const settingsTabButtons = new Map<SettingsPage, HTMLButtonElement>();
   let selectedSettingsPage: SettingsPage = 'model';
   const showSettingsPage = (page: SettingsPage): void => {
+    if (page !== 'resources') stopVoiceSample();
     selectedSettingsPage = page;
     for (const [candidate, , section] of settingsPages) {
       const selected = candidate === page;
@@ -1709,6 +1748,7 @@ export const initializeChat = async ({
     debugPanel.hidden = true;
     widgetsPanel.hidden = true;
     settingsPanel.hidden = true;
+    stopVoiceSample();
     if (wasSettingsOpen && panelExpanded) setPanelExpanded(true, 'chat');
   };
 
@@ -1797,7 +1837,8 @@ export const initializeChat = async ({
     if (!presentation) {
       return;
     }
-    if (message?.emotion) await presentation.respond(message.emotion, message.action);
+    if (message?.emotion)
+      await presentation.respond(message.emotion, message.action, message.emotionChannels);
     await presentation.setState('idle');
   };
 
@@ -2053,6 +2094,28 @@ export const initializeChat = async ({
   };
 
   const displayDesktopIntegrationStatus = (desktopStatus: DesktopIntegrationStatus): void => {
+    installClockButton.hidden = clockDownloadNotice.hidden = Boolean(
+      desktopStatus.widgets?.some(({ manifest }) => manifest.capability.id === 'clock'),
+    );
+    declarativeEnabled = new Set(desktopStatus.settings.declarativeWidgetIds ?? []);
+    for (const snapshot of desktopStatus.widgets ?? []) {
+      const manifest = parseWidgetManifest(snapshot.manifest);
+      const id = manifest.capability.id;
+      if (id === 'input' || id === 'media') continue;
+      if (!declarativeDefinitions.has(id)) {
+        const definition: DesktopWidgetDefinition = { ...manifest, id, settingsView: id };
+        declarativeDefinitions.set(id, definition);
+        const card = createWidgetCatalogCard(definition);
+        card.settingsButton.hidden = true;
+        card.toggleButton.addEventListener('click', () => void toggleWidget(id));
+        widgetCards.set(id, card);
+        widgetsCatalog.append(card.card);
+        const overlay = el('section', { className: 'declarative-widget', hidden: true });
+        declarativeOverlays.set(id, overlay);
+        desktopOverlayStack.append(overlay);
+      }
+      renderWidgetSnapshot(declarativeOverlays.get(id)!, snapshot);
+    }
     globalShortcutInput.checked = desktopStatus.settings.globalShortcutsEnabled;
     mediaControlInput.checked = desktopStatus.settings.mediaControlEnabled;
     inputOverlayEnabledInput.checked = desktopStatus.settings.inputOverlayEnabled;
@@ -2071,10 +2134,13 @@ export const initializeChat = async ({
     previousMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
     playPauseMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
     nextMediaButton.disabled = !mediaControlsAvailable || mediaCommandInFlight;
-    for (const definition of desktopWidgetRegistry.list()) {
+    for (const definition of [
+      ...desktopWidgetRegistry.list(),
+      ...declarativeDefinitions.values(),
+    ]) {
       const card = widgetCards.get(definition.id);
       if (!card) continue;
-      const state = definition.getCardState(desktopStatus);
+      const state = resolveWidgetCardState(definition, desktopStatus);
       card.toggleButton.textContent = state.label;
       card.toggleButton.title = state.enabled
         ? `关闭${definition.title}`
@@ -2088,13 +2154,17 @@ export const initializeChat = async ({
     const overlays: Record<DesktopWidgetId, HTMLElement> = {
       input: inputOverlay,
       media: mediaOverlay,
+      ...Object.fromEntries(declarativeOverlays),
     };
     for (const widget of widgetOrder) {
-      desktopOverlayStack.append(overlays[widget]);
+      if (overlays[widget]) desktopOverlayStack.append(overlays[widget]);
     }
     displayInputOverlay(desktopStatus.settings, desktopStatus.inputOverlayActive);
     displayMediaOverlay(desktopStatus);
-    desktopWidgetsActive = mediaWidgetVisible || inputWidgetVisible;
+    desktopWidgetsActive =
+      mediaWidgetVisible ||
+      inputWidgetVisible ||
+      [...declarativeOverlays.values()].some((overlay) => !overlay.hidden);
     root.classList.toggle('desktop-widgets-active', desktopWidgetsActive);
     syncDesktopWidgetReserve();
     const shortcutMessage = desktopStatus.settings.globalShortcutsEnabled
@@ -2117,7 +2187,7 @@ export const initializeChat = async ({
         : '输入显示启动失败；当前不会监听键盘或鼠标'
       : '输入显示未启用';
     desktopIntegrationStatus.textContent = `${shortcutMessage}。`;
-    widgetsStatus.textContent = `${mediaMessage}；${inputMessage}。`;
+    widgetsStatus.textContent = `${mediaMessage}；${inputMessage}。${(desktopStatus.widgetPackageErrors ?? []).join('；')}`;
   };
 
   const refreshMediaStatus = async (): Promise<void> => {
@@ -2132,7 +2202,11 @@ export const initializeChat = async ({
     }
   };
 
-  const mediaStatusRefreshTimer = window.setInterval(() => void refreshMediaStatus(), 5_000);
+  let desktopRefreshTicks = 0;
+  const mediaStatusRefreshTimer = window.setInterval(() => {
+    desktopRefreshTicks += 1;
+    if (declarativeEnabled.size > 0 || desktopRefreshTicks % 5 === 0) void refreshMediaStatus();
+  }, 1_000);
 
   const displaySpeechStatus = (status: SpeechStatus): void => {
     currentSpeechStatus = status;
@@ -2395,6 +2469,7 @@ export const initializeChat = async ({
     const widgetEnabled: Record<DesktopWidgetId, boolean> = {
       input: inputOverlayEnabledInput.checked,
       media: mediaControlInput.checked,
+      ...Object.fromEntries([...declarativeEnabled].map((id) => [id, true])),
     };
     widgetOrder = widgetOrder.filter((widget) => widgetEnabled[widget]);
     for (const widget of ['input', 'media'] as const) {
@@ -2407,6 +2482,7 @@ export const initializeChat = async ({
       inputOverlayMouseEnabled: inputOverlayMouseInput.checked,
       inputOverlayKeys: inputKeys,
       widgetOrder,
+      declarativeWidgetIds: [...declarativeEnabled],
       visibilityShortcut: visibilityShortcutInput.value.trim(),
       stopGenerationShortcut: stopGenerationShortcutInput.value.trim(),
     };
@@ -2448,7 +2524,11 @@ export const initializeChat = async ({
   const toggleWidget = async (widget: DesktopWidgetId): Promise<void> => {
     if (!api) return;
     const enabled =
-      widget === 'input' ? inputOverlayEnabledInput.checked : mediaControlInput.checked;
+      widget === 'input'
+        ? inputOverlayEnabledInput.checked
+        : widget === 'media'
+          ? mediaControlInput.checked
+          : declarativeEnabled.has(widget);
     for (const card of widgetCards.values()) card.toggleButton.disabled = true;
     widgetsStatus.textContent = enabled ? '正在关闭小组件…' : '正在启用小组件…';
     try {
@@ -2640,6 +2720,7 @@ export const initializeChat = async ({
     const willOpen = settingsPanel.hidden;
     closeDrawers();
     settingsPanel.hidden = !willOpen;
+    if (!willOpen) stopVoiceSample();
     setPanelExpanded(true, willOpen ? 'settings' : 'chat');
     if (willOpen) {
       settingsPanel.scrollTop = 0;

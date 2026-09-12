@@ -1,4 +1,8 @@
-import type { DesktopAction, MediaController } from '../../core/desktop/integration';
+import type {
+  DesktopAction,
+  MediaController,
+  MediaSessionState,
+} from '../../core/desktop/integration';
 import type {
   DesktopInputActivityEvent,
   DesktopIntegrationSettings,
@@ -8,6 +12,11 @@ import type {
 } from '../../shared/desktop-integration-ipc';
 import type { DesktopIntegrationStore } from '../storage/desktop-integration-store';
 import type { SafeDiagnosticSink } from '../diagnostics/safe-diagnostic-log';
+import {
+  parseDesktopIntegrationSettings,
+  parseDesktopInputActivityEvent,
+} from '../../shared/desktop-integration-ipc';
+import { WidgetRuntime } from '../widgets/widget-runtime';
 
 export interface GlobalShortcutAdapter {
   register(accelerator: string, callback: () => void): boolean;
@@ -53,6 +62,21 @@ export class DesktopIntegrationService {
   private mediaCommandInFlight = false;
   private inputOverlayActive = false;
   private pushToTalkKey: InputOverlayKey | undefined;
+  private readonly activeKeys = new Set<string>();
+  private readonly activeMouseButtons = new Set<string>();
+  private mouseDirection: string | null = null;
+  private mediaRead: { at: number; result: Promise<MediaSessionState> } | undefined;
+
+  private readMedia(): Promise<MediaSessionState> {
+    const now = Date.now();
+    if (!this.mediaRead || now - this.mediaRead.at >= 5000 || now < this.mediaRead.at) {
+      this.mediaRead = {
+        at: now,
+        result: this.media.getState().catch(() => ({ supported: false })),
+      };
+    }
+    return this.mediaRead.result;
+  }
 
   public constructor(
     private readonly store: DesktopIntegrationStore,
@@ -64,6 +88,7 @@ export class DesktopIntegrationService {
     private readonly emitInputActivity: (event: DesktopInputActivityEvent) => void = () =>
       undefined,
     private readonly diagnostics?: SafeDiagnosticSink,
+    private readonly widgets = new WidgetRuntime(),
   ) {}
 
   public async initialize(): Promise<void> {
@@ -77,20 +102,37 @@ export class DesktopIntegrationService {
   }
 
   public async getStatus(): Promise<DesktopIntegrationStatus> {
-    return {
+    const status: DesktopIntegrationStatus = {
       settings: { ...this.settings },
       shortcutRegistered: this.shortcutRegistered,
       stopGenerationShortcutRegistered: this.stopGenerationShortcutRegistered,
       inputOverlayActive: this.inputOverlayActive,
-      media: this.settings.mediaControlEnabled
-        ? await this.media.getState().catch(() => ({ supported: false }))
-        : { supported: false },
+      media: this.settings.mediaControlEnabled ? await this.readMedia() : { supported: false },
     };
+    status.widgets = this.widgets.snapshots(status.settings.declarativeWidgetIds ?? [], {
+      media: status.settings.mediaControlEnabled ? status.media : undefined,
+      input:
+        status.settings.inputOverlayEnabled && status.inputOverlayActive
+          ? {
+              keys: [...this.activeKeys],
+              mouse: [...this.activeMouseButtons],
+              direction: this.mouseDirection,
+            }
+          : undefined,
+    });
+    status.widgetPackageErrors = this.widgets.getErrors();
+    return status;
+  }
+
+  public getWidgetIds(): string[] {
+    return this.widgets.knownIds();
   }
 
   public async setSettings(settings: DesktopIntegrationSettings): Promise<void> {
+    settings = parseDesktopIntegrationSettings(settings, this.getWidgetIds());
     await this.store.set(settings);
     this.settings = { ...settings };
+    this.mediaRead = undefined;
     this.applyShortcut();
     await this.applyInputOverlay();
   }
@@ -107,7 +149,12 @@ export class DesktopIntegrationService {
         settings.mediaControlEnabled = enabled;
         break;
       default:
-        throw new Error('The desktop widget extension is not registered.');
+        if (!this.widgets.has(widgetId))
+          throw new Error('The desktop widget extension is not registered.');
+        settings.declarativeWidgetIds = (settings.declarativeWidgetIds ?? []).filter(
+          (id) => id !== widgetId,
+        );
+        if (enabled) settings.declarativeWidgetIds.push(widgetId);
     }
     await this.setSettings(settings);
   }
@@ -131,6 +178,7 @@ export class DesktopIntegrationService {
       return await this.media.send(command).catch(() => false);
     } finally {
       this.mediaCommandInFlight = false;
+      this.mediaRead = undefined;
     }
   }
 
@@ -154,6 +202,9 @@ export class DesktopIntegrationService {
   }
 
   public dispose(): void {
+    this.activeKeys.clear();
+    this.activeMouseButtons.clear();
+    this.mouseDirection = null;
     this.unregisterShortcuts();
     this.inputActivity.stop();
     this.shortcutRegistered = false;
@@ -197,6 +248,9 @@ export class DesktopIntegrationService {
 
   private async applyInputOverlay(): Promise<void> {
     this.inputActivity.stop();
+    this.activeKeys.clear();
+    this.activeMouseButtons.clear();
+    this.mouseDirection = null;
     this.inputOverlayActive = false;
     if (!this.settings.inputOverlayEnabled && !this.pushToTalkKey) return;
     const inputOverlayKeys = [
@@ -212,7 +266,20 @@ export class DesktopIntegrationService {
           inputOverlayMouseEnabled:
             this.settings.inputOverlayEnabled && this.settings.inputOverlayMouseEnabled,
         },
-        this.emitInputActivity,
+        (rawEvent) => {
+          const event = parseDesktopInputActivityEvent(rawEvent);
+          if (this.settings.inputOverlayEnabled) {
+            if (event.type === 'key' && this.settings.inputOverlayKeys.includes(event.key)) {
+              if (event.pressed) this.activeKeys.add(event.key);
+              else this.activeKeys.delete(event.key);
+            } else if (event.type === 'mouse-button' && this.settings.inputOverlayMouseEnabled) {
+              if (event.pressed) this.activeMouseButtons.add(event.button);
+              else this.activeMouseButtons.delete(event.button);
+            } else if (event.type === 'mouse-direction' && this.settings.inputOverlayMouseEnabled)
+              this.mouseDirection = event.direction;
+          }
+          this.emitInputActivity(event);
+        },
       )
       .catch(() => {
         this.diagnostics?.('desktop-integration-configuration-failed');

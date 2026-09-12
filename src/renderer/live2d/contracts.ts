@@ -1,4 +1,5 @@
 import type { CharacterEmotion } from '../../core/character/character-reply';
+import type { EmotionChannels } from '../../core/character/emotion-channels';
 import type { CharacterPresentationState } from '../../core/presentation/character-presentation';
 
 export type { CharacterEmotion } from '../../core/character/character-reply';
@@ -28,6 +29,9 @@ export interface TrackingPoint {
 }
 
 export interface Live2DDriver {
+  playGesture?(gesture: 'nod' | 'shake'): Promise<boolean>;
+  setGestureState?(state: CharacterState): void;
+  setEmotionChannels?(channels?: EmotionChannels): boolean;
   playState(motion: MotionReference): Promise<boolean>;
   playAction(motion: MotionReference): Promise<boolean>;
   setExpression(expressionId?: string): Promise<boolean>;

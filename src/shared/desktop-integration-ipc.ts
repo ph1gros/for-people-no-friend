@@ -3,13 +3,15 @@ import {
   type MediaCommand,
   type MediaSessionState,
 } from '../core/desktop/integration';
+import { isWidgetId, MAX_DESKTOP_WIDGETS, type WidgetSnapshot } from './widget-contract';
+export { MAX_DESKTOP_WIDGETS } from './widget-contract';
 
 export const DEFAULT_VISIBILITY_SHORTCUT = '\\';
 export const DEFAULT_STOP_GENERATION_SHORTCUT = 'Ctrl+Shift+Delete';
 export const DEFAULT_INPUT_OVERLAY_KEYS = ['W', 'A', 'S', 'D'] as const;
 export const MAX_INPUT_OVERLAY_KEYS = 24;
 export const DESKTOP_WIDGET_IDS = ['input', 'media'] as const;
-export type DesktopWidgetId = (typeof DESKTOP_WIDGET_IDS)[number];
+export type DesktopWidgetId = string;
 export interface SetDesktopWidgetEnabledInput {
   widgetId: DesktopWidgetId;
   enabled: boolean;
@@ -79,6 +81,7 @@ export interface DesktopIntegrationSettings {
   inputOverlayMouseEnabled: boolean;
   inputOverlayKeys: InputOverlayKey[];
   widgetOrder: DesktopWidgetId[];
+  declarativeWidgetIds?: string[];
   visibilityShortcut: string;
   stopGenerationShortcut: string;
 }
@@ -97,6 +100,8 @@ export interface DesktopIntegrationStatus {
   stopGenerationShortcutRegistered: boolean;
   inputOverlayActive: boolean;
   media: MediaSessionState;
+  widgets?: WidgetSnapshot[];
+  widgetPackageErrors?: string[];
 }
 
 const normalizeInputOverlayKey = (value: string): InputOverlayKey | undefined => {
@@ -145,32 +150,35 @@ const parseWidgetOrder = (
   value: unknown,
   inputOverlayEnabled: boolean,
   mediaControlEnabled: boolean,
+  knownIds: readonly string[],
+  declarativeIds: readonly string[],
 ): DesktopWidgetId[] => {
-  const fallbackOrder: DesktopWidgetId[] = ['input', 'media'];
+  const fallbackOrder = [...knownIds];
   const enabled = new Set<DesktopWidgetId>([
     ...(inputOverlayEnabled ? (['input'] as const) : []),
     ...(mediaControlEnabled ? (['media'] as const) : []),
+    ...declarativeIds,
   ]);
   if (value === undefined) return fallbackOrder.filter((widget) => enabled.has(widget));
   if (
     !Array.isArray(value) ||
-    value.length > DESKTOP_WIDGET_IDS.length ||
-    !value.every(
-      (widget) =>
-        typeof widget === 'string' && DESKTOP_WIDGET_IDS.includes(widget as DesktopWidgetId),
-    ) ||
+    value.length > MAX_DESKTOP_WIDGETS ||
+    !value.every((widget) => isWidgetId(widget) && knownIds.includes(widget)) ||
     new Set(value).size !== value.length
   ) {
     throw new Error('The desktop widget order is invalid.');
   }
-  const ordered = (value as DesktopWidgetId[]).filter((widget) => enabled.has(widget));
+  const ordered = value.filter(isWidgetId).filter((widget) => enabled.has(widget));
   for (const widget of fallbackOrder) {
     if (enabled.has(widget) && !ordered.includes(widget)) ordered.push(widget);
   }
   return ordered;
 };
 
-export const parseDesktopIntegrationSettings = (value: unknown): DesktopIntegrationSettings => {
+export const parseDesktopIntegrationSettings = (
+  value: unknown,
+  knownIds: readonly string[] = DESKTOP_WIDGET_IDS,
+): DesktopIntegrationSettings => {
   if (
     !value ||
     typeof value !== 'object' ||
@@ -187,6 +195,19 @@ export const parseDesktopIntegrationSettings = (value: unknown): DesktopIntegrat
   const record = value as Record<string, unknown>;
   const inputOverlayEnabled = record.inputOverlayEnabled as boolean;
   const mediaControlEnabled = record.mediaControlEnabled as boolean;
+  const declarativeIds = record.declarativeWidgetIds ?? [];
+  if (
+    !Array.isArray(declarativeIds) ||
+    declarativeIds.length > MAX_DESKTOP_WIDGETS - DESKTOP_WIDGET_IDS.length ||
+    !declarativeIds.every(
+      (id) =>
+        isWidgetId(id) &&
+        knownIds.includes(id) &&
+        !DESKTOP_WIDGET_IDS.some((builtin) => builtin === id),
+    ) ||
+    new Set(declarativeIds).size !== declarativeIds.length
+  )
+    throw new Error('The enabled declarative widget list is invalid.');
   const [visibilityShortcut, stopGenerationShortcut] = validateShortcutBindings([
     {
       accelerator: (record.visibilityShortcut as string).trim(),
@@ -203,7 +224,16 @@ export const parseDesktopIntegrationSettings = (value: unknown): DesktopIntegrat
     inputOverlayEnabled,
     inputOverlayMouseEnabled: record.inputOverlayMouseEnabled as boolean,
     inputOverlayKeys: parseInputOverlayKeys(record.inputOverlayKeys),
-    widgetOrder: parseWidgetOrder(record.widgetOrder, inputOverlayEnabled, mediaControlEnabled),
+    widgetOrder: parseWidgetOrder(
+      record.widgetOrder,
+      inputOverlayEnabled,
+      mediaControlEnabled,
+      knownIds,
+      declarativeIds,
+    ),
+    ...(record.declarativeWidgetIds !== undefined
+      ? { declarativeWidgetIds: [...declarativeIds] }
+      : {}),
     visibilityShortcut: visibilityShortcut.accelerator,
     stopGenerationShortcut: stopGenerationShortcut.accelerator,
   };
@@ -211,12 +241,16 @@ export const parseDesktopIntegrationSettings = (value: unknown): DesktopIntegrat
 
 export const parseSetDesktopIntegrationSettingsInput = (
   value: unknown,
+  knownIds: readonly string[] = DESKTOP_WIDGET_IDS,
 ): SetDesktopIntegrationSettingsInput => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('The desktop integration settings input is invalid.');
   }
   return {
-    settings: parseDesktopIntegrationSettings((value as Record<string, unknown>).settings),
+    settings: parseDesktopIntegrationSettings(
+      (value as Record<string, unknown>).settings,
+      knownIds,
+    ),
   };
 };
 
@@ -231,20 +265,23 @@ export const parseMediaCommandInput = (value: unknown): MediaCommandInput => {
   return { command };
 };
 
-export const parseSetDesktopWidgetEnabledInput = (value: unknown): SetDesktopWidgetEnabledInput => {
+export const parseSetDesktopWidgetEnabledInput = (
+  value: unknown,
+  knownIds: readonly string[] = DESKTOP_WIDGET_IDS,
+): SetDesktopWidgetEnabledInput => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error('The desktop widget toggle input is invalid.');
   }
   const record = value as Record<string, unknown>;
   if (
-    typeof record.widgetId !== 'string' ||
-    !DESKTOP_WIDGET_IDS.includes(record.widgetId as DesktopWidgetId) ||
+    !isWidgetId(record.widgetId) ||
+    !knownIds.includes(record.widgetId) ||
     typeof record.enabled !== 'boolean' ||
     Object.keys(record).some((key) => key !== 'widgetId' && key !== 'enabled')
   ) {
     throw new Error('The desktop widget toggle input is invalid.');
   }
-  return { widgetId: record.widgetId as DesktopWidgetId, enabled: record.enabled };
+  return { widgetId: record.widgetId, enabled: record.enabled };
 };
 
 export const parseDesktopInputActivityEvent = (value: unknown): DesktopInputActivityEvent => {

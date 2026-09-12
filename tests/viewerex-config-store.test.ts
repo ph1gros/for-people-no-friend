@@ -48,6 +48,7 @@ describe('ViewerEX config store', () => {
       workshopItemId: '2380801353',
       stateMotions: { talking: 'talk' },
       emotionExpressions: { happy: 0 },
+      emotionMotions: { happy: ['tap:smile', 'tap:nod'] },
       actionMotions: { wave: 'tap:wave' },
     });
 
@@ -55,6 +56,7 @@ describe('ViewerEX config store', () => {
       workshopItemId: '2380801353',
       stateMotions: { talking: 'talk' },
       emotionExpressions: { happy: 0 },
+      emotionMotions: { happy: ['tap:smile', 'tap:nod'] },
       actionMotions: { wave: 'tap:wave' },
     });
     expect(await readFile(path.join(directory, 'viewerex.v1.json'), 'utf8')).not.toContain(

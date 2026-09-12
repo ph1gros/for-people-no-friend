@@ -6,6 +6,24 @@ import {
 } from '../src/renderer/viewerex/viewerex-mapping-draft';
 
 describe('ViewerEX mapping draft', () => {
+  it('parses bounded emotion motion alternatives and rejects executable paths and duplicates', () => {
+    const draft = {
+      stateMotions: '',
+      emotionExpressions: '',
+      actionMotions: '',
+      emotionMotions: 'happy=tap:smile | tap:nod',
+    };
+    expect(parseViewerExMappingDraft(draft).emotionMotions).toEqual({
+      happy: ['tap:smile', 'tap:nod'],
+    });
+    for (const emotionMotions of [
+      'happy=tap | tap',
+      'happy=C:\\evil.exe',
+      'unknown=tap',
+      'happy=' + Array.from({ length: 9 }, (_, i) => `tap:m${i}`).join('|'),
+    ])
+      expect(() => parseViewerExMappingDraft({ ...draft, emotionMotions })).toThrow();
+  });
   it('parses state, emotion, and semantic action mappings', () => {
     expect(
       parseViewerExMappingDraft({

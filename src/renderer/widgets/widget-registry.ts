@@ -3,10 +3,15 @@ import {
   type ExtensionCapabilityManifest,
 } from '../../core/desktop/integration';
 import {
-  DESKTOP_WIDGET_IDS,
   type DesktopIntegrationStatus,
   type DesktopWidgetId,
 } from '../../shared/desktop-integration-ipc';
+import { isWidgetId, MAX_DESKTOP_WIDGETS } from '../../shared/widget-contract';
+import {
+  WIDGET_STATE_PATHS,
+  validateWidgetCardBinding,
+  type DesktopWidgetCardBinding,
+} from './widget-state-paths';
 
 export interface DesktopWidgetCardState {
   enabled: boolean;
@@ -21,18 +26,39 @@ export interface DesktopWidgetDefinition {
   description: string;
   iconText: string;
   settingsView: DesktopWidgetId;
-  getCardState(status: DesktopIntegrationStatus): DesktopWidgetCardState;
+  cardState: DesktopWidgetCardBinding;
 }
+
+export const resolveWidgetCardState = (
+  definition: DesktopWidgetDefinition,
+  status: DesktopIntegrationStatus,
+): DesktopWidgetCardState => {
+  const binding = definition.cardState;
+  const enabled = WIDGET_STATE_PATHS[binding.enabledFrom](status, definition.id);
+  // Main clears inputOverlayActive on stop and gates every start result by inputOverlayEnabled.
+  const active = enabled && WIDGET_STATE_PATHS[binding.activeFrom](status, definition.id);
+  return {
+    enabled,
+    active,
+    label: !enabled
+      ? binding.labels.disabled
+      : active
+        ? binding.labels.active
+        : binding.labels.inactive,
+  };
+};
 
 export class DesktopWidgetRegistry {
   private readonly definitions = new Map<DesktopWidgetId, DesktopWidgetDefinition>();
 
   public register(definition: DesktopWidgetDefinition): void {
     const capability = validateExtensionCapabilityManifest(definition.capability);
+    validateWidgetCardBinding(definition.cardState);
     if (
       capability.kind !== 'widget' ||
       capability.id !== definition.id ||
-      !DESKTOP_WIDGET_IDS.includes(definition.id) ||
+      !isWidgetId(definition.id) ||
+      this.definitions.size >= MAX_DESKTOP_WIDGETS ||
       definition.settingsView !== definition.id ||
       definition.title.trim().length < 1 ||
       definition.title.length > 32 ||
@@ -44,7 +70,17 @@ export class DesktopWidgetRegistry {
     ) {
       throw new Error('The desktop widget definition is invalid.');
     }
-    this.definitions.set(definition.id, Object.freeze({ ...definition, capability }));
+    this.definitions.set(
+      definition.id,
+      Object.freeze({
+        ...definition,
+        capability,
+        cardState: Object.freeze({
+          ...definition.cardState,
+          labels: Object.freeze({ ...definition.cardState.labels }),
+        }),
+      }),
+    );
   }
 
   public list(): DesktopWidgetDefinition[] {
@@ -67,15 +103,11 @@ desktopWidgetRegistry.register({
   description: '显示自选按键、鼠标按键和移动方向',
   iconText: '⌨',
   settingsView: 'input',
-  getCardState: (status) => ({
-    enabled: status.settings.inputOverlayEnabled,
-    active: status.inputOverlayActive,
-    label: status.settings.inputOverlayEnabled
-      ? status.inputOverlayActive
-        ? '运行中'
-        : '启动失败'
-      : '已关闭',
-  }),
+  cardState: {
+    enabledFrom: 'settings.inputOverlayEnabled',
+    activeFrom: 'input.active',
+    labels: { active: '运行中', inactive: '启动失败', disabled: '已关闭' },
+  },
 });
 
 desktopWidgetRegistry.register({
@@ -91,13 +123,9 @@ desktopWidgetRegistry.register({
   description: '显示当前曲目并控制上一首、播放和下一首',
   iconText: '♫',
   settingsView: 'media',
-  getCardState: (status) => ({
-    enabled: status.settings.mediaControlEnabled,
-    active: status.settings.mediaControlEnabled && status.media.supported,
-    label: status.settings.mediaControlEnabled
-      ? status.media.supported
-        ? '已开启'
-        : '不可用'
-      : '已关闭',
-  }),
+  cardState: {
+    enabledFrom: 'settings.mediaControlEnabled',
+    activeFrom: 'media.supported',
+    labels: { active: '已开启', inactive: '不可用', disabled: '已关闭' },
+  },
 });

@@ -7,6 +7,7 @@ import {
 } from '../../shared/viewerex-ipc';
 
 export interface ViewerExMappingDraft {
+  emotionMotions?: string;
   stateMotions: string;
   emotionExpressions: string;
   actionMotions: string;
@@ -14,7 +15,7 @@ export interface ViewerExMappingDraft {
 
 export type ViewerExMappings = Pick<
   ViewerExSettings,
-  'stateMotions' | 'emotionExpressions' | 'actionMotions'
+  'stateMotions' | 'emotionExpressions' | 'actionMotions' | 'emotionMotions'
 >;
 
 const parseLines = (value: string): Record<string, string> => {
@@ -46,11 +47,22 @@ export const parseViewerExMappingDraft = (draft: ViewerExMappingDraft): ViewerEx
       ]),
     ),
     actionMotions: parseLines(draft.actionMotions),
+    ...(draft.emotionMotions !== undefined
+      ? {
+          emotionMotions: Object.fromEntries(
+            Object.entries(parseLines(draft.emotionMotions)).map(([emotion, motions]) => [
+              emotion,
+              motions.split('|').map((motion) => motion.trim()),
+            ]),
+          ),
+        }
+      : {}),
   });
   return {
     stateMotions: parsed.stateMotions as Partial<Record<CharacterPresentationState, string>>,
     emotionExpressions: parsed.emotionExpressions as Partial<Record<CharacterEmotion, number>>,
     actionMotions: parsed.actionMotions,
+    ...(parsed.emotionMotions ? { emotionMotions: parsed.emotionMotions } : {}),
   };
 };
 

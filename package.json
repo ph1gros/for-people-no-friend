@@ -1,7 +1,7 @@
 {
   "name": "for-people-no-friend",
   "productName": "For People No Friend",
-  "version": "1.8.3",
+  "version": "1.9.0",
   "private": true,
   "description": "A local-first Windows AI character companion built with Electron, TypeScript, and Vite.",
   "main": "dist-electron/main/index.js",
@@ -14,6 +14,7 @@
     "build:electron": "tsc -p tsconfig.electron.json && pnpm build:preload",
     "build:preload": "vite build --config vite.preload.config.mts && vite build --config vite.preload.config.mts --mode resources && cross-env FPNF_PRELOAD_ENTRY=setup vite build --config vite.preload.config.mts",
     "build:renderer": "vite build",
+    "build:renderer:local-core": "vite build --mode local-core",
     "build:vtube-overlay": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-vtube-studio-spout.ps1",
     "clean": "rimraf dist dist-electron",
     "dev": "concurrently --kill-others-on-fail \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"vite build --config vite.preload.config.mts --watch\" \"vite build --config vite.preload.config.mts --mode resources --watch\" \"cross-env FPNF_PRELOAD_ENTRY=setup vite build --config vite.preload.config.mts --watch\" \"wait-on tcp:127.0.0.1:5173 dist-electron/main/index.js dist-electron/preload/index.cjs dist-electron/preload/resource-center.cjs dist-electron/preload/setup.cjs && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
@@ -81,6 +82,7 @@
     "afterPack": "scripts/prune-electron-package.cjs",
     "files": [
       "dist/**/*",
+      "!dist/renderer/runtime/cubism/**/*",
       "dist-electron/**/*",
       "build/icon.png",
       "package.json",
@@ -100,6 +102,18 @@
       {
         "from": "resources/voice-runtime/ireina_tts_service.py",
         "to": "voice-runtime/ireina_tts_service.py"
+      },
+      {
+        "from": "src/renderer/speech/samples/README.md",
+        "to": "licenses/voice-previews/README.md"
+      },
+      {
+        "from": "src/renderer/speech/samples/IREINA-LICENSE.txt",
+        "to": "licenses/voice-previews/IREINA-LICENSE.txt"
+      },
+      {
+        "from": "src/renderer/speech/samples/GENIE-LICENSE.txt",
+        "to": "licenses/voice-previews/GENIE-LICENSE.txt"
       }
     ],
     "win": {

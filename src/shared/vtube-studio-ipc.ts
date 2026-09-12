@@ -1,4 +1,5 @@
 import { CHARACTER_EMOTIONS, type CharacterEmotion } from '../core/character/character-reply';
+import { parseEmotionChannels, type EmotionChannels } from '../core/character/emotion-channels';
 import type { CharacterPresentationState } from '../core/presentation/character-presentation';
 
 export const DEFAULT_VTUBE_STUDIO_PORT = 8_001;
@@ -117,6 +118,7 @@ export interface SetVTubeStudioSettingsInput {
 }
 
 export interface VTubeStudioPresentationInput {
+  emotionChannels?: EmotionChannels;
   state?: CharacterPresentationState;
   emotion?: CharacterEmotion;
   action?: string;
@@ -287,10 +289,16 @@ export const parseSetVTubeStudioSettingsInput = (value: unknown): SetVTubeStudio
 
 export const parseVTubeStudioPresentationInput = (value: unknown): VTubeStudioPresentationInput => {
   const record = asRecord(value, 'VTube Studio presentation input');
-  if (Object.keys(record).some((key) => !['state', 'emotion', 'action'].includes(key))) {
+  if (
+    Object.keys(record).some(
+      (key) => !['state', 'emotion', 'action', 'emotionChannels'].includes(key),
+    )
+  ) {
     throw new Error('The VTube Studio presentation input contains an unknown field.');
   }
   const result: VTubeStudioPresentationInput = {};
+  if (record.emotionChannels !== undefined)
+    result.emotionChannels = parseEmotionChannels(record.emotionChannels);
   if (record.state !== undefined) {
     if (
       typeof record.state !== 'string' ||

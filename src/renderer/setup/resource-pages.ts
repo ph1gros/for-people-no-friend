@@ -5,6 +5,8 @@ import {
 } from '../../shared/setup-resources';
 import type { SetupVoice } from '../../core/setup/setup-flow';
 import type { SetupPage, SetupPageContext } from './pages';
+import { RESOURCE_DEFINITIONS } from '../../shared/resource-catalog';
+import { createVoiceSample, stopVoiceSample } from '../speech/voice-sample';
 
 interface SetupVoiceChoice {
   value: SetupVoice;
@@ -67,6 +69,7 @@ const labelOf = (voice: SetupVoice): string => voiceChoiceOf(voice)?.label ?? '�
 export { labelOf as setupVoiceLabel };
 
 export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage => ({
+  dispose: stopVoiceSample,
   render: async (host, _view, context) => {
     const group = document.createElement('fieldset');
     group.className = 'wizard__group';
@@ -84,6 +87,7 @@ export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage
         : undefined;
     const choices = kind === 'voice' ? VOICE_CHOICES.map((c) => c.value) : ['off', 'on'];
     const updateDetail = (): void => {
+      stopVoiceSample();
       const s = context.getSelections();
       const ids = setupResourceIds(
         kind === 'voice' ? { ...s, speechInput: false } : { ...s, voice: 'none' },
@@ -111,6 +115,16 @@ export const createSpeechChoicePage = (kind: 'voice' | 'speechInput'): SetupPage
         detail.append(details);
       }
       if (choice?.language) detail.append(paragraph(choice.language));
+      const voiceId = ids.find((id) => RESOURCE_DEFINITIONS[id].category === 'voice');
+      if (voiceId) {
+        const definition = RESOURCE_DEFINITIONS[voiceId];
+        if (definition.runtime) detail.append(paragraph(definition.runtime));
+        if (definition.sampleText)
+          detail.append(
+            paragraph(`试听台词：${definition.sampleText}`),
+            createVoiceSample(voiceId, document),
+          );
+      }
       // A voice that needs translation and a wizard run with no provider configured produce a
       // silent character, and the user would only find out after several hundred megabytes.
       if (choice?.needsChatModel && provider && !provider.configuredProviders.length) {

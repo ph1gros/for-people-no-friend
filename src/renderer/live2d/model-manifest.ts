@@ -7,6 +7,7 @@ import type {
 
 export const LOCAL_MODEL_ROOT = './models/local/';
 export const MODEL_MANIFEST_URL = `${LOCAL_MODEL_ROOT}model.json`;
+export const CUBISM_CORE_RUNTIME_PATH = './runtime/cubism/live2dcubismcore.min.js';
 
 export interface LocalModelManifest {
   version: 1;
@@ -231,10 +232,11 @@ export const resolveLocalModelUrl = (relativePath: string, assetRoot = LOCAL_MOD
 export const loadLocalModelManifest = async (
   fetcher: typeof fetch = fetch,
 ): Promise<LocalModelManifest> => {
-  const importedManifest =
-    typeof window === 'undefined'
-      ? undefined
-      : await window.deskpet?.getActiveCharacterModelManifest();
+  const modelApi = typeof window === 'undefined' ? undefined : window.deskpet;
+  const importedManifest = await modelApi?.getActiveCharacterModelManifest();
+  if (modelApi && !importedManifest) {
+    throw new ModelManifestError('当前角色尚未导入 Live2D 模型。', 'missing');
+  }
   const manifestUrl = importedManifest
     ? `deskpet-model://active/${importedManifest
         .split('/')
@@ -265,11 +267,9 @@ export const loadLocalModelManifest = async (
   if (!manifest) {
     throw new ModelManifestError('model.json 格式无效或包含不安全路径。', 'invalid');
   }
-  return importedManifest
-    ? {
-        ...manifest,
-        assetRoot: new URL('./', manifestUrl).href,
-        coreUrl: resolveLocalModelUrl('live2dcubismcore.min.js'),
-      }
-    : manifest;
+  return {
+    ...manifest,
+    ...(importedManifest ? { assetRoot: new URL('./', manifestUrl).href } : {}),
+    coreUrl: new URL(CUBISM_CORE_RUNTIME_PATH, window.location.href).href,
+  };
 };

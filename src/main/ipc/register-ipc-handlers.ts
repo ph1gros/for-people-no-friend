@@ -139,6 +139,7 @@ export interface IpcHandlerDependencies {
   characterResearch: CharacterResearchService;
   workGlossary: WorkGlossaryService;
   desktopIntegrations?: DesktopIntegrationService;
+  installClockWidget?: () => Promise<void>;
   characterPackages?: CharacterPackageService;
   live2DModelImports?: Live2DModelImportService;
   speech?: SpeechService;
@@ -255,6 +256,7 @@ export const registerIpcHandlers = ({
   characterResearch,
   workGlossary,
   desktopIntegrations,
+  installClockWidget,
   characterPackages,
   live2DModelImports,
   speech,
@@ -802,12 +804,23 @@ export const registerIpcHandlers = ({
     },
   );
   handle(IPC_CHANNELS.setDesktopIntegrationSettings, async (event, input: unknown) => {
-    const { settings } = parseSetDesktopIntegrationSettingsInput(input);
+    const { settings } = parseSetDesktopIntegrationSettingsInput(
+      input,
+      desktopIntegrations?.getWidgetIds(),
+    );
     await desktopIntegrations?.setSettings(settings);
   });
   handle(IPC_CHANNELS.setDesktopWidgetEnabled, async (event, input: unknown) => {
-    const { widgetId, enabled } = parseSetDesktopWidgetEnabledInput(input);
+    const { widgetId, enabled } = parseSetDesktopWidgetEnabledInput(
+      input,
+      desktopIntegrations?.getWidgetIds(),
+    );
     await desktopIntegrations?.setWidgetEnabled(widgetId, enabled);
+  });
+  handle(IPC_CHANNELS.installClockWidget, async (_event, ...args: unknown[]) => {
+    if (args.length) throw new Error('时钟安装不接受外部参数。');
+    if (!installClockWidget) throw new Error('时钟安装暂不可用。');
+    await installClockWidget();
   });
   handle(IPC_CHANNELS.sendMediaCommand, (event, input: unknown) => {
     return desktopIntegrations?.sendMediaCommand(parseMediaCommandInput(input).command) ?? false;
@@ -1008,6 +1021,32 @@ export const registerIpcHandlers = ({
       return { ok: true, message: '已请求 Steam 启动 VTube Studio。' };
     } catch {
       return { ok: false, message: '无法通过 Steam 启动 VTube Studio，请确认已安装 Steam。' };
+    }
+  });
+  handle(IPC_CHANNELS.openViewerExWorkshop, async (event) => {
+    try {
+      await shell.openExternal('https://steamcommunity.com/app/616720/workshop/');
+      return {
+        ok: true,
+        message:
+          '已请求打开 Live2DViewerEX 官方创意工坊。请在 ViewerEX 下载并加载模型，再配置桌宠映射。',
+      };
+    } catch {
+      return { ok: false, message: '创意工坊页面无法打开。请从 Live2DViewerEX 控制面板浏览。' };
+    }
+  });
+  handle(IPC_CHANNELS.openVTubeStudioWorkshop, async (event) => {
+    try {
+      await shell.openExternal('https://steamcommunity.com/app/1325860/workshop/');
+      return {
+        ok: true,
+        message: '已请求打开 VTube Studio 官方创意工坊。请在 VTS 内下载并加载模型，再回桌宠连接。',
+      };
+    } catch {
+      return {
+        ok: false,
+        message: '创意工坊页面无法打开。也可以启动 VTube Studio，点击主菜单中的 Steam 图标浏览。',
+      };
     }
   });
   handle(IPC_CHANNELS.installBundledVTubeStudioModel, (event) => {

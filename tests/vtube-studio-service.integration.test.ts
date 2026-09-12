@@ -600,6 +600,25 @@ describe('VTube Studio service integration', () => {
       ok: true,
       reason: 'presented-generic',
     });
+    await expect(
+      service.present({
+        emotionChannels: {
+          joy: 0,
+          sadness: 0,
+          anger: 0,
+          fear: 0.8,
+          disgust: 0.2,
+          surprise: 0,
+          trust: 0,
+          love: 0,
+          longing: 0,
+          guilt: 0,
+        },
+      }),
+    ).resolves.toEqual({ ok: true, reason: 'presented-generic' });
+    expect(injectedFrames.at(-1)).toMatchObject({
+      parameterValues: expect.arrayContaining([{ id: 'MouthSmile', value: expect.any(Number) }]),
+    });
     currentModelLoaded = false;
     await expect(service.inspect()).resolves.toEqual({
       ok: false,

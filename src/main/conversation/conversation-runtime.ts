@@ -525,7 +525,14 @@ export class ConversationRuntime {
         outputTokens,
       };
       await this.history.append(assistantMessage, profile.memoryNamespace);
-      emit({ requestId: input.requestId, type: 'completed', assistantMessage });
+      emit({
+        requestId: input.requestId,
+        type: 'completed',
+        assistantMessage: {
+          ...assistantMessage,
+          ...(reply.emotionChannels ? { emotionChannels: reply.emotionChannels } : {}),
+        },
+      });
       this.memories?.scheduleMaintenance(profile.memoryNamespace, selection, [
         ...existingHistory,
         userMessage,

@@ -1,14 +1,26 @@
 import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vite';
+import { localCubismCorePlugin } from './scripts/local-cubism-core-plugin';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: 'src/renderer',
   base: './',
   // Runtime models are loaded from the validated character-package store. Never copy the
   // developer/private assets tree into a renderer build as an implicit side effect.
   publicDir: false,
   plugins: [
+    // Explicit local-only mode: never re-enable copying the developer's entire assets tree.
+    ...(mode === 'local-core'
+      ? [
+          localCubismCorePlugin({
+            sourcePath: fileURLToPath(
+              new URL('assets/models/local/live2dcubismcore.min.js', import.meta.url),
+            ),
+            sha256: '8741f739779b5d5210872bd3d7d99f0f1e56e6c87409e7d26d6bb4b80aa1ef47',
+          }),
+        ]
+      : []),
     {
       name: 'fpnf-development-csp',
       transformIndexHtml(html, context) {
@@ -36,4 +48,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

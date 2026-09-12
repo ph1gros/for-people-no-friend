@@ -1,10 +1,14 @@
 import 'pixi.js/unsafe-eval';
+import type { EmotionChannels } from '../../core/character/emotion-channels';
+import { NativeEmotionOverlay, type NativeEmotionCore } from './emotion-overlay';
+import { NativeGestureOverlay, type NativeGesture } from './gesture-overlay';
 
 import { Application, extensions, Rectangle } from 'pixi.js';
 import type { Live2DModel } from 'untitled-pixi-live2d-engine/cubism';
 
 import type {
   Live2DDriver,
+  CharacterState,
   Live2DLipSyncControl,
   MotionReference,
   TrackingPoint,
@@ -32,9 +36,6 @@ let isCubismConfigured = false;
 
 type ModelMotionPriority = NonNullable<Parameters<Live2DModel['motion']>[2]>;
 
-const hasCubismCore = (): boolean =>
-  Boolean((window as Window & { Live2DCubismCore?: unknown }).Live2DCubismCore);
-
 const withTimeout = <T>(task: Promise<T>, timeoutMs: number, message: string): Promise<T> =>
   new Promise<T>((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error(message)), timeoutMs);
@@ -50,35 +51,50 @@ const withTimeout = <T>(task: Promise<T>, timeoutMs: number, message: string): P
     );
   });
 
-export const loadCubismCore = async (source: string): Promise<void> => {
-  if (hasCubismCore()) {
-    return;
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = source;
-    script.async = true;
-    script.addEventListener('load', () => resolve(), { once: true });
-    script.addEventListener('error', () => reject(new Error('Cubism Core 脚本加载失败。')), {
-      once: true,
-    });
-    document.head.append(script);
-  });
-
-  if (!hasCubismCore()) {
-    throw new Error('Cubism Core 脚本已读取，但没有提供 Live2DCubismCore。');
-  }
-};
-
 export class PixiLive2DDriver implements Live2DDriver {
+  private gestureState: CharacterState = 'idle';
+  private interacting = false;
+  private speaking = false;
+  private actionActive = false;
+  private actionRevision = 0;
+  private destroyed = false;
   public constructor(
     private readonly application: Application,
     private readonly model: Live2DModel,
     private readonly priorities: { idle: ModelMotionPriority; force: ModelMotionPriority },
     private readonly disposeRendererBindings: () => void,
     private readonly applyLipSync: (value: number) => void,
+    private readonly emotionOverlay?: NativeEmotionOverlay,
+    private readonly gestureOverlay?: NativeGestureOverlay,
   ) {}
+
+  public get supportedGestures(): NativeGesture[] {
+    return this.gestureOverlay?.supportedActions ?? [];
+  }
+
+  public playGesture(gesture: NativeGesture): Promise<boolean> {
+    if (
+      this.destroyed ||
+      this.interacting ||
+      this.speaking ||
+      this.actionActive ||
+      this.gestureState !== 'idle'
+    )
+      return Promise.resolve(false);
+    if (this.model.internalModel.motionManager.state.currentPriority > this.priorities.idle)
+      return Promise.resolve(false);
+    return this.gestureOverlay?.play(gesture) ?? Promise.resolve(false);
+  }
+
+  public setGestureState(state: CharacterState): void {
+    this.gestureState = state;
+    if (state !== 'idle') this.gestureOverlay?.cancel();
+  }
+
+  public setGestureInteraction(active: boolean): void {
+    this.interacting = active;
+    if (active) this.gestureOverlay?.cancel();
+  }
 
   public playState(motion: MotionReference): Promise<boolean> {
     return this.model.motion(motion.group, motion.index, this.priorities.idle, {
@@ -88,6 +104,11 @@ export class PixiLive2DDriver implements Live2DDriver {
   }
 
   public playAction(motion: MotionReference): Promise<boolean> {
+    if (this.destroyed) return Promise.resolve(false);
+    const revision = ++this.actionRevision;
+    this.gestureOverlay?.cancel();
+    this.actionActive = true;
+    if (this.emotionOverlay) this.emotionOverlay.suspended = true;
     return new Promise<boolean>((resolve) => {
       let settled = false;
       const finish = (played: boolean): void => {
@@ -95,6 +116,10 @@ export class PixiLive2DDriver implements Live2DDriver {
           return;
         }
         settled = true;
+        if (revision === this.actionRevision) {
+          this.actionActive = false;
+          if (this.emotionOverlay) this.emotionOverlay.suspended = false;
+        }
         window.clearTimeout(timeout);
         resolve(played);
       };
@@ -117,11 +142,16 @@ export class PixiLive2DDriver implements Live2DDriver {
   }
 
   public setExpression(expressionId?: string): Promise<boolean> {
+    if (expressionId) this.emotionOverlay?.clear();
     if (!expressionId) {
       this.model.internalModel.motionManager.expressionManager?.resetExpression();
       return Promise.resolve(true);
     }
     return this.model.expression(expressionId);
+  }
+
+  public setEmotionChannels(channels?: EmotionChannels): boolean {
+    return this.emotionOverlay?.set(channels) ?? false;
   }
 
   public setTracking(point: TrackingPoint, instant = false): void {
@@ -148,10 +178,16 @@ export class PixiLive2DDriver implements Live2DDriver {
   }
 
   public setLipSync(value: number): void {
-    this.applyLipSync(Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0)));
+    const level = Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+    this.speaking = level > 0;
+    if (this.speaking) this.gestureOverlay?.cancel();
+    this.applyLipSync(level);
   }
 
   public destroy(): void {
+    this.destroyed = true;
+    this.actionRevision += 1;
+    this.gestureOverlay?.cancel();
     this.disposeRendererBindings();
     this.model.automator.ticker = undefined;
     this.application.destroy(true, { children: true });
@@ -285,8 +321,22 @@ export const createLive2DRenderer = async (
         off(event: 'beforeModelUpdate', listener: () => void): void;
       };
     let lipSyncValue = 0;
+    const emotionOverlay = new NativeEmotionOverlay(
+      internalModel.coreModel as unknown as NativeEmotionCore,
+      internalModel.idManager,
+      [...Object.keys(persistentParameters), ...(lipSync ? [lipSync.mouthOpenParameter] : [])],
+    );
+    const gestureOverlay = new NativeGestureOverlay(
+      internalModel.coreModel as unknown as NativeEmotionCore,
+      internalModel.idManager,
+      [...Object.keys(persistentParameters), ...(lipSync ? [lipSync.mouthOpenParameter] : [])],
+    );
     const updateBlink = (): void => {
       updateBlinkDuringMotion(internalModel, application.ticker.deltaMS);
+      emotionOverlay.apply();
+      if (model.internalModel.motionManager.state.currentPriority > MotionPriority.IDLE)
+        gestureOverlay.cancel();
+      gestureOverlay.apply();
       applyPersistentParameters(internalModel, persistentParameters);
       if (lipSync) {
         internalModel.coreModel.setParameterValueById(
@@ -319,6 +369,8 @@ export const createLive2DRenderer = async (
         (value) => {
           lipSyncValue = value;
         },
+        emotionOverlay,
+        gestureOverlay,
       ),
       canvas: application.canvas,
       refreshVisibleFrame,

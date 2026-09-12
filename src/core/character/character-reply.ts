@@ -1,3 +1,5 @@
+import { EMOTION_CHANNELS, parseEmotionChannels, type EmotionChannels } from './emotion-channels';
+
 export const CHARACTER_EMOTIONS = [
   'neutral',
   'happy',
@@ -11,6 +13,7 @@ export const CHARACTER_EMOTIONS = [
 export type CharacterEmotion = (typeof CHARACTER_EMOTIONS)[number];
 
 export interface CharacterReply {
+  emotionChannels?: EmotionChannels;
   text: string;
   emotion: CharacterEmotion;
   action?: string;
@@ -26,6 +29,13 @@ export const CHARACTER_REPLY_SCHEMA: Record<string, unknown> = {
     text: { type: 'string' },
     emotion: { type: 'string', enum: [...CHARACTER_EMOTIONS] },
     action: { type: ['string', 'null'] },
+    emotionChannels: {
+      type: ['object', 'null'],
+      properties: Object.fromEntries(
+        EMOTION_CHANNELS.map((channel) => [channel, { type: 'number', minimum: 0, maximum: 1 }]),
+      ),
+      additionalProperties: false,
+    },
   },
   required: ['text', 'emotion', 'action'],
   additionalProperties: false,
@@ -63,7 +73,20 @@ export const parseCharacterReply = (
         : undefined;
     const action =
       requestedAction && allowedActions.includes(requestedAction) ? requestedAction : undefined;
-    return { text, emotion, ...(action ? { action } : {}) };
+    let emotionChannels: EmotionChannels | undefined;
+    if ('emotionChannels' in value && value.emotionChannels != null) {
+      try {
+        emotionChannels = parseEmotionChannels(value.emotionChannels);
+      } catch {
+        /* Optional expression metadata must never discard valid dialogue. */
+      }
+    }
+    return {
+      text,
+      emotion,
+      ...(action ? { action } : {}),
+      ...(emotionChannels ? { emotionChannels } : {}),
+    };
   } catch {
     return {
       text: fallback || '……',

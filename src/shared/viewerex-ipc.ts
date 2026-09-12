@@ -13,6 +13,7 @@ const PRESENTATION_STATES = new Set<CharacterPresentationState>(['idle', 'thinki
 const EMOTIONS = new Set<string>(CHARACTER_EMOTIONS);
 
 export interface ViewerExSettings {
+  emotionMotions?: Partial<Record<CharacterEmotion, string[]>>;
   enabled: boolean;
   port: number;
   modelIndex: number;
@@ -115,6 +116,24 @@ export const parseViewerExSettings = (value: unknown): ViewerExSettings => {
   }
 
   const rawMotions = asRecord(record.actionMotions, 'ViewerEX motion mappings');
+  const emotionMotions: Partial<Record<CharacterEmotion, string[]>> = {};
+  if (record.emotionMotions !== undefined) {
+    const raw = asRecord(record.emotionMotions, 'ViewerEX emotion motions');
+    if (Object.keys(raw).length > CHARACTER_EMOTIONS.length)
+      throw new Error('Too many emotion motions.');
+    for (const [emotion, motions] of Object.entries(raw)) {
+      if (
+        !EMOTIONS.has(emotion) ||
+        !Array.isArray(motions) ||
+        motions.length < 1 ||
+        motions.length > 8 ||
+        motions.some((motion) => typeof motion !== 'string' || !MOTION_PATTERN.test(motion)) ||
+        new Set(motions).size !== motions.length
+      )
+        throw new Error('Invalid ViewerEX emotion motion candidates.');
+      emotionMotions[emotion as CharacterEmotion] = [...motions];
+    }
+  }
   if (Object.keys(rawMotions).length > 64) throw new Error('Too many ViewerEX motion mappings.');
   const actionMotions: Record<string, string> = {};
   for (const [action, motion] of Object.entries(rawMotions)) {
@@ -156,6 +175,7 @@ export const parseViewerExSettings = (value: unknown): ViewerExSettings => {
     stateMotions,
     emotionExpressions,
     actionMotions,
+    ...(record.emotionMotions !== undefined ? { emotionMotions } : {}),
   };
 };
 

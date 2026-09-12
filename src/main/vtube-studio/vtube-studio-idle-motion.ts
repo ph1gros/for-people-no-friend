@@ -1,7 +1,11 @@
 import type { CharacterEmotion } from '../../core/character/character-reply';
+import type { EmotionChannels } from '../../core/character/emotion-channels';
 import type { CharacterPresentationState } from '../../core/presentation/character-presentation';
 import {
-  blendEmotionBias,
+  blendParameterBias,
+  emotionBias,
+  emotionChannelsBias,
+  type EmotionParameterBias,
   EMOTION_FADE_MS,
   EMOTION_PARAMETER_IDS,
 } from './vtube-studio-emotion-parameters';
@@ -83,8 +87,9 @@ export class VTubeStudioIdleMotion {
   private eyeOpenUpdatedAt: number;
   /** The generic emotion channel — used for models with no expression file worth mapping. */
   private emotion: CharacterEmotion = 'neutral';
-  private emotionFrom: CharacterEmotion = 'neutral';
-  private emotionChangedAt = 0;
+  private emotionFrom: EmotionParameterBias = emotionBias('neutral');
+  private emotionTarget: EmotionParameterBias = emotionBias('neutral');
+  private emotionChangedAt: number | undefined;
 
   public constructor(
     now = Date.now(),
@@ -142,10 +147,14 @@ export class VTubeStudioIdleMotion {
     const nodOffset = this.nodOffset(now, pointerProximity);
     const shakeOffset = this.shakeOffset(now);
     const emotionRatio = this.emotionRatio(now);
-    const bias = blendEmotionBias(this.emotionFrom, this.emotion, emotionRatio);
+    const bias = blendParameterBias(this.emotionFrom, this.emotionTarget, emotionRatio);
     // A finished fade back to neutral is "resting"; a fade still in progress is not, so the face
     // relaxes smoothly instead of the parameters vanishing mid-transition.
-    const emotionIsResting = this.emotion === 'neutral' && emotionRatio >= 1;
+    const emotionIsResting =
+      emotionRatio >= 1 &&
+      Object.values(this.emotionTarget.absolute).every((value) => value === 0) &&
+      this.emotionTarget.eyeOpenScaleLeft === 1 &&
+      this.emotionTarget.eyeOpenScaleRight === 1;
     return [
       {
         id: 'FaceAngleX',
@@ -192,11 +201,25 @@ export class VTubeStudioIdleMotion {
    * the caller can tell a real state change from a repeat of the same emotion.
    */
   public setEmotion(emotion: CharacterEmotion, now = Date.now()): boolean {
-    if (emotion === this.emotion) return false;
     // Fade from wherever the previous fade had got to, not from its target, so rapid changes
     // do not snap back to a face the model never actually reached.
-    this.emotionFrom = this.emotionRatio(now) >= 1 ? this.emotion : this.emotionFrom;
     this.emotion = emotion;
+    return this.setBias(emotionBias(emotion), now);
+  }
+
+  public setEmotionChannels(channels: EmotionChannels, now = Date.now()): boolean {
+    this.emotion = 'neutral';
+    return this.setBias(emotionChannelsBias(channels), now);
+  }
+
+  private setBias(target: EmotionParameterBias, now: number): boolean {
+    if (JSON.stringify(target) === JSON.stringify(this.emotionTarget)) return false;
+    this.emotionFrom = blendParameterBias(
+      this.emotionFrom,
+      this.emotionTarget,
+      this.emotionRatio(now),
+    );
+    this.emotionTarget = target;
     this.emotionChangedAt = now;
     return true;
   }
@@ -206,7 +229,7 @@ export class VTubeStudioIdleMotion {
   }
 
   private emotionRatio(now: number): number {
-    if (this.emotionChangedAt === 0) return 1;
+    if (this.emotionChangedAt === undefined) return 1;
     return Math.min(1, Math.max(0, (now - this.emotionChangedAt) / EMOTION_FADE_MS));
   }
 

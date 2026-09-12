@@ -26,7 +26,10 @@ const STEP_LABELS: Record<SetupStepId, string> = {
 };
 
 const PAGE_HEADINGS: Record<SetupStepId, { title: string; description: string }> = {
-  voice: { title: '本地语音输出', description: '可选日语朗读；不启用也能使用文字聊天。' },
+  voice: {
+    title: '本地语音输出',
+    description: '可选中文、日语或英语朗读；不启用也能使用文字聊天。',
+  },
   speechInput: {
     title: '本地语音识别',
     description: '选择手动录音输入，麦克风权限在实际录音时申请。',

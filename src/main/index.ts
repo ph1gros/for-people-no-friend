@@ -44,6 +44,8 @@ import { CharacterKnowledgeStore } from './storage/character-knowledge-store';
 import { ConversationStore } from './storage/conversation-store';
 import { DeskpetDatabase } from './storage/deskpet-database';
 import { DesktopIntegrationStore } from './storage/desktop-integration-store';
+import { WidgetRuntime } from './widgets/widget-runtime';
+import { ApprovedWidgetService } from './widgets/approved-widget-service';
 import { MemoryIndexConfigStore } from './storage/memory-index-config-store';
 import { ProviderConfigStore } from './storage/provider-config-store';
 import { createDeskpetTray } from './tray/create-tray';
@@ -419,8 +421,15 @@ if (!hasSingleInstanceLock) {
       new CharacterKnowledgeStore(database),
       assistantTools,
     );
+    const widgetRuntime = new WidgetRuntime();
+    const approvedWidgets = new ApprovedWidgetService(
+      path.join(userDataPath, 'widgets'),
+      widgetRuntime,
+    );
+    app.once('before-quit', () => approvedWidgets.dispose());
+    await widgetRuntime.loadApprovedPackages(path.join(userDataPath, 'widgets'));
     desktopIntegrations = new DesktopIntegrationService(
-      new DesktopIntegrationStore(userDataPath),
+      new DesktopIntegrationStore(userDataPath, () => widgetRuntime.knownIds()),
       globalShortcut,
       () => windowManager?.toggleVisibility(),
       new WindowsMediaController(),
@@ -433,6 +442,7 @@ if (!hasSingleInstanceLock) {
         }
       },
       recordDiagnostic,
+      widgetRuntime,
     );
     await desktopIntegrations.initialize();
     const initialSpeechSettings = await speechConfigStore.get();
@@ -450,6 +460,7 @@ if (!hasSingleInstanceLock) {
       characterResearch,
       workGlossary,
       desktopIntegrations,
+      installClockWidget: () => approvedWidgets.installClock(),
       characterPackages,
       live2DModelImports,
       speech: speechService,

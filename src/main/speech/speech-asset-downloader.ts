@@ -1,3 +1,4 @@
+import { downloadArchive } from '../assets/download-archive';
 import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import {
@@ -540,81 +541,16 @@ export class SpeechAssetDownloader {
   }
 
   private async downloadSequential(tier: SpeechAssetTier, signal: AbortSignal): Promise<string> {
-    const partialPath = this.partialPath(tier.id, tier.version);
-    await mkdir(path.dirname(partialPath), { recursive: true });
-    let lastError: unknown;
-    for (const source of tier.urls) {
-      try {
-        let offset = await this.partialSize(tier);
-        if (offset > tier.bytes) {
-          await rm(partialPath, { force: true });
-          offset = 0;
-        }
-        const response = await fetchSpeechAssetArchive(
-          source,
-          {
-            headers: offset > 0 ? { range: `bytes=${offset}-` } : {},
-            redirect: 'error',
-            signal,
-          },
-          this.fetcher,
-        );
-        if (!response.ok || !response.body) {
-          throw new Error(`语音资产下载失败（HTTP ${response.status}）。`);
-        }
-        if (offset > 0) {
-          const contentRange = response.headers.get('content-range');
-          if (response.status === 200) {
-            await response.body.cancel();
-            await rm(partialPath, { force: true });
-            return await this.download(tier, signal);
-          }
-          if (
-            response.status !== 206 ||
-            contentRange !== `bytes ${offset}-${tier.bytes - 1}/${tier.bytes}`
-          ) {
-            await response.body.cancel();
-            throw new Error('语音资产服务器返回了无效的分段响应。');
-          }
-        } else if (response.status !== 200) {
-          await response.body.cancel();
-          throw new Error('语音资产服务器返回了无效的分段响应。');
-        }
-        const contentLength = response.headers.get('content-length');
-        if (contentLength !== null && Number(contentLength) !== tier.bytes - offset) {
-          await response.body.cancel();
-          throw new Error('语音资产响应体积与应用内置记录不一致。');
-        }
-        const handle = await open(partialPath, offset > 0 ? 'a' : 'w');
-        let downloaded = offset;
-        try {
-          const reader = response.body.getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            downloaded += value.byteLength;
-            if (downloaded > tier.bytes) throw new Error('语音资产下载体积超过应用内置记录。');
-            await handle.write(value);
-            this.options.onProgress?.({
-              id: tier.id,
-              downloadedBytes: downloaded,
-              totalBytes: tier.bytes,
-            });
-          }
-          await handle.sync();
-        } finally {
-          await handle.close();
-        }
-        if (downloaded !== tier.bytes) throw new Error('语音资产下载未完成，可稍后继续。');
-        return partialPath;
-      } catch (error) {
-        if (signal.aborted) throw error;
-        lastError = error;
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error('所有语音资产下载源都不可用。');
+    return downloadArchive({
+      partialPath: this.partialPath(tier.id, tier.version),
+      urls: tier.urls,
+      bytes: tier.bytes,
+      signal,
+      fetch: this.fetcher,
+      onProgress: (downloadedBytes) =>
+        this.options.onProgress?.({ id: tier.id, downloadedBytes, totalBytes: tier.bytes }),
+    });
   }
-
   private async downloadSegmented(tier: SpeechAssetTier, signal: AbortSignal): Promise<string> {
     const segmentCount = this.segmentCount(tier);
     const segmentRoot = this.segmentRoot(tier.id, tier.version);

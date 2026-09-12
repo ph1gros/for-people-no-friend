@@ -30,7 +30,11 @@ export class ViewerExService {
   private socket: ViewerExSocket | undefined;
   private connection: ViewerExConnectionState = 'disconnected';
   private connecting: Promise<boolean> | undefined;
+  private cancelConnection: (() => void) | undefined;
   private messageId = 0;
+  private ownsExpression = false;
+  private motionIndex = 0;
+  private revision = 0;
 
   public constructor(
     private readonly store: ViewerExConfigStore,
@@ -57,10 +61,33 @@ export class ViewerExService {
 
   public async setSettings(settings: ViewerExSettings): Promise<ViewerExOperationResult> {
     try {
+      const previous = await this.store.get();
       await this.store.set(settings);
-      this.disconnect();
+      if (
+        !settings.enabled ||
+        previous.port !== settings.port ||
+        previous.modelIndex !== settings.modelIndex ||
+        previous.workshopItemId !== settings.workshopItemId
+      ) {
+        if (this.ownsExpression && this.socket?.readyState === SOCKET_OPEN) {
+          try {
+            this.socket.send(
+              JSON.stringify({
+                msg: 13302,
+                msgId: this.nextMessageId(),
+                data: previous.modelIndex,
+              }),
+            );
+          } catch {
+            /* Optional display cleanup. */
+          }
+        }
+        this.disconnect();
+      } else {
+        this.revision += 1;
+      }
       if (!settings.enabled) this.connection = 'disabled';
-      else this.connection = 'disconnected';
+      else this.connection = this.socket?.readyState === SOCKET_OPEN ? 'connected' : 'disconnected';
       return { ok: true };
     } catch {
       this.diagnostics?.('viewerex-configuration-failed');
@@ -69,6 +96,7 @@ export class ViewerExService {
   }
 
   public async present(input: ViewerExPresentationInput): Promise<boolean> {
+    const revision = this.revision;
     let settings: ViewerExSettings;
     try {
       settings = await this.store.get();
@@ -81,12 +109,25 @@ export class ViewerExService {
       return false;
     }
 
-    const messages = buildViewerExPresentationMessages(settings, input, () => this.nextMessageId());
+    if (revision !== this.revision) return false;
+    const messages = buildViewerExPresentationMessages(
+      settings,
+      input,
+      () => this.nextMessageId(),
+      { ownsExpression: this.ownsExpression, motionIndex: this.motionIndex },
+    );
     if (messages.length === 0) return false;
     if (!(await this.ensureConnected(settings.port))) return false;
+    if (revision !== this.revision || this.socket?.readyState !== SOCKET_OPEN) return false;
 
     try {
-      for (const message of messages) this.socket?.send(JSON.stringify(message));
+      for (const message of messages) {
+        this.socket.send(JSON.stringify(message));
+        if (message.msg === 13300) this.ownsExpression = true;
+        if (message.msg === 13302) this.ownsExpression = false;
+      }
+      if (input.emotion && settings.emotionMotions?.[input.emotion]?.length)
+        this.motionIndex = (this.motionIndex + 1) % 840;
       return true;
     } catch {
       this.diagnostics?.('viewerex-connection-failed');
@@ -123,9 +164,12 @@ export class ViewerExService {
         settled = true;
         if (!connected) this.diagnostics?.('viewerex-connection-failed');
         clearTimeout(timer);
-        this.connecting = undefined;
-        this.connection = connected ? 'connected' : 'disconnected';
-        if (!connected && this.socket === socket) this.socket = undefined;
+        if (this.socket === socket) {
+          this.connecting = undefined;
+          this.cancelConnection = undefined;
+          this.connection = connected ? 'connected' : 'disconnected';
+          if (!connected) this.socket = undefined;
+        }
         resolve(connected);
       };
       const timer = setTimeout(() => {
@@ -136,11 +180,17 @@ export class ViewerExService {
         }
         finish(false);
       }, CONNECT_TIMEOUT_MS);
+      this.cancelConnection = () => finish(false);
       socket.onopen = () => finish(true);
       socket.onerror = () => finish(false);
       socket.onclose = () => {
-        if (this.socket === socket) this.socket = undefined;
+        if (this.socket !== socket) {
+          finish(false);
+          return;
+        }
+        this.ownsExpression = false;
         finish(false);
+        this.socket = undefined;
         if (settled) this.connection = 'disconnected';
       };
     });
@@ -148,7 +198,12 @@ export class ViewerExService {
   }
 
   private disconnect(): void {
+    this.revision += 1;
+    this.ownsExpression = false;
+    this.motionIndex = 0;
     const socket = this.socket;
+    this.cancelConnection?.();
+    this.cancelConnection = undefined;
     this.socket = undefined;
     this.connecting = undefined;
     if (!socket) return;

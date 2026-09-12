@@ -485,7 +485,7 @@ export class VTubeStudioService {
   public async present(
     input: VTubeStudioPresentationInput,
   ): Promise<VTubeStudioPresentationResult> {
-    if (!input.state && !input.emotion && !input.action) {
+    if (!input.state && !input.emotion && !input.action && !input.emotionChannels) {
       return { ok: false, reason: 'invalid-intent', message: '没有可发送的角色动作。' };
     }
     try {
@@ -528,7 +528,51 @@ export class VTubeStudioService {
         await this.sendIdleMotionFrame();
         presented = true;
       }
-      if (input.emotion) {
+      const channels = input.emotionChannels;
+      // Keep an explicitly confirmed file for a single matching basic emotion. A mixed or
+      // finer-grained face uses continuous parameters instead of collapsing to a legacy label.
+      const basicChannels = {
+        happy: 'joy',
+        sad: 'sadness',
+        angry: 'anger',
+        surprised: 'surprise',
+      } as const;
+      const basicChannel =
+        input.emotion && Object.hasOwn(basicChannels, input.emotion)
+          ? basicChannels[input.emotion as keyof typeof basicChannels]
+          : undefined;
+      const activeFaceChannels = channels
+        ? ['joy', 'sadness', 'anger', 'fear', 'disgust', 'surprise', 'guilt'].filter(
+            (key) => channels[key as keyof typeof channels] > 0,
+          )
+        : [];
+      const useConfirmedExpression = Boolean(
+        channels &&
+        input.emotion &&
+        basicChannel &&
+        activeFaceChannels.length === 1 &&
+        activeFaceChannels[0] === basicChannel &&
+        modelMapping?.emotionExpressions[input.emotion],
+      );
+      if (channels && !useConfirmedExpression) {
+        // Continuous expression owns the face for this turn; release only our own expression.
+        if (this.activeExpressionFile) {
+          const response = await session.request('ExpressionActivationRequest', {
+            expressionFile: this.activeExpressionFile,
+            fadeTime: 0.2,
+            active: false,
+          });
+          assertVTubeStudioResponseType(response, 'ExpressionActivationResponse');
+          this.activeExpressionFile = undefined;
+        }
+        this.startIdleMotion();
+        if (this.idleMotion) {
+          this.idleMotion.setEmotionChannels(channels);
+          await this.sendIdleMotionFrame();
+          presented = true;
+          presentedGenerically = true;
+        }
+      } else if (input.emotion) {
         if (input.emotion === 'neutral') {
           const expressionState = await session.request('ExpressionStateRequest', {
             details: true,

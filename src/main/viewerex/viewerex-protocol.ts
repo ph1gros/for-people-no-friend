@@ -3,7 +3,7 @@ import type { ViewerExPresentationInput, ViewerExSettings } from '../../shared/v
 const MAX_BUBBLE_CODE_POINTS = 1_000;
 
 export interface ViewerExMessage {
-  msg: 11000 | 13200 | 13300;
+  msg: 11000 | 13200 | 13300 | 13302;
   msgId: number;
   data: unknown;
 }
@@ -27,6 +27,7 @@ export const buildViewerExPresentationMessages = (
   settings: ViewerExSettings,
   input: ViewerExPresentationInput,
   nextMessageId: () => number,
+  context: { ownsExpression?: boolean; motionIndex?: number } = {},
 ): ViewerExMessage[] => {
   const messages: ViewerExMessage[] = [];
   if (settings.bubbleEnabled && input.text) {
@@ -54,18 +55,19 @@ export const buildViewerExPresentationMessages = (
       msgId: nextMessageId(),
       data: { id: settings.modelIndex, expId: expressionId },
     });
+  } else if (input.emotion && context.ownsExpression) {
+    messages.push({ msg: 13302, msgId: nextMessageId(), data: settings.modelIndex });
   }
 
   const stateMotion = input.state ? settings.stateMotions[input.state] : undefined;
-  if (stateMotion) {
-    messages.push({
-      msg: 13200,
-      msgId: nextMessageId(),
-      data: { id: settings.modelIndex, type: 0, mtn: stateMotion },
-    });
-  }
-
-  const motion = input.action ? settings.actionMotions[input.action] : undefined;
+  const candidates = input.emotion ? settings.emotionMotions?.[input.emotion] : undefined;
+  const emotionMotion = candidates?.length
+    ? candidates[(context.motionIndex ?? 0) % candidates.length]
+    : undefined;
+  const motion =
+    (input.action ? settings.actionMotions[input.action] : undefined) ??
+    emotionMotion ??
+    stateMotion;
   if (motion) {
     messages.push({
       msg: 13200,

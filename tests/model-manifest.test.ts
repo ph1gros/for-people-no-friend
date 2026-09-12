@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   loadLocalModelManifest,
@@ -23,6 +23,44 @@ const validManifest = {
 };
 
 describe('local Live2D model manifest', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reports an active character without a model before fetching developer assets', async () => {
+    vi.stubGlobal('window', {
+      deskpet: { getActiveCharacterModelManifest: async () => undefined },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(loadLocalModelManifest(fetcher)).rejects.toMatchObject({ kind: 'missing' });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('loads an imported model through the managed protocol', async () => {
+    vi.stubGlobal('window', {
+      location: { href: 'file:///app/dist/renderer/index.html' },
+      deskpet: { getActiveCharacterModelManifest: async () => 'models/sample/model.json' },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(validManifest));
+
+    await expect(loadLocalModelManifest(fetcher)).resolves.toMatchObject({
+      ...validManifest,
+      assetRoot: 'deskpet-model://active/models/sample/',
+      coreUrl: 'file:///app/dist/renderer/runtime/cubism/live2dcubismcore.min.js',
+    });
+    expect(fetcher).toHaveBeenCalledWith('deskpet-model://active/models/sample/model.json', {
+      cache: 'no-store',
+    });
+  });
+
+  it('keeps a managed model transport failure distinct from an absent model', async () => {
+    vi.stubGlobal('window', {
+      deskpet: { getActiveCharacterModelManifest: async () => 'models/sample/model.json' },
+    });
+    const fetcher = vi.fn<typeof fetch>().mockRejectedValue(new TypeError('Failed to fetch'));
+
+    await expect(loadLocalModelManifest(fetcher)).rejects.toMatchObject({ kind: 'unavailable' });
+  });
+
   it('accepts a versioned local Cubism model and control map', () => {
     expect(parseLocalModelManifest(validManifest)).toEqual(validManifest);
   });
