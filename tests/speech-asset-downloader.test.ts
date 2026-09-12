@@ -140,15 +140,21 @@ describe('speech asset downloader', () => {
       }),
     );
     let firstRequest = true;
+    let interruptDownload: (() => void) | undefined;
+    const requestRanges: Array<string | undefined> = [];
+    const partialBytes = Math.floor(archive.length / 2);
     const server = createServer((request, response) => {
       const range = request.headers.range;
+      requestRanges.push(range);
       const start = range ? Number(/^bytes=(\d+)-$/u.exec(range)?.[1] ?? 0) : 0;
       if (!range && firstRequest) {
         firstRequest = false;
         response.writeHead(200, { 'content-length': archive.length, 'accept-ranges': 'bytes' });
         response.flushHeaders();
-        response.write(archive.subarray(0, Math.floor(archive.length / 2)));
-        setTimeout(() => response.destroy(), 20);
+        // Interrupt after the client reports a persisted chunk. A 20 ms socket timer
+        // can fire before Windows CI opens/writes the partial file, testing no resume at all.
+        interruptDownload = () => response.destroy();
+        response.write(archive.subarray(0, partialBytes));
         return;
       }
       response.writeHead(start > 0 ? 206 : 200, {
@@ -162,15 +168,27 @@ describe('speech asset downloader', () => {
     const port = await listen(server);
     trustTestArchive(archive);
     const tier = testTier([`http://127.0.0.1:${port}/voice.zip`]);
-    const downloader = new SpeechAssetDownloader(root, { allowLocalhostHttp: true });
+    const downloader = new SpeechAssetDownloader(root, {
+      allowLocalhostHttp: true,
+      onProgress: ({ downloadedBytes }) => {
+        if (downloadedBytes < partialBytes || !interruptDownload) return;
+        const interrupt = interruptDownload;
+        interruptDownload = undefined;
+        interrupt();
+      },
+    });
 
     await expect(downloader.install(tier)).rejects.toThrow();
     const partialPath = path.join(root, '.downloads', 'voice-runtime-1.0.0.zip.part');
-    expect((await stat(partialPath)).size).toBeGreaterThan(0);
+    expect((await stat(partialPath)).size).toBe(partialBytes);
+    await expect(readFile(path.join(root, 'active', 'voice-runtime.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
     await expect(downloader.install(tier)).resolves.toMatchObject({
       id: 'voice-runtime',
       state: 'ready',
     });
+    expect(requestRanges).toEqual([undefined, `bytes=${partialBytes}-`]);
     await expect(
       readFile(path.join(root, 'voice-runtime', 'python', 'python.exe'), 'utf8'),
     ).resolves.toBe('embedded python');

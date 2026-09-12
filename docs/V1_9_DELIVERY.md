@@ -5,6 +5,7 @@
 ## 版本与提交
 
 - 主程序版本：`1.9.0`，Windows x64 便携 ZIP；[Release](https://github.com/ph1gros/for-people-no-friend/releases/tag/v1.9.0)。
+- 功能与发布准备提交：[0c2f819b3ec2e16f6829b5be5a696b69f2c78253](https://github.com/ph1gros/for-people-no-friend/commit/0c2f819b3ec2e16f6829b5be5a696b69f2c78253)。其后只修正 CI 续传测试的断线时序并补充本记录，生产代码和包内文件保持一致。
 - 发布源码：[v1.9.0 所指提交](https://github.com/ph1gros/for-people-no-friend/commit/v1.9.0)；Release 说明同时记录完整 SHA。构建基线为 [4e556326ddcfefe6acdf3f54682f74ac5c60ca55](https://github.com/ph1gros/for-people-no-friend/commit/4e556326ddcfefe6acdf3f54682f74ac5c60ca55)，对应 v1.8.3。
 - 另行审查的社交接入 [PR #2](https://github.com/ph1gros/for-people-no-friend/pull/2) head 为 [a88599ee1ab3eec326ccd5f73fb9f0f77aa59d1c](https://github.com/ph1gros/for-people-no-friend/commit/a88599ee1ab3eec326ccd5f73fb9f0f77aa59d1c)。该 PR 未合入 V1.9，问题与缺项见 [commit 审查](V1_9_COMMIT_REVIEW.md)。
 - 主程序和可选组件分别管理版本。沿用现有十项语音组件、v1.8.2 目录和 Genie 引擎 1.1.2；无需为主程序升级重复下载已就绪的组件。
